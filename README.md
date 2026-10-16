@@ -25,7 +25,9 @@
 - **Permission controls.** Allow / deny / ask rule sets, a path whitelist, and an audit log for every sensitive operation.
 - **Desktop-grade shell.** A frameless Tauri 2 window with five color themes, a WebSocket JSON-RPC 2.0 protocol, and a self-contained Python backend shipped as a sidecar.
 
-<!-- Screenshots coming soon -->
+## Screenshots
+
+<img src="assets/screenshot-1.png" alt="PebbleAgent desktop interface" width="1000">
 
 ## Architecture
 
