@@ -302,7 +302,8 @@ class AgentToolExecutorImpl(ToolExecutor):
     - 统一的错误处理
     """
     
-    def __init__(self, project_path: str = "E:\\agentspace"):
+    def __init__(self, project_path: str = ""):
+        project_path = project_path or os.getcwd()
         self._current_project_path = project_path
         self._enforcer = PermissionEnforcer(project_path)
         self._path_whitelist: List[str] = []

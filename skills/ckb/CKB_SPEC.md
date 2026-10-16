@@ -1,10 +1,10 @@
-# CKGD（代码知识图谱）— 逻辑规范 v2.0
+# CKB（代码知识库）— 逻辑规范 v2.0
 
-> 本文档定义 CKGD 机制的完整逻辑：检测、构建、编写、索引、验证、迁移。
-> **v2.0 核心变更**：图谱由单文件（PROJECT_GRAPH.md）改为「目录 + 章节文件」结构——
+> 本文档定义 CKB 机制的完整逻辑：检测、构建、编写、索引、验证、迁移。
+> **v2.0 核心变更**：知识库由单文件（PROJECT_GRAPH.md）改为「目录 + 章节文件」结构——
 > `content.md` 为章节目录，各章独立成文件（如「三、Gateway网关系统.md」），
 > 读取与更新均先查目录、再按需定位章节，避免整文件加载。
-> CKGD Skill 文件（SKILL.md）引用本文档作为技术参考。
+> CKB Skill 文件（SKILL.md）引用本文档作为技术参考。
 
 ---
 
@@ -27,7 +27,7 @@ Agent 每次对话开始时（接到用户第一条有效任务请求后），�
 
 **按需读取原则（v2.0 核心）**：检测阶段只读取目录文件（content.md），不读取章节文件全文。执行任务时，根据 content.md 中每章的说明（括号内）定位与任务相关的章，只读取那些章节文件。仅当任务涉及全局（如整体重构、全项目审计）时才读取多个章节。
 
-**⚠️ 工具选择约束（重要）**：禁止用 glob 检测图谱是否存在——本环境 glob 对"含目录前缀的相对路径"模式（如 `knowledgesource/content.md`、`knowledgesource/*`）存在漏报缺陷（实测：文件存在却返回 0 结果），会误判为"无图谱"而触发不必要的构建。检测一律使用 `read_file` 直读或 `get_file_info`（均实测可靠）。
+**⚠️ 工具选择约束（重要）**：禁止用 glob 检测知识库是否存在——本环境 glob 对"含目录前缀的相对路径"模式（如 `knowledgesource/content.md`、`knowledgesource/*`）存在漏报缺陷（实测：文件存在却返回 0 结果），会误判为"无知识库"而触发不必要的构建。检测一律使用 `read_file` 直读或 `get_file_info`（均实测可靠）。
 
 ### 1.3 旧格式兼容（v1.x → v2.0 过渡）
 
@@ -37,10 +37,10 @@ Agent 每次对话开始时（接到用户第一条有效任务请求后），�
 read_file "knowledgesource/PROJECT_GRAPH.md"
 ├─ 成功 → 旧版单文件格式（v1.x）：
 │    1. 以旧文件为权威参考继续工作（不阻塞任务）
-│    2. 提示用户："本项目图谱为旧版单文件格式，建议迁移到新格式（目录 + 章节文件）。
+│    2. 提示用户："本项目知识库为旧版单文件格式，建议迁移到新格式（目录 + 章节文件）。
 │       迁移后可按需读取章节，无需整文件加载。是否迁移？"
 │    3. 用户同意 → 按第六章《迁移规范》执行迁移
-└─ 失败 → 无图谱 → 先询问用户是否构建，同意后进入构建模式（见第二章）
+└─ 失败 → 无知识库 → 先询问用户是否构建，同意后进入构建模式（见第二章）
 ```
 
 ### 1.4 构建模式的硬约束
@@ -48,10 +48,10 @@ read_file "knowledgesource/PROJECT_GRAPH.md"
 在构建模式中，以下行为**绝对禁止**：
 - 回答用户任务请求
 - 执行代码
-- 调用写操作工具（write_file/edit_file/execute_shell 等）—— 生成图谱文件本身除外
+- 调用写操作工具（write_file/edit_file/execute_shell 等）—— 生成知识库文件本身除外
 - 对项目代码做出任何判断或推测
 
-唯一允许的操作：读取文件、调用 codebase_memory 工具、生成图谱文件（content.md + 章节文件 + VERSION）。
+唯一允许的操作：读取文件、调用 codebase_memory 工具、生成知识库文件（content.md + 章节文件 + VERSION）。
 
 ---
 
@@ -61,7 +61,7 @@ read_file "knowledgesource/PROJECT_GRAPH.md"
 
 ### 阶段 1：全量索引（Index）
 
-**目标**：将项目导入代码知识图谱数据库。
+**目标**：将项目导入代码知识库数据库。
 
 ```
 1. 调用 mcp__codebase_memory__index_repository(repo_path=项目根目录, mode="full")
@@ -143,7 +143,7 @@ read_file "knowledgesource/PROJECT_GRAPH.md"
 
 ### 阶段 5：采样确认（Sample）
 
-**目标**：随机采样文件确认索引准确性，避免因索引遗漏导致知识图谱错误。
+**目标**：随机采样文件确认索引准确性，避免因索引遗漏导致知识库错误。
 
 ```
 1. 从每个目录随机选取 1-2 个文件
@@ -157,7 +157,7 @@ read_file "knowledgesource/PROJECT_GRAPH.md"
 
 **输出**：采样确认报告（如有不一致，标注并修正）。
 
-### 阶段 6：生成图谱（Generate）
+### 阶段 6：生成知识库（Generate）
 
 **目标**：将信息组织为「目录 + 章节文件」结构，写入 knowledgesource/。
 
@@ -175,7 +175,7 @@ read_file "knowledgesource/PROJECT_GRAPH.md"
 
 ---
 
-## 三、编写规范（图谱格式）
+## 三、编写规范（知识库格式）
 
 ### 3.1 文件结构
 
@@ -192,7 +192,7 @@ knowledgesource/
 ### 3.2 content.md 格式
 
 ```
-# 项目代码知识图谱 — {项目名}（目录）
+# 项目代码知识库 — {项目名}（目录）
 
 > 最后更新于 YYYY-MM-DD | {变更摘要} | {统计信息}
 
@@ -298,16 +298,16 @@ knowledgesource/
 | 全量索引 | mcp__codebase_memory__index_repository | - |
 | 架构提取 | mcp__codebase_memory__get_architecture | list_directory, read_structure |
 | 文件枚举 | glob | list_directory, get_file_info |
-| 关系追踪 | mcp__codebase_memory__trace_path | mcp__codebase_memory__search_graph |
+| 关系追踪 | mcp__codebase_memory__trace_path | mcp__codebase_memory__search_knowledge base |
 | 采样确认 | read_file | lsp_document_symbol |
-| 生成图谱 | write_file（逐章 + content.md） | - |
+| 生成知识库 | write_file（逐章 + content.md） | - |
 
 ### 4.2 codebase_memory 使用要点
 
 - `index_repository` 只在首次构建时调用一次（写入开销大）
 - `get_architecture` 是只读操作，可并发与其他工具调用
 - `trace_path` 对每个关键函数调用一次，深度建议 depth=2（调用方和被调用方各两层）
-- `search_graph` 用于确认特定符号的存在性和位置
+- `search_knowledge base` 用于确认特定符号的存在性和位置
 
 ### 4.3 索引质量检查
 
@@ -318,7 +318,7 @@ knowledgesource/
    → 差异 >5 个文件 → 标记为 "需要补充"
 
 2. 关键符号检查：对前 10 大文件，随机选取 3 个关键符号
-   → search_graph 确认符号存在于索引中 → 不一致则修复
+   → search_knowledge base 确认符号存在于索引中 → 不一致则修复
 
 3. 调用关系检查：选取 5 条关键路径中的步骤
    → trace_path 验证调用链存在 → 不一致则修复
@@ -332,7 +332,7 @@ knowledgesource/
 
 ### 5.1 自动验证清单
 
-CKGD 生成后，必须通过以下验证才能标记为"完成"：
+CKB 生成后，必须通过以下验证才能标记为"完成"：
 
 ```
 □ content.md 已生成，章列表与章节文件一一对应（数量、名称一致）
@@ -342,7 +342,7 @@ CKGD 生成后，必须通过以下验证才能标记为"完成"：
 □ 所有入口文件在关键路径中有对应步骤
 □ 所有标注为 "⚠️存根" 的文件已经 read_file 确认（不是推测）
 □ 模块拓扑表中的每个模块都存在于文件索引中
-□ 关键路径中的每个函数名可通过 search_graph 验证存在
+□ 关键路径中的每个函数名可通过 search_knowledge base 验证存在
 □ 没有 "TODO"、"待确认" 等未解决标记（已确认的除外）
 □ VERSION 文件已写入且与当前文件数和索引节点数一致
 ```
@@ -358,14 +358,14 @@ CKGD 生成后，必须通过以下验证才能标记为"完成"：
 4. VERSION 追加变更记录
 ```
 
-若发现图谱与实际代码明显不符（如索引的文件已不存在），按上述流程修正。
+若发现知识库与实际代码明显不符（如索引的文件已不存在），按上述流程修正。
 
 ### 5.3 新旧格式判定
 
 ```
 - 新格式（v2.0）：knowledgesource/content.md 存在
 - 旧格式（v1.x）：仅有 knowledgesource/PROJECT_GRAPH.md
-- 无图谱：两者皆不存在 → 触发构建流程
+- 无知识库：两者皆不存在 → 触发构建流程
 ```
 
 ---
@@ -395,21 +395,21 @@ CKGD 生成后，必须通过以下验证才能标记为"完成"：
 
 ### 7.1 集成方式
 
-CKGD 机制通过以下方式嵌入 agent 行为：
+CKB 机制通过以下方式嵌入 agent 行为：
 
-1. **Skill 文件**：`skills/ckgd/SKILL.md` 包含简化版的检测 → 构建流程，agent 通过 `load_skill("ckgd")` 加载
-2. **系统提示词注入**：code_agent 的系统提示词中直接嵌入 CKGD 检测规则（简短版）
-3. **预加载 skill**：code_agent 的 YAML 配置中 `skills: [ckgd]` 确保 CKGD 在会话开始时已加载
+1. **Skill 文件**：`skills/ckb/SKILL.md` 包含简化版的检测 → 构建流程，agent 通过 `load_skill("ckb")` 加载
+2. **系统提示词注入**：code_agent 的系统提示词中直接嵌入 CKB 检测规则（简短版）
+3. **预加载 skill**：code_agent 的 YAML 配置中 `skills: [ckb]` 确保 CKB 在会话开始时已加载
 
 ### 7.2 系统提示词中的规则文本
 
 ```
-## CKGD 机制（强制）
+## CKB 机制（强制）
 
 对话开始时检测 knowledgesource/content.md：
 - 读取成功 → 读目录定位章节，按需读取章节文件
 - 不存在 → 回退检查 PROJECT_GRAPH.md（旧格式，提示迁移）
-- 均不存在 → 进入构建模式，禁止任何其他操作，直到图谱生成完毕
+- 均不存在 → 进入构建模式，禁止任何其他操作，直到知识库生成完毕
 
 构建模式硬约束：你只能使用 read_file、glob、codebase_memory 工具。
 禁止写代码、禁止回答任务请求、禁止对项目代码做推测。

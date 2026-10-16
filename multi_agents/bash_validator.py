@@ -63,14 +63,14 @@ class BashValidator:
     Bash 命令验证器
 
     使用方式:
-        validator = BashValidator(project_path="E:\\agentspace")
+        validator = BashValidator(project_path="/path/to/project")
         report = validator.validate("rm -rf /tmp/test")
         if report.blocked:
             raise PermissionError(report.block_reason)
     """
 
-    def __init__(self, project_path: str = "E:\\agentspace"):
-        self._project_path = os.path.abspath(project_path)
+    def __init__(self, project_path: str = ""):
+        self._project_path = os.path.abspath(project_path or os.getcwd())
         self._path_whitelist: List[str] = []
 
     def set_path_whitelist(self, paths: List[str]) -> None:
@@ -446,6 +446,6 @@ class BashValidator:
 
 # ==================== 便捷函数（向后兼容原有 _check_dangerous_command 接口） ====================
 
-def get_bash_validator(project_path: str = "E:\\agentspace") -> BashValidator:
+def get_bash_validator(project_path: str = "") -> BashValidator:
     """获取 BashValidator 实例"""
     return BashValidator(project_path)

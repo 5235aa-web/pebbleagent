@@ -1,5 +1,5 @@
 {
-  "mode": "autoAllow",
+  "mode": "default",
   "allow": [
     "Read",
     "LS",

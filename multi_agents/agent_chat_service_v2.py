@@ -438,7 +438,7 @@ class AgentChatServiceV2:
         self._cancel_signals: Dict[str, asyncio.Event] = {}
         
         # 当前项目路径
-        self._current_project_path: str = "E:\\agentspace"
+        self._current_project_path: str = os.getcwd()
         
         # 是否需要生成标题
         self._need_generate_title: bool = False
@@ -1351,7 +1351,7 @@ class AgentChatServiceV2:
         logger.info(f"[AgentChatServiceV2] Starting chat with {agent_name}, temperature={temperature}, top_p={top_p}, thinking_enabled={thinking_enabled}, reasoning_effort={reasoning_effort}")
         
         # 存储项目路径
-        self._current_project_path = project_path or "E:\\agentspace"  # project_path 由前端传入，此处仅兜底
+        self._current_project_path = project_path or os.getcwd()  # project_path 由前端传入，此处仅兜底
         
         # 设置记忆系统的项目路径
         if project_path:

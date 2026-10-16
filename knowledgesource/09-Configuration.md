@@ -67,7 +67,7 @@ Shell = Tauri 2 (Rust), productName "pebble-agent", identifier com.pebble.agent.
 
 | Skill | Path | Function |
 |-------|------|------|
-| ckgd | skills/ckgd/ | Code knowledge-graph mechanism (detect → build → verify) |
+| ckb | skills/ckb/ | Code knowledge-base mechanism (detect → build → verify) |
 | design | skills/design/ | Frontend design / Office document task specs |
 | diagnose | skills/diagnose/ | Structured debugging workflow (6 phases) |
 | tdd | skills/tdd/ | Red-green-refactor loop + test strategy |

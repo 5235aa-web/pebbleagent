@@ -72,7 +72,7 @@ system_prompt_file: code_agent_prompt.md
 
 # Preloaded Skills
 skills:
-  - ckgd
+  - ckb
 
 # Trigger keywords (for auto-routing)
 triggers:

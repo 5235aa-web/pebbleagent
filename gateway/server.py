@@ -1607,12 +1607,10 @@ def handle_request(method: str, params: dict, rid: str) -> Optional[dict]:
         try:
             if not os.path.exists(path):
                 if not os.path.isabs(path):
-                    for base in [str(_PROJECT_ROOT), "E:/agentspace", "E:\\agentspace"]:
-                        alt = os.path.join(base, path)
-                        # print(f"[file.read_text] TRY alt={alt!r} exists={os.path.exists(alt)}")  # 调试
-                        if os.path.exists(alt):
-                            path = alt; # print(f"[file.read_text] FOUND alt={alt!r}")  # 调试
-                            break
+                    alt = os.path.join(str(_PROJECT_ROOT), path)
+                    # print(f"[file.read_text] TRY alt={alt!r} exists={os.path.exists(alt)}")  # 调试
+                    if os.path.exists(alt):
+                        path = alt  # print(f"[file.read_text] FOUND alt={alt!r}")  # 调试
                     else:
                         # print(f"[file.read_text] NOT FOUND")  # 调试
                         return {"id": rid, "result": {"ok": False, "error": "文件不存在"}}
@@ -1636,9 +1634,6 @@ def handle_request(method: str, params: dict, rid: str) -> Optional[dict]:
                 attempts = []
                 if not _os.path.isabs(path):
                     attempts.append(str(_PROJECT_ROOT / path))
-                # 也尝试 E:\agentspace
-                if not _os.path.isabs(path):
-                    attempts.append(f"E:/agentspace/{path}")
                 found = None
                 for alt in attempts:
                     if _os.path.exists(alt):

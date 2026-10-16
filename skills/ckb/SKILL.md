@@ -1,8 +1,8 @@
-# CKGD — Code Knowledge Graph Document
+# CKB — Code Knowledge Base
 
-> 代码知识图谱机制：对话开始时自动检测项目知识图谱，缺失则先构建再工作。
-> 图谱为「目录 + 章节文件」结构：先读目录 `content.md` 定位，再按需读取章节文件。
-> 详细规范见 `CKGD_SPEC.md`。
+> 代码知识库机制：对话开始时自动检测项目知识库，缺失则先构建再工作。
+> 知识库为「目录 + 章节文件」结构：先读目录 `content.md` 定位，再按需读取章节文件。
+> 详细规范见 `CKB_SPEC.md`。
 
 ---
 
@@ -17,24 +17,24 @@
    ├─ 报错 File not found → 回退检查旧版单文件：
    │    read_file "knowledgesource/PROJECT_GRAPH.md"
    │    ├─ 成功 → 旧版格式（v1.x）：以旧文件为权威参考继续工作，并提示用户
-   │    │         "图谱为旧版单文件格式，建议迁移到新格式（目录 + 章节文件）"
-   │    └─ 失败 → 无图谱 → 先询问用户是否构建，同意后进入构建模式（见下）
+   │    │         "知识库为旧版单文件格式，建议迁移到新格式（目录 + 章节文件）"
+   │    └─ 失败 → 无知识库 → 先询问用户是否构建，同意后进入构建模式（见下）
    └─ 其他错误 → 报告用户
 ```
 
 **📖 按需读取原则**：检测阶段只读目录（content.md），不读取全部章节文件。执行任务时，根据目录中每章的说明定位相关章，只读取对应章节文件（如「三、Gateway网关系统.md」）。仅当任务需要全局视图（如整体重构）时才读取多章。
 
-**⚠️ 禁止用 glob 检测图谱是否存在**：本环境 glob 对"含目录前缀的相对路径"模式（如 `knowledgesource/content.md`、`knowledgesource/*`）存在漏报缺陷——文件实际存在时也可能返回空结果，会误判为"无图谱"触发重建。检测一律用 `read_file` 直读或 `get_file_info`。
+**⚠️ 禁止用 glob 检测知识库是否存在**：本环境 glob 对"含目录前缀的相对路径"模式（如 `knowledgesource/content.md`、`knowledgesource/*`）存在漏报缺陷——文件实际存在时也可能返回空结果，会误判为"无知识库"触发重建。检测一律用 `read_file` 直读或 `get_file_info`。
 
 ## 构建模式硬约束
 
 构建模式下，**绝对禁止**：
 - 回答用户任务请求
 - 执行任何代码（execute_code / execute_shell）
-- 修改任何文件（write_file / edit_file）—— 生成图谱文件本身除外
+- 修改任何文件（write_file / edit_file）—— 生成知识库文件本身除外
 - 对项目代码做任何判断或推测
 
-**唯一允许的操作**：索引、读取、追踪、生成图谱文件（content.md + 章节文件 + VERSION）。
+**唯一允许的操作**：索引、读取、追踪、生成知识库文件（content.md + 章节文件 + VERSION）。
 
 ---
 
@@ -81,7 +81,7 @@ mcp__codebase_memory__trace_path(project, function_name, direction="both", depth
 - 入口文件、`__init__.py`、YAML 配置必须全量读取
 - 交叉验证：索引结果 vs 实际代码
 
-### 阶段 6：生成图谱
+### 阶段 6：生成知识库
 
 先规划章结构，再逐章生成，最后生成目录：
 
@@ -101,7 +101,7 @@ mcp__codebase_memory__trace_path(project, function_name, direction="both", depth
 **content.md 格式**：
 
 ```
-# 项目代码知识图谱 — {项目名}（目录）
+# 项目代码知识库 — {项目名}（目录）
 
 > 最后更新于 YYYY-MM-DD | {变更摘要} | {统计信息}
 
@@ -113,7 +113,7 @@ mcp__codebase_memory__trace_path(project, function_name, direction="both", depth
 > 读取指引：先读本目录定位章节，再按需读取对应章节文件。
 ```
 
-**图谱文件结构**：
+**知识库文件结构**：
 
 ```
 knowledgesource/
@@ -142,7 +142,7 @@ knowledgesource/
 - [ ] 所有入口文件在关键路径中有对应步骤
 - [ ] 标注为 "⚠️存根" 的文件已 read_file 确认
 - [ ] 模块拓扑表中的模块全部存在于文件索引
-- [ ] 关键路径中函数名可通过 search_graph 验证
+- [ ] 关键路径中函数名可通过 search_knowledge base 验证
 - [ ] VERSION 文件已写入
 
 ## 同步更新义务

@@ -20,7 +20,7 @@
 2026-10-15: Added requirements.txt (project Python dependency list, root)
 - Background: user requested a root requirements.txt (previously missing; the Chapter 9 entry already existed — this adds the actual file)
 - Content: 18 direct deps in four groups — core 4 (websockets>=16.0 / openai>=2.43.0 / httpx>=0.28.1 / PyYAML>=6.0.3) + optional 11 (tiktoken / aiohttp / numpy / Pillow / pypdf / python-docx / openpyxl / PyMuPDF / pdfplumber / easyocr / psutil) + skills 1 (playwright) + build 2 (pyinstaller / pyinstaller-hooks-contrib); version format = ">= version verified in the current environment" (user-confirmed)
-- Method: full-project import scan (gateway/multi_agents/tools/hs2-live3d-bridge/skills/root) + PyInstaller PYZ-00.toc (46 third-party packages) cross-validation for direct/transitive separation + exact versions from site-packages dist-info
+- Method: full-project import scan (gateway/multi_agents/tools/skills/root) + PyInstaller PYZ-00.toc (46 third-party packages) cross-validation for direct/transitive separation + exact versions from site-packages dist-info
 - Notes: PyMuPDF/pdfplumber/easyocr/psutil/playwright not currently installed (annotated in comments); the external module uia3_tool referenced by tools/uia_tools.py (not a pip package) noted in the remarks section
 
 2026-10-15: ③ line cache (rimCached) full audit — conclusion: no bug (with evidence chain)
@@ -157,7 +157,7 @@
 - Graph sync: Ch7 compaction strategy section (trigger & retention + defense point #5)
 
 2026-10-15: Conversation-deletion race fix (FK crash + cascading database is locked)
-- Incident: after running a tool in a dearp conversation, "FOREIGN KEY constraint failed" crashed → the error message also failed to save → the thread's increment_messages hit "database is locked"; DB forensics: conversation 61b0226c msgs=0, orphan messages in agent_chat.db (conv=70, sort_order=1 missing the user message), conversations table skipping 67-71
+- Incident: after running a tool in a conversation, "FOREIGN KEY constraint failed" crashed → the error message also failed to save → the thread's increment_messages hit "database is locked"; DB forensics: conversation 61b0226c msgs=0, orphan messages in agent_chat.db (conv=70, sort_order=1 missing the user message), conversations table skipping 67-71
 - Root-cause chain: ① session.delete raced a running agent (the agent kept writing after deletion) ② Python sqlite3 DML failure doesn't auto-rollback → the connection held the write lock → cascading locked ③ agent_chat.db had no WAL/FK (default DELETE mode + FK OFF) → orphan messages silently produced
 - Fix (4 files): ① gateway/session.py 9 write methods + try/except/rollback/raise ② gateway/ws_server.py _prompt_worker + exception fallback logging ③ gateway/server.py three spots (set cancel_event before session.delete; add_tool_message/add_assistant_message save failures warn only, don't abort the session) ④ multi_agents/agent_chat_history.py new _connect() (WAL + foreign_keys=ON + timeout=10) + 20 connection replacements
 - Verification: py_compile ×4 + LSP (197/329 symbols) + temp-DB functional tests (PEBBLE_HOME isolation): after an FK failure in_transaction=False, cross-connection writes immediately succeed (lock released); orphan writes blocked by IntegrityError; journal_mode=wal; _connect() fk=1
@@ -176,27 +176,6 @@
 - Verification (15/15 pass; isolated-process AST extraction of the real source): pruning/blacklist/NUL/Chinese/5MB-large-file tail/1MB chunk boundary crossing/UTF-8 multi-byte across chunks/result cap/internal timeout/outer wait_for fallback/file_pattern/isdir all pass; real-project content search 0.26s (old 32s+), event-loop heartbeat max delay 13.6ms, clean memory probe peak zero growth (36.6MB constant throughout)
 - Effective: backend restart required (the Python module has the old code loaded); find_files same-source issue untouched (filename matching only, lower risk)
 - Graph sync: Ch5 tool_executor_impl.py index row + new misjudgment #7 + content.md header
-
-2026-10-03: New chapter "11. Live3D Bridge System" added (HS2 character control + streaming + green-screen keying plan)
-- Background: the hs2-live3d-bridge subsystem was previously not in the graph; the chapter was added after the green-screen keying plan landed and the streaming fix completed
-- Graph changes: new "11. Live3D Bridge System" (content.md +1 line); includes file index (plugin 7 C# sources + stream 3 files + client/docs/tools/assets), critical paths (control/mouth shapes/streaming/auto scene loading), boundary notes (green-screen plan, title-bar crop fix, window-capture notes, build constraints, BackgroundPlaneFixer, key-constants quick reference)
-- Code change 1 (streaming fix): stream_server.py crop_client_area from pure geometry → pixel-adaptive title-bar band detection (_detect_titlebar_bottom); root cause = the PrintWindow(PW_RENDERFULLCONTENT) bitmap includes the DWM frame extension area, so the client area sits 8px lower than the ClientToScreen geometry (= SM_CXSIZEFRAME 4 + SM_CXPADDEDBORDER 4); measured fix: detection=38, 0/16 gray residue after crop; both pebbleagent + dearp copies synced
-- Code change 2 (plugin addition): plugin/src/BackgroundPlaneFixer.cs added — the background-image plane only recomputes on FOV change (aspect changes don't trigger); fix = reflectively set an oldFOV sentinel value so the game's own LateUpdate performs the official Reflect; triggers = short window after scene load (every 1.2s within 4s) + aspect-change polling (0.5s); wired by PebbleAvatarBridge.cs
-- Green-screen plan (game side, user settings saved): Studio "Config" background color = pure green (Config.GraphicData.BackColor, global config) + sky off + no map/background image + Space hides UI (HideAllUI); scene saved as 2026_1003_2147_01_951.png; the plugin's auto-load config now points to it (fixing "loading the old scene brought back the background image")
-- Related fix: MeshExporter hotkey KeypadMinus → BackQuote (BepInEx\config\Grey.MeshExporter.HS2.cfg)
-- Frontend (dearp side, out of this graph's scope): Live3DWindow.vue upgraded with WebGL chroma keying + frameless floating window + hover control bar
-
-2026-10-03: Chapter 10 update — EEVEE/Cycles rendering difference (major) + eyebrow mechanism & rebuild plan + eye texture fix
-- EEVEE vs Cycles (major finding): the same scene's "Vector Math on colors" chain behaves differently in the two engines — Cycles renders the face dark grey (0.2 neutral), EEVEE normal (0.77 warm white = the user's viewport); lesson: verification renders for the user MUST use EEVEE (user viewport = Material Preview = EEVEE engine)
-- Eyebrow mechanism identified: eyebrows = raised geometry strips on the o_head brow ridge (~6.6mm forward), no eyebrows at the texture level (MainTex brow region is uniform brown (0.37,0.26,0.23)), the game engine renders them in a separate layer (lost in Blender); the face-patch coloring approach failed (157 faces selected by "position + protrusion" mixed in forehead faces → the user's viewport showed a "big black patch on the forehead", rolled back); new plan = independent eyebrow geometry (user-specified)
-- Eye texture fix: eye_rebuilt (pale base + purple disc, crudely rebuilt) → the game's original c_m_eye_01_Composite.png (grey-pink sclera + gradient purple iris); eye-side profile checks normal (recessed behind the eyelid, eye slit ~9mm)
-- Graph sync: Ch10 (three tables +2 rows, rendering notes, texture descriptions/leftovers, new section "Eyebrow Problem & Rebuild", evidence table)
-
-2026-10-03: New chapter "10. 3D Modeling Lessons" added (incl. the face-grey fix case)
-- Background: the user asked to write HS2 asset Blender lessons into the graph for future AIs (as a separate chapter)
-- Graph changes: new "10. 3D Modeling Lessons" (content.md +1 line); covers seven blocks: HS2 asset structure & six pitfalls, the face-grey fix case (root cause/code/verification data), Blender experiment conclusions (Gamma math = input^gamma, read-back space, Material Preview), endless-loop root cause & isolated-verification workflow, material rebuild spec (color chain ×5.8 + normal chain standard structure), VRM export points, evidence file locations
-- Related scene fix (<workspace>\未命名.blend): M_o_head face-grey fix — root cause = GAMMA(0.35) desaturation (boosting dark channels far more than bright) + normal chain misusing the color texture; fix = VECT_MATH MULTIPLY ×5.8 + cf_m_skin_head_01_BumpMap_converted.png; isolated-copy render verification: face (0.58,0.51,0.49) grey → (0.80,0.68,0.65) warm, consistent with torso (0.75,0.61,0.55)
-- Note: this chapter is cross-session 3D-modeling experience (HS2 → Blender → VRM), unrelated to the PebbleAgent codebase itself; a separate chapter for future AI retrieval
 
 2026-10-03: WebSocket message-size limit removed + disconnect fake-death fix (image-send stuck at "loading" incident)
 - Incident: after sending an image the UI stuck at "Agent is responding..." forever; the message never reached the server (sessions.db evidence: incident conversation fa716f99 message_count=0, no message rows, title not updated — handle_prompt_submit never called)

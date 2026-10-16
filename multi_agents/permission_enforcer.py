@@ -38,12 +38,12 @@ class PermissionEnforcer:
     可在多个 Agent 实例间共享。线程不安全——每个 event loop 创建独立实例。
     
     使用方式:
-        enforcer = PermissionEnforcer(project_path="E:\\agentspace")
+        enforcer = PermissionEnforcer(project_path="/path/to/project")
         allowed, reason, audit = await enforcer.check("write_file", {"path": "..."}, context)
     """
     
-    def __init__(self, project_path: str = "E:\\agentspace"):
-        self._current_project_path = project_path
+    def __init__(self, project_path: str = ""):
+        self._current_project_path = project_path or os.getcwd()
         self._permission_manager = None
         self._audit_logger = None
         self._path_whitelist: List[str] = []

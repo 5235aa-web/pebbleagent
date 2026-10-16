@@ -2,7 +2,7 @@
 
 <img src="assets/logo.png" alt="PEBBLE-AGENT" width="720">
 
-**An open-source, extensible desktop AI agent with tools, skills, MCP servers, and a self-maintained code knowledge graph.**
+**An open-source, extensible desktop AI agent with tools, skills, MCP servers, and a self-maintained code knowledge base.**
 
 [![License: AGPL-3.0](https://img.shields.io/badge/License-AGPL--3.0-CE93D8?style=flat-square&labelColor=1f1f1f)](LICENSE)
 [![Python 3.10+](https://img.shields.io/badge/Python-3.10%2B-44AAFF?style=flat-square&labelColor=1f1f1f)](https://www.python.org/)
@@ -18,7 +18,7 @@
 - **Built-in tool system.** File read/write/edit, search, shell commands, to-do tracking, and clarifying questions, each audited and gated by the permission layer.
 - **Snapshot & rollback.** File changes are tracked with diffs, so you can roll back a single file or all changes at once.
 - **On-demand skills.** 100+ bundled skill folders covering design, debugging, TDD, Office documents, 3D workflows, and more, loaded only when a task needs them.
-- **Code Knowledge Graph (CKGD).** The agent indexes your repository into a chaptered knowledge graph, verifies it against the source, and keeps it in sync as the project evolves.
+- **Code Knowledge Base (CKB).** The agent indexes your repository into a chaptered knowledge base, verifies it against the source, and keeps it in sync as the project evolves.
 - **Cross-session memory.** Persistent agent memory and user notes are injected into context, so preferences and project facts survive between sessions.
 - **Context compaction.** Automatic and manual compaction summarize long conversations without losing the thread, and folded history stays inspectable.
 - **Real-time cost tracking.** Per-model pricing with peak/off-peak tiers and cache-hit accounting, updated live per conversation.
@@ -116,7 +116,7 @@ gateway/          Python WebSocket gateway (JSON-RPC, sessions, permissions)
 multi_agents/     Agent core (chat service, tool orchestration, memory, snapshots)
 tools/            Built-in tools
 skills/           Bundled skills
-knowledgesource/  Code knowledge graph (chaptered)
+knowledgesource/  Code knowledge base (chaptered)
 ui-gui-vue3/      Vue 3 frontend + Tauri 2 desktop shell
 ```
 

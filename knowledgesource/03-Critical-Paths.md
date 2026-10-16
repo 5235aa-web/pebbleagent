@@ -77,7 +77,7 @@ Agent: receives comments → read_file → edit_file(search_block) → file modi
   → loop until user clicks "Accept"
 
 Key files: feedbackBridgeContent.ts (inlined CSS/JS), comment.ts (Pinia store)
-Backend addition: server.py file.read_text method (fallback path: _PROJECT_ROOT → E:/agentspace)
+Backend addition: server.py file.read_text method (fallback path: _PROJECT_ROOT)
 Note: the _os variable trap — file.read_text executes before file.read_base64's "import os as _os", so a top-level import os must be used
 ```
 
