@@ -12,6 +12,8 @@
 
 </div>
 
+> **Platform support:** Windows 10/11 (64-bit) only, for now. The app and its backend rely on Windows APIs (process management, UI automation, packaging), so Linux and macOS are not supported yet.
+
 ## Features
 
 - **Streaming agent chat with full execution visibility.** Reasoning, tool calls, file changes, and results unfold as a step-by-step timeline instead of a black box.
@@ -46,7 +48,7 @@ flowchart LR
 
 ### Prerequisites
 
-- Windows 10/11
+- Windows 10/11 (64-bit), the only supported platform for now
 - Python 3.10+
 - Node.js 18+ (for the frontend and npx-based MCP servers)
 - Rust toolchain (only needed to build the desktop shell)
@@ -113,7 +115,7 @@ All runtime data lives in `%USERPROFILE%\.pebble\` (override with the `PEBBLE_HO
 
 ```
 gateway/          Python WebSocket gateway (JSON-RPC, sessions, permissions)
-agent_core/     Agent core (chat service, tool orchestration, memory, snapshots)
+agent_core/       Agent core (chat service, tool orchestration, memory, snapshots)
 tools/            Built-in tools
 skills/           Bundled skills
 knowledgesource/  Code knowledge base (chaptered)
