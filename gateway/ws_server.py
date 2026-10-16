@@ -6,14 +6,17 @@ suitable for the GUI frontend.
 """
 
 import asyncio
+import hmac
 import json
 import logging
 import os
+import secrets
 import sys
 import threading
 import time
 import uuid
 from typing import Any, Optional
+from urllib.parse import parse_qs, urlparse
 
 import websockets
 from websockets.server import WebSocketServer
@@ -28,9 +31,115 @@ logger = logging.getLogger("ws-gateway")
 # ===== Project root (same as gateway.server) =====
 from pathlib import Path
 _PROJECT_ROOT = Path(__file__).resolve().parent.parent
+_DATA_HOME = os.environ.get("PEBBLE_HOME") or os.path.join(os.path.expanduser("~"), ".pebble")
+
+# ===== Authentication & limits =====
+# Token is generated on first run and persisted to ~/.pebble/gateway.token
+# (delete the file to rotate). Every client must present it via the query
+# string (?token=...) or the X-Pebble-Token header. Origin is checked as a
+# second line of defense for browser clients; non-browser local clients that
+# send no Origin header pass the token check only.
+_ALLOWED_ORIGINS = {
+    "http://localhost:5174",
+    "http://127.0.0.1:5174",
+    "http://tauri.localhost",
+    "tauri://localhost",
+}
+_MAX_CONNECTIONS = 8
+_MAX_MESSAGE_SIZE = 128 * 1024 * 1024  # 128 MiB, replaces the previous max_size=None
+
+# Payload limits (memory-exhaustion guard)
+_MAX_TEXT_CHARS = 2 * 1024 * 1024                 # ~2M chars of prompt text
+_MAX_ATTACHMENTS = 20                             # aligned with frontend useFileDrop MAX_COUNT
+_MAX_ATTACHMENT_B64_CHARS = 14 * 1024 * 1024      # ~10 MiB decoded, aligned with frontend MAX_SIZE
+_MAX_TOTAL_ATTACHMENT_B64_CHARS = 100 * 1024 * 1024
+
+_gateway_token: str = ""
+
+
+def _load_or_create_gateway_token() -> str:
+    """Load the persisted gateway token, generating one on first run."""
+    os.makedirs(_DATA_HOME, exist_ok=True)
+    token_path = os.path.join(_DATA_HOME, "gateway.token")
+    try:
+        if os.path.exists(token_path):
+            with open(token_path, "r", encoding="utf-8") as f:
+                token = f.read().strip()
+            if token:
+                return token
+    except Exception as e:
+        logger.warning(f"[WS] Failed to read gateway token: {e}")
+    token = secrets.token_urlsafe(32)
+    try:
+        with open(token_path, "w", encoding="utf-8") as f:
+            f.write(token)
+        try:
+            os.chmod(token_path, 0o600)  # best effort on Windows
+        except Exception:
+            pass
+    except Exception as e:
+        logger.warning(f"[WS] Failed to persist gateway token: {e}")
+    return token
+
+
+def _extract_ws_token(ws) -> str:
+    """Extract the auth token from the request (query string or header)."""
+    try:
+        request = ws.request
+        path = getattr(request, "path", "") or ""
+        qs = parse_qs(urlparse(path).query)
+        token = (qs.get("token") or [""])[0]
+        if token:
+            return token
+        headers = getattr(request, "headers", None)
+        if headers is not None:
+            return headers.get("X-Pebble-Token", "") or ""
+    except Exception:
+        pass
+    return ""
+
+
+def _extract_ws_origin(ws) -> Optional[str]:
+    """Extract the Origin header of the request (None for non-browser clients)."""
+    try:
+        headers = getattr(ws.request, "headers", None)
+        if headers is not None:
+            return headers.get("Origin")
+    except Exception:
+        pass
+    return None
+
+
+def _check_payload_limits(text: str, attachments: Any) -> Optional[str]:
+    """Return an error message when a prompt payload exceeds the limits, else None."""
+    if isinstance(text, str) and len(text) > _MAX_TEXT_CHARS:
+        return f"text too large ({len(text)} chars, limit {_MAX_TEXT_CHARS})"
+    if not attachments:
+        return None
+    if not isinstance(attachments, list):
+        return "attachments must be a list"
+    if len(attachments) > _MAX_ATTACHMENTS:
+        return f"too many attachments ({len(attachments)}, limit {_MAX_ATTACHMENTS})"
+    total = 0
+    for i, att in enumerate(attachments):
+        if not isinstance(att, dict):
+            return f"attachment[{i}] must be an object"
+        b64 = att.get("data_base64") or ""
+        if not isinstance(b64, str):
+            return f"attachment[{i}].data_base64 must be a string"
+        if len(b64) > _MAX_ATTACHMENT_B64_CHARS:
+            return f"attachment[{i}] too large ({len(b64)} base64 chars, limit {_MAX_ATTACHMENT_B64_CHARS})"
+        total += len(b64)
+        text_content = att.get("text_content")
+        if isinstance(text_content, str) and len(text_content) > _MAX_TEXT_CHARS:
+            return f"attachment[{i}].text_content too large"
+    if total > _MAX_TOTAL_ATTACHMENT_B64_CHARS:
+        return f"attachments total too large ({total} base64 chars, limit {_MAX_TOTAL_ATTACHMENT_B64_CHARS})"
+    return None
+
 
 # ===== Active connections =====
-_connections: set[websockets.WebSocketServerProtocol] = set()
+_connections: set = set()
 
 # ===== Running prompt tasks =====
 _prompt_tasks: dict[str, threading.Thread] = {}
@@ -38,7 +147,7 @@ _prompt_tasks: dict[str, threading.Thread] = {}
 class WebSocketWriter:
     """Wraps a websocket connection to provide write_event() compatible with handle_prompt_submit."""
 
-    def __init__(self, ws: websockets.WebSocketServerProtocol):
+    def __init__(self, ws):
         self.ws = ws
         self._send_failed = False  # 断线后事件会被丢弃：每个请求只记一次日志（防刷屏），前端重连后自行恢复
 
@@ -111,9 +220,26 @@ def _prompt_worker(sid: str, text: str, writer: WebSocketWriter, attachments: li
             # 线程崩溃不再静默：完整记录堆栈（曾发生数据库异常导致线程无声死亡）
             logger.exception(f"[WS] _prompt_worker crashed for session {sid}")
 
-async def handle_ws(ws: websockets.WebSocketServerProtocol):
+async def handle_ws(ws):
     """Handle a single WebSocket connection."""
     global _loop
+
+    # --- Authentication: Origin whitelist (browsers) + mandatory token ---
+    origin = _extract_ws_origin(ws)
+    if origin is not None and origin not in _ALLOWED_ORIGINS:
+        logger.warning(f"[WS] Rejected connection from disallowed origin: {origin}")
+        await ws.close(code=4403, reason="origin not allowed")
+        return
+    presented = _extract_ws_token(ws)
+    if not presented or not _gateway_token or not hmac.compare_digest(presented, _gateway_token):
+        logger.warning(f"[WS] Rejected unauthenticated connection from {ws.remote_address}")
+        await ws.close(code=4401, reason="unauthorized")
+        return
+    if len(_connections) >= _MAX_CONNECTIONS:
+        logger.warning(f"[WS] Rejected connection: too many active connections ({len(_connections)})")
+        await ws.close(code=4429, reason="too many connections")
+        return
+
     _loop = asyncio.get_running_loop()
 
     _connections.add(ws)
@@ -156,6 +282,22 @@ async def handle_ws(ws: websockets.WebSocketServerProtocol):
                 text = params.get("text", "")
                 attachments = params.get("attachments", None)
                 project_path = params.get("project_path", None)
+
+                # Payload limits (DoS guard); reject before any further work
+                guard_err = _check_payload_limits(text, attachments)
+                if guard_err:
+                    logger.warning(f"[WS] prompt.submit rejected: {guard_err}")
+                    if rid:
+                        await ws.send(json.dumps({
+                            "id": rid, "result": {"ok": False, "error": guard_err},
+                        }, ensure_ascii=False))
+                    await ws.send(json.dumps({
+                        "jsonrpc": "2.0",
+                        "method": "event",
+                        "params": {"type": "prompt.rejected", "payload": {"reason": guard_err}},
+                    }, ensure_ascii=False))
+                    continue
+
                 if not text and not attachments:
                     if rid:
                         await ws.send(json.dumps({
@@ -202,9 +344,12 @@ async def handle_ws(ws: websockets.WebSocketServerProtocol):
         _connections.discard(ws)
 
 async def main(host: str = "127.0.0.1", port: int = 19876):
-    global _loop, _mcp_init_task
+    global _loop, _mcp_init_task, _gateway_token
     _loop = asyncio.get_running_loop()
     set_ws_loop(_loop)
+
+    _gateway_token = _load_or_create_gateway_token()
+    logger.info(f"[WS] Gateway token loaded from {os.path.join(_DATA_HOME, 'gateway.token')} (delete the file to rotate)")
 
     logger.info(f"[WS] Starting WebSocket gateway on ws://{host}:{port}")
 
@@ -251,9 +396,10 @@ async def main(host: str = "127.0.0.1", port: int = 19876):
     # 后台启动 MCP 自动初始化
     _mcp_init_task = asyncio.create_task(_init_mcp_background())
 
-    # max_size=None: disable the per-message size limit (websockets default 1 MiB
-    # rejects prompt.submit with large image attachments as base64, close code 1009)
-    async with websockets.serve(handle_ws, host, port, ping_interval=30, ping_timeout=10, max_size=None):
+    # max_size: allow large prompt.submit messages with base64 image attachments
+    # (websockets default 1 MiB rejects them with close code 1009); the real
+    # guard is _check_payload_limits plus the connection cap above.
+    async with websockets.serve(handle_ws, host, port, ping_interval=30, ping_timeout=10, max_size=_MAX_MESSAGE_SIZE):
         await asyncio.Future()  # run forever
 
 def run_server(host: str = "127.0.0.1", port: int = 19876):

@@ -4,7 +4,7 @@
 
 ```
 1. InputArea.vue → gateway.store.sendMessage(text)
-2. WebSocket "prompt.submit" → ws_server.py:handle_ws()
+2. WebSocket "prompt.submit" (token-authenticated since 2026-10-16: ?token= / X-Pebble-Token; payload limits enforced) → ws_server.py:handle_ws()
 3. Background thread → server.py:handle_prompt_submit(sid, text, write_event)  --L1269
 4. Read llm_providers.json for temperature/top_p/reasoning_effort/thinking_enabled  --L1280
 5. service.chat_stream(agent_name, message, ...)  --L1320
@@ -34,7 +34,7 @@ Load: gateway.ts setupConnection() → configStore.loadProvidersFromBackend()
   Note: called on startup (2026-07)
 ```
 
-### Path 3: WebSocket Event Types (15)
+### Path 3: WebSocket Event Types (16)
 
 ```
 message.delta → streaming text
@@ -52,6 +52,7 @@ message.usage → token usage
 user_message.saved → user message saved
 session.updated → title updated
 gateway.ready → connection ready
+prompt.rejected → prompt payload exceeded limits (2026-10-16)
 ```
 
 ### Path 4: HTML Interactive Comment Loop (added 2026-07-13)
@@ -65,8 +66,9 @@ Agent generates HTML → write_file(project relative path/xxx.html)
 Frontend: contentParser detects @pebble-file → type='html-file' block
   → MessageContent renders <HtmlPreview :file-path="xxx.html" />
   → HtmlPreview.watch(filePath) → loadFromFile()
-  → RPC file.read_text(projectPath + filePath) → resolvedContent → srcdoc=file content
-  → iframe render + feedback-bridge injection + feedback layer activation
+  → RPC file.read_text(projectPath + filePath) → resolvedContent
+  → srcdoc assembled (buildSrcdoc: meta CSP + preview bridge + feedback engine inlined)
+  → sandboxed iframe render (sandbox="allow-scripts", opaque origin) + feedback layer activation via postMessage
     │
 User: clicks element in iframe → comment popup → save
   → postMessage → comment store
@@ -76,8 +78,9 @@ Agent: receives comments → read_file → edit_file(search_block) → file modi
   → ask_user_question again → pendingClarify changes → HtmlPreview re-reads → refresh
   → loop until user clicks "Accept"
 
-Key files: feedbackBridgeContent.ts (inlined CSS/JS), comment.ts (Pinia store)
-Backend addition: server.py file.read_text method (fallback path: _PROJECT_ROOT)
+Key files: feedbackBridgeContent.ts (inlined CSS/JS), previewBridgeContent.ts (height/capture/theme bridge, 2026-10-16), comment.ts (Pinia store)
+Backend addition: server.py file.read_text method (project-boundary/whitelist guard since 2026-10-16)
+Security note (2026-10-16): preview runs sandboxed without allow-same-origin — the host and the preview communicate only via postMessage (source-checked); PNG capture executes inside the iframe and returns a dataURL
 Note: the _os variable trap — file.read_text executes before file.read_base64's "import os as _os", so a top-level import os must be used
 ```
 

@@ -96,13 +96,16 @@ class PermissionEnforcer:
     # ==================== 路径边界检查 ====================
     
     def is_path_in_project(self, resolved_path: str) -> bool:
-        """检查解析后的路径是否在项目目录内"""
+        """检查解析后的路径是否在项目目录内（commonpath 组件级比较，防前缀穿越）"""
         if not resolved_path:
             return True
         try:
-            abs_path = os.path.abspath(resolved_path)
-            abs_project = os.path.abspath(self._current_project_path)
-            return abs_path.lower().startswith(abs_project.lower())
+            abs_path = os.path.realpath(resolved_path)
+            abs_project = os.path.realpath(self._current_project_path)
+            common = os.path.commonpath([os.path.normcase(abs_path), os.path.normcase(abs_project)])
+            return common == os.path.normcase(abs_project)
+        except ValueError:
+            return False
         except Exception:
             return False
     
@@ -213,19 +216,18 @@ class PermissionEnforcer:
             "resolved_path": ""
         }
         
-        # 1. 检查是否需要权限检查
+        # 1. 检查是否需要权限检查（未知工具不再默认放行：MCP/未知工具走询问）
         try:
-            from .tool_permission import is_tool_restricted, get_tool_permission_info, needs_path_boundary_check
-            
-            if not is_tool_restricted(tool_name):
-                audit_info["decision_source"] = "no_restriction"
-                return True, "Tool does not require permission check", audit_info
-            
+            from .tool_permission import get_tool_permission_info, needs_path_boundary_check
+
             perm_info = get_tool_permission_info(tool_name, args)
             audit_info["permission_type"] = perm_info.permission_type
             audit_info["content"] = perm_info.content
             audit_info["target"] = perm_info.target
-            
+            if perm_info.decision_source == "no_restriction":
+                audit_info["decision_source"] = "no_restriction"
+                return True, "Tool does not require permission check", audit_info
+
         except ImportError as e:
             logger.warning(f"[PermissionEnforcer] tool_permission not available: {e}")
             audit_info["decision_source"] = "module_unavailable"

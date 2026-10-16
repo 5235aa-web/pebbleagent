@@ -37,7 +37,7 @@ class PowerShellTool(BaseTool[Dict[str, Any], str]):
         "required": ["command"]
     }
     requires_permission = True
-    danger_level = "medium"
+    danger_level = "high"
     parallel_safe = False
     
     def validate_input(self, **kwargs) -> Dict[str, Any]:

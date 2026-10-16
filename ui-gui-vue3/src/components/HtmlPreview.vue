@@ -5,19 +5,47 @@ import Tooltip from'./Tooltip.vue'
 import{useGatewayStore}from'../stores/gateway'
 import{useCommentStore,type HtmlComment}from'../stores/comment'
 import{FEEDBACK_CSS,FEEDBACK_JS}from'./feedbackBridgeContent'
+import{PREVIEW_CORE_JS}from'./previewBridgeContent'
 import{useConfigStore}from'../stores/config'
-import{toPng}from'html-to-image'
+import htmlToImageCode from 'html-to-image/dist/html-to-image.js?raw'
 const gs=useGatewayStore();const cs=useCommentStore();const cfg=useConfigStore()
 // console.log('[HtmlPreview] COMPONENT INIT, projectPath=',cfg.projectPath) // 调试
 
 const p=defineProps<{htmlContent?:string;isStreaming?:boolean;filePath?:string}>()
 // console.log('[HtmlPreview] PROPS: filePath=',p.filePath,'htmlContent=',p.htmlContent?p.htmlContent.slice(0,80):'(none)','isStreaming=',p.isStreaming) // 调试
 
-const cl=ref(true);const vm=ref<'preview'|'code'>('preview');const cp=ref(false);const ps=ref(false);const psMsg=ref('');const isTauri=!!(window as any).__TAURI__
+const cl=ref(true);const vm=ref<'preview'|'code'>('preview');const cp=ref(false);const ps=ref(false);const psMsg=ref('');const isTauri=typeof window!=='undefined'&&'__TAURI_INTERNALS__' in window
 const br=ref<HTMLDivElement|null>(null);const ir=ref<HTMLIFrameElement|null>(null);const sr=ref<HTMLDivElement|null>(null)
 const bh=ref('0px');const sl=ref(0);const sw=ref(0);const cw=ref(0)
-const fbInjected=ref(false);const fbActive=ref(false);const resolvedContent=ref('')
+const fbActive=ref(false);const resolvedContent=ref('')
 const FILE_RE=/<!--\s*@pebble-file:\s*(\S+)\s*-->/
+// ===== 预览沙箱（2026-10-16 安全加固）=====
+// iframe 不带 allow-same-origin（不透明源）：预览脚本无法触达宿主 DOM/storage/WS。
+// 宿主与预览仅通过 postMessage 通信；注入的 meta CSP 比主文档更严（connect-src 'none'），
+// 预览页不能联网、提交表单或嵌套 iframe。
+const PREVIEW_CSP="default-src 'none'; script-src 'unsafe-inline' 'unsafe-eval' https:; style-src 'unsafe-inline' https:; img-src data: blob: https: http:; font-src data: https:; media-src data: blob: https:; connect-src 'none'; frame-src 'none'; object-src 'none'; base-uri 'none'; form-action 'none'"
+function escScript(s:string):string{return s.replace(/<\/script/gi,'<\\/script')}
+function injectHead(html:string,head:string):string{
+  const m=html.match(/^\s*<!doctype[^>]*>/i)
+  if(m)return html.slice(0,m[0].length)+head+html.slice(m[0].length)
+  const h=html.match(/<head[^>]*>/i)
+  if(h)return html.replace(h[0],h[0]+head)
+  return head+html
+}
+function injectTail(html:string,tail:string):string{
+  const b=html.match(/<\/body\s*>/i)
+  if(b&&b.index!==undefined)return html.slice(0,b.index)+tail+html.slice(b.index)
+  const h=html.match(/<\/html\s*>/i)
+  if(h&&h.index!==undefined)return html.slice(0,h.index)+tail+html.slice(h.index)
+  return html+tail
+}
+function buildSrcdoc(raw:string):string{
+  const head='<meta http-equiv="Content-Security-Policy" content="'+PREVIEW_CSP+'">'
+  const scripts='<script>window.__PEBBLE_FEEDBACK_CSS='+escScript(JSON.stringify(FEEDBACK_CSS))+'<\/script>'
+    +'<script>'+escScript(htmlToImageCode)+'<\/script>'
+    +'<script>'+escScript(PREVIEW_CORE_JS+'\n'+FEEDBACK_JS)+'<\/script>'
+  return injectHead(injectTail(raw,scripts),head)
+}
 
 const effectiveFilePath=computed(()=>{
   if(p.filePath){/*console.log('[HtmlPreview] effectiveFilePath from prop:',p.filePath);*/return p.filePath}
@@ -53,7 +81,7 @@ const ic=computed(()=>{
   else if(effectiveFilePath.value){result='<html><body style="display:flex;align-items:center;justify-content:center;height:100vh;font-family:sans-serif;color:#888;background:#f5f5f5"><p>Loading...</p></body></html>'}
   else{result='<html><body></body></html>'}
   // console.log('[HtmlPreview] ic: len=',result.length,'fromFile=',!!resolvedContent.value,'first120=',result.slice(0,120)) // 调试
-  return result
+  return buildSrcdoc(result)
 })
 
 watch(effectiveFilePath,(nv,ov)=>{/*console.log('[HtmlPreview] watch filePath:',ov,'->',nv);*/if(nv)setTimeout(loadFromFile,500)},{immediate:true})
@@ -61,13 +89,21 @@ watch(()=>gs.pendingClarify,(nv,ov)=>{/*console.log('[HtmlPreview] watch pending
 // watch(resolvedContent,(nv)=>{console.log('[HtmlPreview] resolvedContent changed len=',nv.length,'title=',(nv.match(/<title>(.*?)<\/title>/)||[])[1],'bodyBg=',(nv.match(/background:\s*([^;]+)/)||[])[1])}) // 调试
 
 function copyCSS(){cp.value=true;navigator.clipboard.writeText(ic.value);setTimeout(()=>cp.value=false,2000)}
+// ===== 截图请求（iframe 内执行，postMessage 回传；跨源后宿主无法读取其 DOM）=====
+let _capSeq=0;let _capPending:{id:string;resolve:(v:string)=>void;reject:(e:Error)=>void;timer:number}|null=null
+function requestCapture(i:HTMLIFrameElement):Promise<string>{
+  return new Promise((resolve,reject)=>{
+    const id='cap_'+(++_capSeq)
+    const timer=window.setTimeout(()=>{if(_capPending&&_capPending.id===id){_capPending=null;reject(new Error('capture timeout'))}},15000)
+    _capPending={id,resolve,reject,timer}
+    i.contentWindow!.postMessage({type:'pebble-preview-capture',id},'*')
+  })
+}
 async function downloadPng(){
-  const i=ir.value;if(!i)return
+  const i=ir.value;if(!i?.contentWindow)return
   try{
-    const d=i.contentDocument||i.contentWindow?.document;if(!d?.body)return
     ps.value=true;psMsg.value='rendering...'
-    const el=(d.querySelector('.poster')||d.body)as HTMLElement
-    const url=await toPng(el,{pixelRatio:2,backgroundColor:'#000'})
+    const url=await requestCapture(i)
     const fname=(effectiveFilePath.value||'poster').replace('.html','')+'.png'
     if(isTauri){
       // 桌面版：经后端 RPC 写入项目目录（复用 WS 通道；路径由后端基于当前项目解析）
@@ -86,23 +122,27 @@ async function downloadPng(){
   }
 }
 function uh(){const c=sr.value;if(!c)return;sl.value=c.scrollLeft;sw.value=c.scrollWidth;cw.value=c.clientWidth}
-function ah(){const i=ir.value;if(!i)return;try{const d=i.contentDocument||i.contentWindow?.document;if(!d?.documentElement)return;const h=d.documentElement.scrollHeight;if(h>100)i.style.height=h+'px'}catch{}}
-function es(){const i=ir.value;if(!i)return;try{const d=i.contentDocument||i.contentWindow?.document;if(!d?.head)return;if(d.getElementById('__pebble_scroll'))return;const s=d.createElement('style');s.id='__pebble_scroll';s.textContent=['html, body { overflow: clip !important; height: auto !important; }','* { max-height: none !important; }','body { min-width: 800px !important; }'].join(' ');d.head.appendChild(s)}catch{}}
-function fp(){es();requestAnimationFrame(()=>{ah();requestAnimationFrame(()=>{if(br.value)bh.value=br.value.scrollHeight+'px';uh();setTimeout(uh,50);setTimeout(uh,150);setTimeout(uh,300)})})}
-function onLoad(){/*const i=ir.value;const doc=i?.contentDocument||i?.contentWindow?.document;console.log('[HtmlPreview] iframe onLoad title=',doc?.title,'bodyLen=',doc?.body?.innerHTML?.length,'bodyBg=',doc?.body?getComputedStyle(doc.body).backgroundColor:'')*/;if(!cl.value){fp();setTimeout(()=>uh(),200);setTimeout(()=>uh(),500)};tryInjectFeedback()}
-function tc(){if(cl.value){cl.value=false;requestAnimationFrame(()=>{if(br.value)bh.value=br.value.scrollHeight+'px'});tryInjectFeedback()}else{if(br.value){const h=br.value.scrollHeight;bh.value=h+'px';requestAnimationFrame(()=>bh.value='0px')};setTimeout(()=>cl.value=true,350)}}
+// 高度与样式由 iframe 内桥接脚本上报/注入（跨源后宿主不可直接测量其 DOM）
+function fp(){requestAnimationFrame(()=>{if(br.value)bh.value=br.value.scrollHeight+'px';uh();setTimeout(uh,50);setTimeout(uh,150);setTimeout(uh,300)})}
+function onLoad(){if(!cl.value){fp();setTimeout(()=>uh(),200);setTimeout(()=>uh(),500)};tryActivateFeedback()}
+function tc(){if(cl.value){cl.value=false;requestAnimationFrame(()=>{if(br.value)bh.value=br.value.scrollHeight+'px'});tryActivateFeedback()}else{if(br.value){const h=br.value.scrollHeight;bh.value=h+'px';requestAnimationFrame(()=>bh.value='0px')};setTimeout(()=>cl.value=true,350)}}
 watch(()=>[cl.value,ic.value],()=>{if(!cl.value)fp()})
 
 function canActivateFeedback(){return !!(effectiveFilePath.value&&!p.isStreaming&&ir.value)}
-function injectFeedbackBridge(){const i=ir.value;if(!i||fbInjected.value)return;/*console.log('[HtmlPreview] injectFeedbackBridge...');*/try{const d=i.contentDocument||i.contentWindow?.document;if(!d?.head||!d?.body)return;const rs=getComputedStyle(document.documentElement);const accent=rs.getPropertyValue('--accent').trim()||'#2563eb';const text=rs.getPropertyValue('--text').trim()||'#1a1a1a';const textBody=rs.getPropertyValue('--text-body').trim()||'#666';const bgCard=rs.getPropertyValue('--bg-card').trim()||'#fff';const bgInput=rs.getPropertyValue('--bg-input').trim()||'#f5f5f5';const bgHover=rs.getPropertyValue('--bg-hover').trim()||'#f0f0f0';const border=rs.getPropertyValue('--border-subtle').trim()||'#e0e0e0';const font=rs.getPropertyValue('--font-mono').trim()||'';const vars=d.createElement('style');vars.textContent=':root{--fb-accent:'+accent+';--fb-text:'+text+';--fb-text-body:'+textBody+';--fb-bg-card:'+bgCard+';--fb-bg-input:'+bgInput+';--fb-bg-hover:'+bgHover+';--fb-border:'+border+';--fb-font:'+font+'}';d.head.appendChild(vars);const st=d.createElement('style');st.textContent=FEEDBACK_CSS;d.head.appendChild(st);const sc=d.createElement('script');sc.textContent=FEEDBACK_JS;d.body.appendChild(sc);fbInjected.value=true;/*console.log('[HtmlPreview] injectFeedbackBridge OK')*/}catch(e){/*console.warn('[HtmlPreview] inject error:',e)*/}}
-function activateFeedback(){if(!fbInjected.value)return;fbActive.value=true;const i=ir.value;if(!i?.contentWindow)return;i.contentWindow.postMessage({type:'pebble-feedback-activate'},'*')}
-function tryInjectFeedback(){if(!canActivateFeedback())return;injectFeedbackBridge();setTimeout(()=>{if(canActivateFeedback())activateFeedback()},200)}
-function handleFbMessage(e:MessageEvent){if(!e.data||typeof e.data!=='object')return;if(e.data.type==='pebble-feedback-update'&&Array.isArray(e.data.comments)){/*console.log('[HtmlPreview] feedback-update comments=',e.data.comments.length);*/cs.clearComments();(e.data.comments as HtmlComment[]).forEach(c=>cs.addComment(c))}}
+// 评论引擎与 CSS 已随 srcdoc 注入（桥接脚本）；激活时把主题变量发给 iframe
+function activateFeedback(){const i=ir.value;if(!i?.contentWindow)return;const rs=getComputedStyle(document.documentElement);const vars:Record<string,string>={'--fb-accent':rs.getPropertyValue('--accent').trim()||'#2563eb','--fb-text':rs.getPropertyValue('--text').trim()||'#1a1a1a','--fb-text-body':rs.getPropertyValue('--text-body').trim()||'#666','--fb-bg-card':rs.getPropertyValue('--bg-card').trim()||'#fff','--fb-bg-input':rs.getPropertyValue('--bg-input').trim()||'#f5f5f5','--fb-bg-hover':rs.getPropertyValue('--bg-hover').trim()||'#f0f0f0','--fb-border':rs.getPropertyValue('--border-subtle').trim()||'#e0e0e0','--fb-font':rs.getPropertyValue('--font-mono').trim()||''};i.contentWindow.postMessage({type:'pebble-feedback-activate',vars},'*');fbActive.value=true}
+function tryActivateFeedback(){if(!canActivateFeedback())return;activateFeedback()}
+// 预览 iframe 消息统一入口（校验来源窗口身份；不透明源下 e.origin 为 "null"）
+function handlePreviewMessage(e:MessageEvent){const i=ir.value;if(!i||e.source!==i.contentWindow)return;const d=e.data as Record<string,unknown>|undefined;if(!d||typeof d!=='object')return;const t=d.type as string
+  if(t==='pebble-preview-height'){const h=Number(d.height)||0;if(h>100){i.style.height=h+'px';if(!cl.value&&br.value)bh.value=br.value.scrollHeight+'px'}}
+  else if(t==='pebble-preview-capture-result'){const p=_capPending;if(p&&d.id===p.id){_capPending=null;window.clearTimeout(p.timer);if(d.ok&&typeof d.dataUrl==='string')p.resolve(d.dataUrl);else p.reject(new Error(String(d.error||'capture failed')))}}
+  else if(t==='pebble-feedback-update'&&Array.isArray(d.comments)){cs.clearComments();(d.comments as HtmlComment[]).forEach(c=>cs.addComment(c))}
+}
 function handleFileChange(e:Event){const d=(e as CustomEvent).detail;/*console.log('[HtmlPreview] file-change path=',d?.path);*/if(!d?.path||!effectiveFilePath.value)return;const rp=d.path.replace(/\\/g,'/');if(rp.endsWith('/'+effectiveFilePath.value)||effectiveFilePath.value===rp||rp===buildFullPath()){reloadIframe()}}
-function reloadIframe(){/*console.log('[HtmlPreview] reloadIframe');*/fbInjected.value=false;fbActive.value=false;cs.clearComments();loadFromFile()}
+function reloadIframe(){fbActive.value=false;cs.clearComments();loadFromFile()}
 
-onMounted(()=>{/*console.log('[HtmlPreview] onMounted');*/window.addEventListener('message',handleFbMessage);window.addEventListener('gateway:file-change',handleFileChange)})
-onUnmounted(()=>{/*console.log('[HtmlPreview] onUnmounted');*/window.removeEventListener('message',handleFbMessage);window.removeEventListener('gateway:file-change',handleFileChange)})
+onMounted(()=>{window.addEventListener('message',handlePreviewMessage);window.addEventListener('gateway:file-change',handleFileChange)})
+onUnmounted(()=>{window.removeEventListener('message',handlePreviewMessage);window.removeEventListener('gateway:file-change',handleFileChange)})
 </script>
 
 <template><div class="ht-card"><div class="ht-inner" :class="{'is-open':!cl}">
@@ -120,5 +160,5 @@ onUnmounted(()=>{/*console.log('[HtmlPreview] onUnmounted');*/window.removeEvent
 <span class="ht-status">{{vm==='preview'?'preview':'source'}}</span>
 <span class="svg-arrow" :class="{open:!cl}"><svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><polyline points="6 9 12 15 18 9"/></svg></span></div>
 <div ref="br" class="ht-body" :style="{maxHeight:cl?'0px':bh||'400px'}">
-<div v-if="vm==='preview'" class="ht-preview-wrapper"><div ref="sr" class="ht-frame-scroll" @scroll="uh"><iframe ref="ir" class="ht-frame" :srcdoc="ic" sandbox="allow-scripts allow-same-origin" title="HTML preview" @load="onLoad"/></div></div>
+<div v-if="vm==='preview'" class="ht-preview-wrapper"><div ref="sr" class="ht-frame-scroll" @scroll="uh"><iframe ref="ir" class="ht-frame" :srcdoc="ic" sandbox="allow-scripts" title="HTML preview" @load="onLoad"/></div></div>
 <pre v-else class="ht-code">{{ic}}</pre></div></div></div></template>

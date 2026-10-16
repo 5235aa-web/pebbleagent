@@ -169,10 +169,29 @@ class PermissionAuditLogger:
         
         logger.info(f"[PermissionAudit] Database initialized: {self.db_path}")
     
+    # ===== 完整性校验（v2：覆盖全部安全字段；旧记录无版本前缀，仅提示不计失败）=====
+    _CHECKSUM_FIELDS = (
+        "timestamp", "event_type", "session_id", "conversation_uuid", "agent_name",
+        "tool_name", "tool_args", "permission_type", "permission_level",
+        "target", "content", "project_path", "resolved_path",
+        "decision_source", "allowed", "rule_matched", "user_response_time_ms",
+        "reason", "error_message", "extra",
+    )
+
+    @staticmethod
+    def _normalize_bool_str(value) -> str:
+        """统一 bool 表示：内存中的 True/False 与 DB 中的 1/0 归一为 '1'/'0'"""
+        try:
+            return "1" if bool(int(value)) else "0"
+        except (TypeError, ValueError):
+            return "1" if value else "0"
+
     def _compute_checksum(self, event: AuditEvent) -> str:
-        """计算事件校验和（防止篡改）"""
-        data = f"{event.timestamp}|{event.event_type}|{event.session_id}|{event.tool_name}|{event.target}|{event.allowed}"
-        return hashlib.sha256(data.encode()).hexdigest()[:16]
+        """计算事件校验和（覆盖全部安全字段，v2 格式，防篡改）"""
+        payload = {f: getattr(event, f, "") for f in self._CHECKSUM_FIELDS}
+        payload["allowed"] = self._normalize_bool_str(payload["allowed"])
+        data = json.dumps(payload, ensure_ascii=False, sort_keys=True, default=str)
+        return "v2:" + hashlib.sha256(data.encode("utf-8")).hexdigest()[:32]
     
     def log_event(self, event: AuditEvent) -> int:
         """
@@ -479,12 +498,15 @@ class PermissionAuditLogger:
     def verify_integrity(self, event_id: int = None) -> bool:
         """
         验证日志完整性
-        
+
+        v2 记录（checksum 前缀 "v2:"）按全部安全字段重新计算校验；无前缀的
+        旧记录（早期版本 checksum 存在 bool/int 不一致缺陷）跳过校验并计入 legacy。
+
         Args:
             event_id: 特定事件ID，None则验证所有
-            
+
         Returns:
-            是否通过验证
+            是否通过验证（仅统计 v2 记录；legacy 记录不导致失败）
         """
         conn = sqlite3.connect(self.db_path)
         cursor = conn.cursor()
@@ -497,20 +519,25 @@ class PermissionAuditLogger:
         rows = cursor.fetchall()
         columns = [desc[0] for desc in cursor.description]
         conn.close()
-        
+
+        checked = 0
+        legacy = 0
         for row in rows:
             event_dict = dict(zip(columns, row))
-            stored_checksum = event_dict.get("checksum", "")
-            
-            # 重新计算校验和
-            data = f"{event_dict['timestamp']}|{event_dict['event_type']}|{event_dict['session_id']}|{event_dict['tool_name']}|{event_dict['target']}|{event_dict['allowed']}"
-            computed_checksum = hashlib.sha256(data.encode()).hexdigest()[:16]
-            
+            stored_checksum = event_dict.get("checksum", "") or ""
+            if not stored_checksum.startswith("v2:"):
+                legacy += 1
+                continue
+            payload = {f: event_dict.get(f, "") for f in self._CHECKSUM_FIELDS}
+            payload["allowed"] = self._normalize_bool_str(payload["allowed"])
+            data = json.dumps(payload, ensure_ascii=False, sort_keys=True, default=str)
+            computed_checksum = "v2:" + hashlib.sha256(data.encode("utf-8")).hexdigest()[:32]
             if stored_checksum != computed_checksum:
-                logger.error(f"[PermissionAudit] Integrity check failed for event {event_dict['id']}")
+                logger.error(f"[PermissionAudit] Integrity check failed for event {event_dict.get('id')}")
                 return False
-        
-        logger.info(f"[PermissionAudit] Integrity check passed for {len(rows)} events")
+            checked += 1
+
+        logger.info(f"[PermissionAudit] Integrity check passed for {checked} events (legacy skipped: {legacy})")
         return True
 
 

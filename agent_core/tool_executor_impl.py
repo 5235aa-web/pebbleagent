@@ -2321,10 +2321,21 @@ class AgentToolExecutorImpl(ToolExecutor):
         timeout: int = 60000,
         context: ToolExecutionContext = None
     ) -> str:
-        """执行 PowerShell 命令"""
+        """执行 PowerShell 命令（含网络行为守卫，与 execute_code 同级）"""
         if not command:
             return "Error: No command provided"
-        
+
+        # V2 行为模式扫描：禁止 HTTP 库/网络命令/爬虫模式（与 execute_code 一致）
+        is_blocked, patterns = scan_code_for_scraping_behavior(command, "powershell")
+        if is_blocked:
+            patterns_str = "; ".join(patterns)
+            logger.warning(f"[ToolExecutor] PowerShell blocked by NetworkGuardV2: {patterns_str}")
+            return (
+                f"⛔ [安全拦截] 命令中检测到网络请求模式，已被阻止执行。\n"
+                f"检测到: {patterns_str}\n"
+                f"说明: 网络请求请使用 web_search / fetch_url / browser_navigate 工具。"
+            )
+
         # 检测 PowerShell 版本
         ps_exe = "pwsh" if self._has_pwsh() else "powershell"
         

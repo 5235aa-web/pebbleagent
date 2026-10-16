@@ -10,7 +10,7 @@
                  ↑ read/write
 [Tools]       tools/ (BaseTool + ToolRegistry), agent_core/extensions/, agent_core/mcp/
               Tool infrastructure: bash_validator (6-layer command validation) / code_network_guardV2 (3 network guards)
-              / lsp_client (backend of 9 LSP tools) / electron_bridge (built-in browser HTTP bridge)
+              / lsp_client (backend of 9 LSP tools)
                  ↑ call
 [Services]    agent_core/agent_chat_service_v2.py (🔴core 117KB)
               agent_core/agent_loader.py, agent_core/context_compressor.py
@@ -49,5 +49,4 @@
 | bash_validator.py | Tool infra (6-layer command validation) | tool_executor_impl, permission_enforcer, tool_concurrency | - |
 | lsp_client.py | Tool infra (LSP client) | tool_executor_impl | LSP server subprocess |
 | code_network_guardV2.py | Tool infra (network guards) | agent_chat_service_v2, tool_executor_impl | - |
-| electron_bridge.py | Tool infra (browser bridge) | tool_executor_impl | Electron BridgeServer |
 | src-tauri/lib.rs | Desktop shell (Tauri 2) | - | pebble-backend.exe (sidecar launch/cleanup) |

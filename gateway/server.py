@@ -71,6 +71,75 @@ def _atomic_write_json(path: Path, data: dict):
     os.replace(tmp, path)
 
 
+# ==================== file.* RPC 路径守卫（2026-10-16 安全加固） ====================
+
+def _get_current_project_root() -> str:
+    """当前激活项目目录（与工具执行器一致；服务未初始化时回退打包根）"""
+    try:
+        svc = _ensure_service()
+        cur = getattr(svc, "_current_project_path", None)
+        if cur:
+            return os.path.realpath(cur)
+    except Exception:
+        pass
+    return os.path.realpath(str(_PROJECT_ROOT))
+
+
+def _read_whitelist_paths() -> list:
+    """读取路径白名单（用户数据目录优先，回退打包根）"""
+    for wp in [_DATA_DIR / "path_whitelist.json", _PROJECT_ROOT / "path_whitelist.json"]:
+        if wp.exists():
+            try:
+                with open(wp, "r", encoding="utf-8") as f:
+                    data = json.load(f)
+                paths = data.get("paths", [])
+                if isinstance(paths, list):
+                    return [str(p) for p in paths if p]
+            except Exception:
+                continue
+    return []
+
+
+def _guard_rpc_path(path: str, allow_url: bool = False) -> tuple:
+    """file.* RPC 的统一路径守卫。
+
+    解析后的路径必须位于当前项目目录或路径白名单内（realpath 解析符号链接）。
+    allow_url=True 时放行 http/https/ftp 链接（file.open 打开浏览器的场景）。
+    返回 (ok, error_message, resolved_path)。
+    """
+    if not path or not isinstance(path, str):
+        return False, "path required", ""
+    if path.startswith(("http://", "https://", "ftp://")):
+        if allow_url:
+            return True, "", path
+        return False, "url is not allowed for this operation", path
+    try:
+        project_root = _get_current_project_root()
+        p = os.path.expandvars(os.path.expanduser(path))
+        if not os.path.isabs(p):
+            p = os.path.join(project_root, p)
+        p = os.path.realpath(p)
+
+        def _within(child: str, parent: str) -> bool:
+            try:
+                return os.path.commonpath([os.path.normcase(child), os.path.normcase(parent)]) == os.path.normcase(parent)
+            except ValueError:
+                return False
+
+        if _within(p, project_root):
+            return True, "", p
+        for wl in _read_whitelist_paths():
+            try:
+                wlr = os.path.realpath(os.path.expandvars(os.path.expanduser(wl)))
+            except Exception:
+                continue
+            if _within(p, wlr):
+                return True, "", p
+        return False, f"path is outside the project directory: {path}", p
+    except Exception as e:
+        return False, f"path check failed: {e}", ""
+
+
 # ==================== MCP 自动安装辅助（2026-10-16） ====================
 
 def _detect_arch() -> str:
@@ -94,6 +163,19 @@ def _download_file(url: str, dest: str, max_bytes: int = 200 * 1024 * 1024, time
             if total > max_bytes:
                 raise RuntimeError(f"download exceeds size limit ({max_bytes} bytes)")
             f.write(chunk)
+
+
+def _sha256_file(path: str) -> str:
+    """流式计算文件 sha256（十六进制小写）"""
+    import hashlib as _hashlib
+    h = _hashlib.sha256()
+    with open(path, "rb") as f:
+        while True:
+            chunk = f.read(256 * 1024)
+            if not chunk:
+                break
+            h.update(chunk)
+    return h.hexdigest()
 
 
 def _resolve_github_release_asset(api_url: str, pattern: str) -> tuple:
@@ -157,6 +239,21 @@ def _install_download_server(server_name: str, entry: dict) -> str:
     logger.info(f"[Server] Downloading MCP server '{server_name}' from {url}")
     try:
         _download_file(url, tmp_dl)
+        # 完整性校验：mcp_install.json 配置了 sha256 则强制比对；未配置则记录警告
+        expected = str(entry.get("sha256") or "").strip().lower()
+        if expected:
+            actual = _sha256_file(tmp_dl)
+            if actual != expected:
+                raise RuntimeError(
+                    f"sha256 mismatch for '{server_name}': expected {expected[:16]}..., got {actual[:16]}... "
+                    f"(download rejected; verify the mcp_install.json entry or the release source)"
+                )
+            logger.info(f"[Server] MCP '{server_name}' sha256 verified ({actual[:16]}...)")
+        else:
+            logger.warning(
+                f"[Server] MCP '{server_name}': no sha256 configured in mcp_install.json; "
+                f"integrity check skipped (consider adding the release hash)"
+            )
         # zip → 解压找 exe；否则视为裸 exe 直接落位
         try:
             files = _safe_extract_zip(tmp_dl, install_dir)
@@ -912,17 +1009,17 @@ def handle_request(method: str, params: dict, rid: str) -> Optional[dict]:
             return {"id": rid, "result": {"mode": "default", "allow": [], "deny": [], "ask": []}}
 
     if method == "permission.check":
-        """验证某个操作是否被允许（前端校验用）"""
+        """验证某个操作是否被允许（前端校验用；同步评估，不触发弹窗）"""
         try:
             from gateway.permission_manager import get_permission_manager
             tool_name = params.get("tool", "")
             content = params.get("content", "")
             mgr = get_permission_manager()
-            allowed, msg = mgr.check_permission(tool_name, content or None)
+            allowed, msg = mgr.check_permission_sync(tool_name, content or None)
             return {"id": rid, "result": {"allowed": allowed, "message": msg}}
         except Exception as e:
             logger.warning(f"[Server] permission.check error: {e}")
-            return {"id": rid, "result": {"allowed": True, "message": "Error checking permission"}}
+            return {"id": rid, "result": {"allowed": False, "message": "Error checking permission"}}
 
     if method == "permission.decide":
         """用户对权限请求的决策"""
@@ -1160,11 +1257,53 @@ def handle_request(method: str, params: dict, rid: str) -> Optional[dict]:
             for sn, tnames in server_tools.items():
                 for tn in tnames:
                     tools_list.append({"server": sn, "name": tn})
-        return {"id": rid, "result": {"servers": servers, "tools": tools_list}}
+        # 未批准的项目级 .mcp.json（防"克隆陌生仓库即执行其定义的服务器"）
+        try:
+            from agent_core.mcp.mcp_config import get_pending_project_mcp
+            pending = get_pending_project_mcp(str(_PROJECT_ROOT))
+        except Exception:
+            pending = []
+        return {"id": rid, "result": {"servers": servers, "tools": tools_list, "pending_project_servers": pending}}
 
     if method == "mcp.reload":
         logger.info("[Server] MCP reload requested")
         return {"id": rid, "result": {"status": "ok", "message": "MCP config reloaded"}}
+
+    if method == "mcp.trust_project":
+        """批准项目级 .mcp.json（记录当前内容指纹），并热加载其中定义的服务器"""
+        path = str(params.get("path") or "").strip()
+        if not path:
+            return {"id": rid, "error": {"code": -32602, "message": "path required"}}
+        try:
+            from agent_core.mcp.mcp_config import trust_project_mcp
+            if not os.path.isfile(path):
+                return {"id": rid, "result": {"ok": False, "error": f"file not found: {path}"}}
+            if not trust_project_mcp(path):
+                return {"id": rid, "result": {"ok": False, "error": "failed to record trust"}}
+            # 热加载：刷新配置并重连新出现的服务器（与 mcp.install_server 相同模式）
+            reconnected = []
+            try:
+                import asyncio as _asyncio
+                from agent_core.mcp.mcp_config import get_mcp_config_manager
+                from agent_core.mcp.mcp_manager import get_mcp_manager
+                cfg_mgr = get_mcp_config_manager()
+                cfg_mgr.set_project_path(str(_PROJECT_ROOT))
+                mgr = get_mcp_manager()
+                if mgr._initialized:
+                    new_configs = cfg_mgr.get_all_configs()
+                    for name, cfg in new_configs.items():
+                        if name not in mgr._configs:
+                            mgr._configs[name] = cfg
+                            if _ws_loop:
+                                _asyncio.run_coroutine_threadsafe(mgr.reconnect_server(name), _ws_loop)
+                                reconnected.append(name)
+            except Exception as e:
+                logger.warning(f"[Server] mcp.trust_project hot reload failed: {e}")
+            logger.info(f"[Server] mcp.trust_project approved: {path} (reconnected={reconnected})")
+            return {"id": rid, "result": {"ok": True, "reconnected": reconnected}}
+        except Exception as e:
+            logger.error(f"[Server] mcp.trust_project failed: {e}")
+            return {"id": rid, "result": {"ok": False, "error": str(e)}}
 
     if method == "mcp.set_secret":
         """写入 MCP 密钥到用户数据目录 .mcp.json 并热生效（如 GitHub Token）。
@@ -1574,10 +1713,17 @@ def handle_request(method: str, params: dict, rid: str) -> Optional[dict]:
         return {"id": rid, "result": {"ok": True}}
 
     if method == "file.search":
-        """搜索项目目录中的文件（自动补全用）"""
+        """搜索项目目录中的文件（自动补全用；目录受项目边界/白名单限制）"""
         q = params.get("q", "").strip().lower()
         path = params.get("path", str(_PROJECT_ROOT))
-        limit = params.get("limit", 20)
+        try:
+            limit = max(1, min(int(params.get("limit", 20)), 1000))
+        except Exception:
+            limit = 20
+        ok, err, resolved = _guard_rpc_path(path)
+        if not ok:
+            return {"id": rid, "result": {"results": [], "error": err}}
+        path = resolved
         results = []
         try:
             if os.path.isdir(path):
@@ -1599,49 +1745,32 @@ def handle_request(method: str, params: dict, rid: str) -> Optional[dict]:
         return {"id": rid, "result": {"results": results}}
 
     if method == "file.read_text":
-        """读取文本文件内容"""
+        """读取文本文件内容（路径受项目边界/白名单限制）"""
         path = params.get("path", "")
-        # 调试日志：如有渲染问题请取消下面 print 注释
-        # print(f"[file.read_text] REQUEST path={path!r} isabs={os.path.isabs(path)} exists={os.path.exists(path)}")
+        ok, err, resolved = _guard_rpc_path(path)
+        if not ok:
+            return {"id": rid, "result": {"ok": False, "error": err}}
+        path = resolved
         try:
             if not os.path.exists(path):
-                if not os.path.isabs(path):
-                    alt = os.path.join(str(_PROJECT_ROOT), path)
-                    # print(f"[file.read_text] TRY alt={alt!r} exists={os.path.exists(alt)}")  # 调试
-                    if os.path.exists(alt):
-                        path = alt  # print(f"[file.read_text] FOUND alt={alt!r}")  # 调试
-                    else:
-                        # print(f"[file.read_text] NOT FOUND")  # 调试
-                        return {"id": rid, "result": {"ok": False, "error": "文件不存在"}}
-                else:
-                    return {"id": rid, "result": {"ok": False, "error": "文件不存在"}}
+                return {"id": rid, "result": {"ok": False, "error": "文件不存在"}}
             with open(path, "r", encoding="utf-8") as f:
                 text = f.read()
-            # print(f"[file.read_text] SUCCESS len={len(text)}")  # 调试
             return {"id": rid, "result": {"ok": True, "text": text}}
         except Exception as e:
-            # print(f"[file.read_text] ERROR: {e}")  # 调试
             return {"id": rid, "result": {"ok": False, "error": str(e)}}
 
     if method == "file.read_base64":
-        """读取文件内容，返回 base64 和文本内容"""
+        """读取文件内容，返回 base64 和文本内容（路径受项目边界/白名单限制）"""
         import base64 as _b64
         path = params.get("path", "")
+        ok, err, resolved = _guard_rpc_path(path)
+        if not ok:
+            return {"id": rid, "result": {"ok": False, "error": err}}
+        path = resolved
         try:
             if not os.path.exists(path):
-                # 尝试用项目根目录解析相对路径
-                attempts = []
-                if not os.path.isabs(path):
-                    attempts.append(str(_PROJECT_ROOT / path))
-                found = None
-                for alt in attempts:
-                    if os.path.exists(alt):
-                        found = alt
-                        break
-                if found:
-                    path = found
-                else:
-                    return {"id": rid, "result": {"ok": False, "error": "文件不存在"}}
+                return {"id": rid, "result": {"ok": False, "error": "文件不存在"}}
             with open(path, "rb") as f:
                 raw = f.read()
             b64 = _b64.b64encode(raw).decode("ascii")
@@ -1655,7 +1784,7 @@ def handle_request(method: str, params: dict, rid: str) -> Optional[dict]:
             return {"id": rid, "result": {"ok": False, "error": str(e)}}
 
     if method == "file.write_base64":
-        """写入 base64 数据到文件（PNG 保存等场景），路径解析规则与 file.read_text 一致"""
+        """写入 base64 数据到文件（PNG 保存等场景；路径受项目边界/白名单限制）"""
         import base64 as _b64
         path = params.get("path", "")
         data_b64 = params.get("data_base64", "")
@@ -1663,19 +1792,11 @@ def handle_request(method: str, params: dict, rid: str) -> Optional[dict]:
             return {"id": rid, "result": {"ok": False, "error": "path required"}}
         if not data_b64:
             return {"id": rid, "result": {"ok": False, "error": "data_base64 required"}}
+        ok, err, resolved = _guard_rpc_path(path)
+        if not ok:
+            return {"id": rid, "result": {"ok": False, "error": err}}
+        path = resolved
         try:
-            # 项目根目录（与 session.export_save 一致）
-            project_root = os.path.normpath(
-                getattr(_ensure_service(), '_current_project_path', None) or str(_PROJECT_ROOT)
-            )
-            # 相对路径基于项目根解析；绝对路径原样使用
-            if not os.path.isabs(path):
-                path = os.path.join(project_root, path)
-            path = os.path.normpath(path)
-            # 安全校验：写入目标必须位于当前项目目录内
-            if os.path.normcase(path) != os.path.normcase(project_root) and \
-               not os.path.normcase(path).startswith(os.path.normcase(project_root) + os.sep):
-                return {"id": rid, "result": {"ok": False, "error": "path is outside the project directory"}}
             # 确保父目录存在
             parent = os.path.dirname(path)
             if parent:
@@ -1693,10 +1814,14 @@ def handle_request(method: str, params: dict, rid: str) -> Optional[dict]:
             return {"id": rid, "result": {"ok": False, "error": str(e)}}
 
     if method == "file.open":
-        """用系统默认程序打开文件或 URL"""
+        """用系统默认程序打开文件或 URL（本地路径受项目边界/白名单限制）"""
         import subprocess
         import sys
         path = params.get("path", "")
+        ok, err, resolved = _guard_rpc_path(path, allow_url=True)
+        if not ok:
+            return {"id": rid, "result": {"ok": False, "error": err}}
+        path = resolved
         try:
             is_url = path.startswith(("http://", "https://", "ftp://"))
             if not is_url and not os.path.exists(path):

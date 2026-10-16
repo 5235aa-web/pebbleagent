@@ -284,6 +284,7 @@ export const useGatewayStore = defineStore('gateway', () => {
         window.dispatchEvent(new CustomEvent('gateway:message-complete', { detail: { sessionId: (payload.session_id as string) || sessionIdRef.value || '' } }))
         break
       }
+      case 'prompt.rejected': { const reason = (payload.reason as string) || 'payload rejected'; messages.value.push({ id: nextId(), role: 'agent', content: `**Error:** ${reason}` }); break }
       case 'error': { const em = (payload.message as string) || 'Unknown error'; const id = agentMsgIdRef.value; if (id) { if (streamingMessage.value && streamingMessage.value.id === id) { streamingMessage.value = { ...streamingMessage.value, content: streamingMessage.value.content + `\n\n**Error:** ${em}` } } else { streamingMessage.value = { id, role: 'agent', content: `**Error:** ${em}`, createdAt: Date.now() } } } else { messages.value.push({ id: nextId(), role: 'agent', content: `**Error:** ${em}` }) }; streaming.value = false; agentMsgIdRef.value = null; streamRef.value = emptyStream(); break }
       case 'todos.update': { window.dispatchEvent(new CustomEvent('gateway-todos', { detail: payload })); break }
       case 'clarify.request': { const ri = (payload.request_id as string) || ''; const q = (payload.question as string) || ''; const ch = (payload.choices as string[]) || []; // console.log('[gateway] clarify.request q=',q.slice(0,50)) // 调试：如有问题请开启

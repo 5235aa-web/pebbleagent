@@ -271,16 +271,16 @@ class PermissionManager:
         for rule in self.context.allow_rules:
             if self._match_rule(rule, tool_name, content):
                 logger.info(f"[PermissionManager] Permission allowed by rule: {rule.tool_name}({rule.rule_content})")
-        
+                return True, f"Permission allowed by rule: {rule.tool_name}"
         
         # 6. DontAsk模式：自动拒绝
         if self.context.mode == PermissionMode.DONT_ASK:
     
             return False, "Auto-denied (dontAsk mode)"
         
-        # 7. AcceptEdits模式：编辑操作自动允许
+        # 7. AcceptEdits模式：仅文件编辑操作自动允许（不含命令执行/代码执行）
         if self.context.mode == PermissionMode.ACCEPT_EDITS:
-            if tool_name in ["Write", "Edit", "Bash", "write_file", "edit_file", "execute_code"]:
+            if tool_name in ["Write", "Edit", "write_file", "edit_file", "notebook_edit"]:
         
                 return True, "Auto-accepted (acceptEdits mode)"
         
@@ -302,7 +302,42 @@ class PermissionManager:
             target=target or content or "",
             reason=reason
         )
-    
+
+    def check_permission_sync(
+        self,
+        tool_name: str,
+        content: Optional[str] = None,
+    ) -> tuple[bool, str]:
+        """
+        同步评估权限（不触发用户交互，供 RPC 预检使用）。
+
+        与 check_permission 的差异：命中 ask 规则或需要人工确认的场景返回
+        (False, "requires user confirmation")，由调用方决定是否走完整流程。
+        """
+        if self.context.mode == PermissionMode.AUTO_ALLOW:
+            return True, "Auto-allowed (autoAllow mode)"
+        if self.context.mode == PermissionMode.BYPASS:
+            return True, "Bypass mode enabled"
+        for rule in self.context.deny_rules:
+            if self._match_rule(rule, tool_name, content):
+                return False, f"Permission denied by rule: {rule.tool_name}"
+        for rule in self.context.ask_rules:
+            if self._match_rule(rule, tool_name, content):
+                return False, "Requires user confirmation (ask rule)"
+        for rule in self.context.allow_rules:
+            if self._match_rule(rule, tool_name, content):
+                return True, f"Permission allowed by rule: {rule.tool_name}"
+        if self.context.mode == PermissionMode.DONT_ASK:
+            return False, "Auto-denied (dontAsk mode)"
+        if self.context.mode == PermissionMode.ACCEPT_EDITS:
+            if tool_name in ["Write", "Edit", "write_file", "edit_file", "notebook_edit"]:
+                return True, "Auto-accepted (acceptEdits mode)"
+        perm_type = self._get_permission_type(tool_name)
+        level = self.permission_service.get_permission_level(perm_type)
+        if level == PermissionLevel.LOW:
+            return True, "Auto-allowed (low risk)"
+        return False, "Requires user confirmation"
+
     def _get_permission_type(self, tool_name: str) -> PermissionType:
         """根据工具名称获取权限类型"""
         mapping = {

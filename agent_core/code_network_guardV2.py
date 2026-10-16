@@ -161,7 +161,7 @@ def scan_code_for_scraping_behavior(code: str, language: str = "python") -> Tupl
             break
     
     # 6. Shell 命令中的 curl/wget 循环
-    if language in ("bash", "shell", "sh", "zsh"):
+    if language in ("bash", "shell", "sh", "zsh", "powershell", "ps1", "pwsh"):
         if re.search(r'\bfor\s+\w+\s+in\s+.*\b(?:curl|wget)\b', code):
             detected.append("Shell loop with curl/wget")
         if re.search(r'\bwhile\s+.*\b(?:curl|wget)\b', code):

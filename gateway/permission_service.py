@@ -25,6 +25,8 @@ class PermissionType(str, Enum):
     CLIPBOARD_READ = "clipboard:read"
     CLIPBOARD_WRITE = "clipboard:write"
     SCREENSHOT = "screenshot"
+    MCP_TOOL = "mcp:tool"          # MCP 服务器工具调用
+    UNKNOWN_TOOL = "tool:unknown"  # 未映射的未知工具
 
 class PermissionLevel(str, Enum):
     """危险等级"""
@@ -44,6 +46,8 @@ PERMISSION_LEVELS: Dict[PermissionType, PermissionLevel] = {
     PermissionType.CLIPBOARD_READ: PermissionLevel.MEDIUM,
     PermissionType.CLIPBOARD_WRITE: PermissionLevel.LOW,
     PermissionType.SCREENSHOT: PermissionLevel.HIGH,
+    PermissionType.MCP_TOOL: PermissionLevel.MEDIUM,
+    PermissionType.UNKNOWN_TOOL: PermissionLevel.MEDIUM,
 }
 
 @dataclass
@@ -71,8 +75,8 @@ class PermissionService:
         self._pending_requests: Dict[str, PermissionRequest] = {}
         # 锁
         self._lock = asyncio.Lock()
-        # 信任的权限会话 (session_id -> expiration)
-        self._trusted_sessions: Dict[str, datetime] = {}
+        # 信任的权限会话：键为 (session_id, permission_type.value)，按"会话+权限类型"粒度记忆
+        self._trusted_sessions: Dict[tuple, datetime] = {}
         # WebSocket 连接集合
         self._ws_connections: Set[Any] = set()
         # 等待决策的回调
@@ -147,21 +151,22 @@ class PermissionService:
             PermissionType.CLIPBOARD_READ: "📋 读取剪贴板",
             PermissionType.CLIPBOARD_WRITE: "📝 写入剪贴板",
             PermissionType.SCREENSHOT: "📸 截取屏幕",
+            PermissionType.MCP_TOOL: "🔌 MCP 工具调用",
+            PermissionType.UNKNOWN_TOOL: "❓ 未知工具",
         }
         return labels.get(permission_type, permission_type.value)
     
     async def check_permission(self, permission_type: PermissionType, session_id: str = "") -> bool:
-        """检查权限是否已信任"""
+        """检查"会话+权限类型"组合是否已信任"""
         if not session_id:
             return False
-        
-        expiration = self._trusted_sessions.get(session_id)
+        key = (session_id, permission_type.value)
+        expiration = self._trusted_sessions.get(key)
         if expiration and expiration > datetime.utcnow():
             return True
-        
         # 过期或不存在
-        if session_id in self._trusted_sessions:
-            del self._trusted_sessions[session_id]
+        if key in self._trusted_sessions:
+            del self._trusted_sessions[key]
         return False
     
     async def request_permission(
@@ -213,11 +218,12 @@ class PermissionService:
             logger.warning(f"Request {request_id} not found")
             return
         
-        # 如果记住，添加到信任列表
+        # 如果记住，按"会话+权限类型"加入信任列表（例如"记住读取"不会放行命令执行）
         if approved and remember_minutes > 0 and request.session_id:
             expiration = datetime.utcnow() + timedelta(minutes=remember_minutes)
-            self._trusted_sessions[request.session_id] = expiration
-            logger.info(f"Session {request.session_id} trusted for {remember_minutes} minutes")
+            key = (request.session_id, request.permission_type.value)
+            self._trusted_sessions[key] = expiration
+            logger.info(f"Session {request.session_id} trusted for {request.permission_type.value} for {remember_minutes} minutes")
         
         # 通知等待者
         if request_id in self._decision_futures:
@@ -235,9 +241,9 @@ class PermissionService:
     def clear_expired_sessions(self):
         """清理过期的信任会话"""
         now = datetime.utcnow()
-        expired = [sid for sid, exp in self._trusted_sessions.items() if exp <= now]
-        for sid in expired:
-            del self._trusted_sessions[sid]
+        expired = [key for key, exp in self._trusted_sessions.items() if exp <= now]
+        for key in expired:
+            del self._trusted_sessions[key]
 
 # 全局单例
 _permission_service: Optional[PermissionService] = None

@@ -1,6 +1,6 @@
 # 6. Tool System
 
-### tools/ (19 files)
+### tools/ (18 files)
 
 | File | Function | Tag |
 |------|------|------|
@@ -10,7 +10,7 @@
 | todo_tool.py | Todo list management | 🔴Core |
 | ask_question_tool.py | User question tool | 🟡Aux |
 | execute_code_tool.py | Code execution tool | 🟡Aux |
-| powershell_tool.py | PowerShell tool | 🟡Aux |
+| powershell_tool.py | PowerShell tool (**danger_level raised to "high" since 2026-10-16**) | 🟡Aux |
 | grep_tool.py | Code search tool | 🟡Aux |
 | glob_tool.py | File matching tool | 🟡Aux |
 | web_fetch_tool.py | HTTP request tool | 🟡Aux |
@@ -19,7 +19,6 @@
 | skill_tools.py | Skill tools | 🟡Aux |
 | notebook_edit_tool.py | Notebook editing | 🟡Aux |
 | tool_search_tool.py | Tool search | 🟡Aux |
-| uia_tools.py | UI automation tools | 🟡Aux |
 | test_tools.py | Test tools | 🧪Test |
 | code_network_guard.py | Network guard (V1) | 🟡Aux |
 | __init__.py | Module init | 📦Config |
@@ -47,10 +46,10 @@ Custom tools just need to be placed under `extensions/tools/` exposing those 4 a
 | Stage | Module | Mechanism |
 |------|------|------|
 | Shell command validation | bash_validator.py (19.5KB) | Six-layer validator: read_only (read-only → concurrency-safe) / destructive (blocks destructive ops) / mode / sed -i / path out-of-bounds / semantic intent; three integration points — tool_executor_impl._tool_execute_shell (before execution), permission_enforcer (dangerous commands), tool_concurrency (read-only concurrency decision) |
-| Code network behavior | code_network_guardV2.py | Static scan (crawler frameworks / HTTP-library imports / loop-pagination patterns / dynamic-import bypass) + three runtime guards: RateLimiter (≤6 req/min per domain), PathDepthGuard (≤3 navigations per turn), DownloadGuard (≤2 files / ≤50MB per turn) |
+| Code network behavior | code_network_guardV2.py | Static scan (crawler frameworks / HTTP-library imports / loop-pagination patterns / dynamic-import bypass) + three runtime guards: RateLimiter (≤6 req/min per domain), PathDepthGuard (≤3 navigations per turn), DownloadGuard (≤2 files / ≤50MB per turn); **since 2026-10-16 the powershell tool is scanned too (scan_code_for_scraping_behavior(command, "powershell")) — previously a full bypass of the guard** |
 | LSP tool family (9) | lsp_client.py (65KB) | lsp_go_to_definition / find_references / hover / document_symbol / workspace_symbol / go_to_implementation / prepare_call_hierarchy / incoming_calls / outgoing_calls — schemas in tool_definitions.py, execution via tool_executor_impl → LspClient (auto-discovers pyright/jedi/pylsp) |
-| Browser control | electron_bridge.py | Built-in browser (tabs/navigation/scripts/click/input/search/download) via localhost HTTP bridge (.bridge_port port discovery) |
-| Audit | gateway/permission_audit.py | All permission decisions persisted (permission_audit.db) + SHA256 checksum tamper protection (see Chapter 4) |
+| Browser tools | tool_executor_impl (httpx) | fetch_url / web_search / browser_navigate / browser_download implemented directly via httpx (electron_bridge removed in the 2026-10 security batch) |
+| Audit | gateway/permission_audit.py | All permission decisions persisted (permission_audit.db) + SHA256 checksum tamper protection v2, all-fields (see Chapter 4) |
 
 ### Notes
 

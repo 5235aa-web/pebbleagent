@@ -10,6 +10,7 @@
 3. 权限检查结果封装
 """
 
+import json
 import os
 import re
 from typing import Tuple, Optional, Dict, Any, Callable, List
@@ -83,10 +84,10 @@ class PathBoundaryChecker:
 
     @classmethod
     def set_user_whitelist(cls, paths: List[str]) -> None:
-        """设置用户白名单路径（始终允许访问）"""
+        """设置用户白名单路径（始终允许访问；解析为真实绝对路径）"""
         if not paths:
             return
-        cls.USER_PATH_WHITELIST = [os.path.abspath(os.path.expandvars(p)) for p in paths if p]
+        cls.USER_PATH_WHITELIST = [os.path.realpath(os.path.expandvars(os.path.expanduser(p))) for p in paths if p]
     
     # 禁止访问的敏感路径（黑名单）
     SENSITIVE_PATH_BLACKLIST = [
@@ -104,21 +105,15 @@ class PathBoundaryChecker:
     
     @classmethod
     def normalize_path(cls, path: str) -> str:
-        """规范化路径（解析符号链接、环境变量等）"""
+        """规范化路径（展开环境变量/用户目录 + 折叠相对段；绝对路径再解析符号链接）"""
         if not path:
             return path
-        
-        # 展开环境变量
         expanded = os.path.expandvars(path)
-        # 展开用户目录
         expanded = os.path.expanduser(expanded)
-        # 转换为绝对路径
-        if not os.path.isabs(expanded):
-            # 相对路径不在这里解析，由调用者处理
-            pass
-        # 规范化路径分隔符
         normalized = os.path.normpath(expanded)
-        
+        # 绝对路径解析符号链接/junction；相对路径由调用方基于项目目录解析后再判断
+        if os.path.isabs(normalized):
+            normalized = os.path.realpath(normalized)
         return normalized
     
     @classmethod
@@ -169,14 +164,13 @@ class PathBoundaryChecker:
         """
         if not requested_path:
             return True, "Empty path"
-        
-        # 规范化路径
+
+        # 规范化路径；相对路径按项目目录解析（与执行层一致），再统一折叠/解析符号链接
         normalized = cls.normalize_path(requested_path)
-        
-        # 如果是相对路径，它会被解析到项目目录下，所以允许
         if not os.path.isabs(normalized):
-            return True, "Relative path (will be resolved under project)"
-        
+            normalized = os.path.join(project_path, normalized)
+        normalized = os.path.realpath(normalized)
+
         # 检查是否在项目目录内
         if cls.is_subpath(normalized, project_path):
             return True, "Path is within project boundary"
@@ -385,9 +379,14 @@ def get_tool_permission(tool_name: str, args: Dict[str, Any]) -> Optional[Tuple[
     actual_tool_name = TOOL_ALIASES.get(tool_name, tool_name)
     
     if actual_tool_name not in TOOL_PERMISSION_MAPPING:
-        # 未知工具，返回 None（不做权限限制）
-        logger.debug(f"[ToolPermission] Unknown tool: {tool_name}, no permission check")
-        return None
+        # 未知工具（如 MCP 工具）：按 MCP_TOOL / UNKNOWN_TOOL 处理，交由权限层询问，不再默认放行
+        PermissionType = _get_permission_type_enum()
+        perm_type = PermissionType.MCP_TOOL if actual_tool_name.startswith("mcp__") else PermissionType.UNKNOWN_TOOL
+        try:
+            content = json.dumps(args, ensure_ascii=False)[:500]
+        except Exception:
+            content = ""
+        return (perm_type, content)
     
     mapping_entry = TOOL_PERMISSION_MAPPING[actual_tool_name]
     
@@ -447,11 +446,19 @@ def get_tool_permission_info(tool_name: str, args: Dict[str, Any]) -> Permission
     actual_tool_name = TOOL_ALIASES.get(tool_name, tool_name)
     
     if actual_tool_name not in TOOL_PERMISSION_MAPPING:
-        # 未知工具，无需权限检查
+        # 未知工具（如 MCP 工具）：交由权限层询问（MCP_TOOL / UNKNOWN_TOOL）
+        perm_type_str = "MCP_TOOL" if actual_tool_name.startswith("mcp__") else "UNKNOWN_TOOL"
+        try:
+            content = json.dumps(args, ensure_ascii=False)[:500]
+        except Exception:
+            content = ""
         return PermissionCheckResult(
             allowed=True,
-            reason="Unknown tool - no permission restriction",
-            decision_source="no_restriction"
+            reason="Unknown tool - permission check required",
+            permission_type=perm_type_str,
+            content=content,
+            target=content,
+            decision_source="pending"
         )
     
     mapping_entry = TOOL_PERMISSION_MAPPING[actual_tool_name]
@@ -563,13 +570,10 @@ def get_path_from_tool_args(tool_name: str, args: Dict[str, Any]) -> List[str]:
 
 def is_tool_restricted(tool_name: str) -> bool:
     """
-    检查工具是否需要权限检查
-    
-    Args:
-        tool_name: 工具名称
-    
-    Returns:
-        True 如果工具需要权限检查，False 如果不需要
+    检查工具是否在已知权限映射表中
+
+    （未知工具不再默认放行：由 get_tool_permission / get_tool_permission_info
+    映射为 MCP_TOOL / UNKNOWN_TOOL，交由权限层询问。）
     """
     actual_tool_name = TOOL_ALIASES.get(tool_name, tool_name)
     return actual_tool_name in TOOL_PERMISSION_MAPPING

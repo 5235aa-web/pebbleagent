@@ -1,7 +1,7 @@
-<script setup lang="ts">import{ref}from'vue';import Tooltip from'./Tooltip.vue'
+<script setup lang="ts">import{ref,computed}from'vue';import Tooltip from'./Tooltip.vue';import DOMPurify from'dompurify'
 const p=defineProps<{code:string;isStreaming?:boolean}>()
 const cl=ref(false);const vm=ref<'preview'|'code'>('preview');const cd=ref(false)
-const sc=ref(()=>{if(!p.code)return'';if(p.code.trim().startsWith('<svg'))return p.code;const m=p.code.match(/<svg[\s\S]*?<\/svg>/i);return m?m[0]:p.code})
+const sc=computed(()=>{if(!p.code)return'';let raw:string;if(p.code.trim().startsWith('<svg')){raw=p.code}else{const m=p.code.match(/<svg[\s\S]*?<\/svg>/i);raw=m?m[0]:p.code}try{return DOMPurify.sanitize(raw,{FORBID_TAGS:['script','foreignObject']})}catch{return''}})
 async function hc(){try{await navigator.clipboard.writeText(p.code);cd.value=true;setTimeout(()=>cd.value=false,1500)}catch{}}
 function hd(){const b=new Blob([p.code],{type:'image/svg+xml'});const u=URL.createObjectURL(b);const a=document.createElement('a');a.download=`svg-${Date.now()}.svg`;a.href=u;a.click();URL.revokeObjectURL(u)}
 </script>

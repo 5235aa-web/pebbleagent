@@ -52,6 +52,88 @@ DEFAULT_USER_CONFIG_DIR = os.path.join(
 DEFAULT_MCP_CONFIG_FILE = "mcp_config.json"
 
 
+# ==================== 项目级 .mcp.json 信任（批准机制） ====================
+
+TRUST_STORE_PATH = os.path.join(DEFAULT_USER_CONFIG_DIR, "mcp_trusted.json")
+
+
+def _mcp_json_fingerprint(path: str) -> str:
+    """计算 .mcp.json 的信任指纹（绝对路径 + 文件内容 sha256）"""
+    import hashlib
+    with open(path, "rb") as f:
+        digest = hashlib.sha256(f.read()).hexdigest()
+    return f"{os.path.realpath(path)}|{digest}"
+
+
+def _load_trust_store() -> dict:
+    try:
+        if os.path.exists(TRUST_STORE_PATH):
+            with open(TRUST_STORE_PATH, "r", encoding="utf-8") as f:
+                data = json.load(f)
+            if isinstance(data, dict) and isinstance(data.get("trusted"), list):
+                return data
+    except Exception as e:
+        logger.warning(f"[MCP Trust] Failed to read trust store: {e}")
+    return {"trusted": []}
+
+
+def is_project_mcp_trusted(path: str) -> bool:
+    """检查某个项目级 .mcp.json（按当前内容指纹）是否已被批准"""
+    try:
+        fp = _mcp_json_fingerprint(path)
+    except Exception:
+        return False
+    return fp in _load_trust_store().get("trusted", [])
+
+
+def trust_project_mcp(path: str) -> bool:
+    """批准某个项目级 .mcp.json（记录当前内容指纹；内容变化后需重新批准）"""
+    try:
+        fp = _mcp_json_fingerprint(path)
+    except Exception as e:
+        logger.warning(f"[MCP Trust] Failed to fingerprint {path}: {e}")
+        return False
+    store = _load_trust_store()
+    trusted = store.get("trusted", [])
+    if fp not in trusted:
+        trusted.append(fp)
+    store["trusted"] = trusted[-200:]  # 上限防膨胀
+    try:
+        os.makedirs(os.path.dirname(TRUST_STORE_PATH), exist_ok=True)
+        tmp = TRUST_STORE_PATH + ".tmp"
+        with open(tmp, "w", encoding="utf-8") as f:
+            json.dump(store, f, ensure_ascii=False, indent=2)
+        os.replace(tmp, TRUST_STORE_PATH)
+        return True
+    except Exception as e:
+        logger.warning(f"[MCP Trust] Failed to persist trust store: {e}")
+        return False
+
+
+def get_pending_project_mcp(project_path: str) -> List[dict]:
+    """返回从 project_path 向上遍历发现的、尚未批准的项目级 .mcp.json 列表"""
+    pending: List[dict] = []
+    try:
+        current_dir = Path(project_path).resolve()
+        roots = [current_dir] + list(current_dir.parents)
+        for directory in roots:
+            mcp_json_path = directory / ".mcp.json"
+            if not mcp_json_path.exists():
+                continue
+            if is_project_mcp_trusted(str(mcp_json_path)):
+                continue
+            try:
+                with open(mcp_json_path, "r", encoding="utf-8") as f:
+                    data = json.load(f)
+                names = list((data.get("mcpServers") or {}).keys())
+            except Exception:
+                names = []
+            pending.append({"path": str(mcp_json_path), "servers": names})
+    except Exception as e:
+        logger.warning(f"[MCP Trust] Failed to scan pending project configs: {e}")
+    return pending
+
+
 # ==================== 环境变量展开 ====================
 
 def expand_env_vars(value: str) -> Tuple[str, List[str]]:
@@ -268,6 +350,13 @@ class McpConfigManager:
         for directory in reversed(roots):
             mcp_json_path = directory / ".mcp.json"
             if not mcp_json_path.exists():
+                continue
+            # 未批准的项目级配置跳过加载（防"克隆陌生仓库即执行其定义的服务器"）
+            if not is_project_mcp_trusted(str(mcp_json_path)):
+                logger.warning(
+                    f"[MCP Trust] Skipping untrusted project config {mcp_json_path} "
+                    f"(approve it via the MCP panel / mcp.trust_project RPC)"
+                )
                 continue
             
             try:
