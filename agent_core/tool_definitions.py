@@ -1294,7 +1294,7 @@ def get_tools_definition_with_mcp(
     # 合并 MCP 工具（优先）
     if include_mcp:
         try:
-            from multi_agents.mcp.mcp_integration import register_mcp_tools
+            from agent_core.mcp.mcp_integration import register_mcp_tools
             base_tools = register_mcp_tools(base_tools)
         except ImportError as e:
             logger.warning(f"[ToolDef] MCP integration not available: {e}")
@@ -1304,7 +1304,7 @@ def get_tools_definition_with_mcp(
     # 合并扩展工具
     if include_extensions:
         try:
-            from multi_agents.extensions_loader import discover_extension_tools
+            from agent_core.extensions_loader import discover_extension_tools
             extension_tools = discover_extension_tools()
             if extension_tools:
                 base_tools = base_tools + extension_tools

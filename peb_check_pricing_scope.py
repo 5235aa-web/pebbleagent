@@ -9,8 +9,8 @@ sys.stdout.reconfigure(encoding='utf-8', errors='replace')
 ROOT = os.path.dirname(os.path.abspath(__file__))
 sys.path.insert(0, ROOT)
 
-import multi_agents.agent_chat_service_v2 as svc_mod
-from multi_agents.agent_chat_service_v2 import AgentChatServiceV2
+import agent_core.agent_chat_service_v2 as svc_mod
+from agent_core.agent_chat_service_v2 import AgentChatServiceV2
 
 svc = AgentChatServiceV2.__new__(AgentChatServiceV2)
 svc._model_pricing_mtime = 0.0

@@ -5,17 +5,17 @@
 ```
 [Config]      llm_providers.json, agent_model_config.json, agents/*.yaml
                  ↑ read
-[Data]        gateway/session.py (sessions.db), multi_agents/agent_chat_history.py (agent_chat.db)
-              multi_agents/transcript_manager.py (JSONL transcript archive), gateway/permission_audit.py (audit DB)
+[Data]        gateway/session.py (sessions.db), agent_core/agent_chat_history.py (agent_chat.db)
+              agent_core/transcript_manager.py (JSONL transcript archive), gateway/permission_audit.py (audit DB)
                  ↑ read/write
-[Tools]       tools/ (BaseTool + ToolRegistry), multi_agents/extensions/, multi_agents/mcp/
+[Tools]       tools/ (BaseTool + ToolRegistry), agent_core/extensions/, agent_core/mcp/
               Tool infrastructure: bash_validator (6-layer command validation) / code_network_guardV2 (3 network guards)
               / lsp_client (backend of 9 LSP tools) / electron_bridge (built-in browser HTTP bridge)
                  ↑ call
-[Services]    multi_agents/agent_chat_service_v2.py (🔴core 117KB)
-              multi_agents/agent_loader.py, multi_agents/context_compressor.py
-              multi_agents/tool_orchestrator.py, multi_agents/tool_executor_impl.py
-              multi_agents/query_state_machine.py, multi_agents/memory/, multi_agents/snapshot/
+[Services]    agent_core/agent_chat_service_v2.py (🔴core 117KB)
+              agent_core/agent_loader.py, agent_core/context_compressor.py
+              agent_core/tool_orchestrator.py, agent_core/tool_executor_impl.py
+              agent_core/query_state_machine.py, agent_core/memory/, agent_core/snapshot/
                  ↑ call
 [Gateway]     gateway/server.py (JSON-RPC 90KB), gateway/ws_server.py, gateway/config.py
               gateway/log_setup.py (unified logging), permission_manager.py, permission_service.py, permission_audit.py
@@ -41,7 +41,6 @@
 | tool_executor_impl.py | Service | tool_orchestrator | tools/ |
 | tool_definitions.py | Tools | agent_chat_service_v2 | extensions_loader, MCP |
 | extensions_loader.py | Tools | tool_definitions | extensions/tools/*.py |
-| agent_router.py | ⚠️stub | none | none |
 | config.py | Gateway | server.py | llm_providers.json |
 | gateway.ts | Frontend | - | WebSocket |
 | config.ts | Frontend | gateway.ts | server.py (via WebSocket) |

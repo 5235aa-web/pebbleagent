@@ -24,7 +24,7 @@
 | code_network_guard.py | Network guard (V1) | 🟡Aux |
 | __init__.py | Module init | 📦Config |
 
-### multi_agents/mcp/ (5 files)
+### agent_core/mcp/ (5 files)
 
 | File | Function | Key symbols | Tag |
 |------|------|---------|------|
@@ -42,7 +42,7 @@
 
 Custom tools just need to be placed under `extensions/tools/` exposing those 4 attributes; `extensions_loader.py` discovers and registers them automatically.
 
-### Tool Execution Security & Validation Chain (infrastructure under multi_agents/, file index in Chapter 5)
+### Tool Execution Security & Validation Chain (infrastructure under agent_core/, file index in Chapter 5)
 
 | Stage | Module | Mechanism |
 |------|------|------|

@@ -733,7 +733,7 @@ class AgentToolExecutorImpl(ToolExecutor):
             else:
                 # 尝试扩展工具
                 try:
-                    from multi_agents.extensions_loader import try_execute_extension
+                    from agent_core.extensions_loader import try_execute_extension
                     ext_result = try_execute_extension(tool_name, args, context)
                     if ext_result is not None:
                         return ext_result

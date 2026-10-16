@@ -37,7 +37,7 @@ def d(y, m, day, h=10, mi=30):
 write_json(TMP_FILE, {"holidays": ["2026-01-01", "2026-12-24"], "workdays": [], "years_covered": [2026]})
 
 # 注意：用模块属性动态访问（重载会替换模块级变量，from-import 的绑定不会同步）
-import multi_agents.agent_chat_service_v2 as svc
+import agent_core.agent_chat_service_v2 as svc
 
 # ---- 步骤 1：路径优先级（数据目录 > 项目根）----
 print("=== 步骤 1：路径优先级（数据目录 > 项目根）===")

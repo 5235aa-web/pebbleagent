@@ -17,7 +17,7 @@
 | requirements.txt | Python dependency list (18 direct deps in four groups: core 4 / optional 11 / skills 1 / build 2; ">= verified version" format; uninstalled packages annotated in comments) | pip install | 📦Build |
 | start_backend.bat / start_gui.bat | Windows launch scripts | user | 🟡Script |
 | peb_check_holiday.py / peb_check_holiday_env.py / peb_check_pricing_scope.py | Billing-decision checks (holiday main rules 30 cases + isolated env: priority+hot reload+fallback+degradation / peak-scope: all-model time sensitivity + numeric assertions) | user runs manually (python <script>) | 🧪Test |
-| pebble-backend.spec | PyInstaller packaging config (entry run_backend.py; datas bundle skills / multi_agents/agents / knowledgesource / config JSONs; output dist/pebble-backend.exe) | build (Tauri sidecar chain, see below) | 📦Build |
+| pebble-backend.spec | PyInstaller packaging config (entry run_backend.py; datas bundle skills / agent_core/agents / knowledgesource / config JSONs; output dist/pebble-backend.exe) | build (Tauri sidecar chain, see below) | 📦Build |
 | run_backend.py | Backend entry point (→ gateway/ws_server.py) | user / Tauri sidecar | 🟡Script |
 | skills_loader.py | Skills loader (skills/ directory scan & load) | - | 🟡Aux |
 | agent_chat.db | ⚠️ Deprecated old DB frozen on 2026-07-12 — the current message DB is {PEBBLE_HOME}/agent_chat.db (e.g. %USERPROFILE%\.pebble\); don't inspect the wrong one | - | 🗑️Deprecated |
@@ -42,7 +42,7 @@ Shell = Tauri 2 (Rust), productName "pebble-agent", identifier com.pebble.agent.
 3. RunEvent::Exit: `taskkill /F /T /PID` kills the whole sidecar process tree
 
 **Packaging pipeline**:
-1. PyInstaller (root `pebble-backend.spec`, entry run_backend.py) → `dist/pebble-backend.exe` (datas bundle skills / multi_agents/agents / knowledgesource / config JSONs)
+1. PyInstaller (root `pebble-backend.spec`, entry run_backend.py) → `dist/pebble-backend.exe` (datas bundle skills / agent_core/agents / knowledgesource / config JSONs)
 2. Copy the artifact to `ui-gui-vue3/src-tauri/binaries/pebble-backend-x86_64-pc-windows-msvc.exe` (Tauri sidecar naming: {name}-{target-triple}.exe)
 3. Tauri bundle (`bundle.resources "binaries/*"`, targets:"all") → installer; frontend build = `npm run build` (vue-tsc && vite build)
 

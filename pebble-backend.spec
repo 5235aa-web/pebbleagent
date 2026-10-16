@@ -5,7 +5,7 @@ a = Analysis(
     ['run_backend.py'],
     pathex=[],
     binaries=[],
-    datas=[('skills', 'skills'), ('multi_agents\\agents', 'multi_agents\\agents'), ('knowledgesource', 'knowledgesource'), ('llm_providers.json', '.'), ('agent_model_config.json', '.'), ('model_pricing.json', '.'), ('cn_holidays.json', '.'), ('path_whitelist.json', '.'), ('permission_rules.json', '.'), ('usernote.json', '.'), ('.mcp.json', '.'), ('mcp_install.json', '.')],
+    datas=[('skills', 'skills'), ('agent_core\\agents', 'agent_core\\agents'), ('knowledgesource', 'knowledgesource'), ('llm_providers.json', '.'), ('agent_model_config.json', '.'), ('model_pricing.json', '.'), ('cn_holidays.json', '.'), ('path_whitelist.json', '.'), ('permission_rules.json', '.'), ('usernote.json', '.'), ('.mcp.json', '.'), ('mcp_install.json', '.')],
     hiddenimports=[],
     hookspath=[],
     hooksconfig={},

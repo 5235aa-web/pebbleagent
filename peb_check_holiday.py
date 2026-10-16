@@ -14,11 +14,11 @@ from datetime import datetime, timezone, timedelta, date
 
 print("=== 环境检查 ===")
 print("python:", sys.version.split()[0])
-print("multi_agents/__init__.py 存在:", os.path.exists(os.path.join(ROOT, "multi_agents", "__init__.py")))
+print("agent_core/__init__.py 存在:", os.path.exists(os.path.join(ROOT, "agent_core", "__init__.py")))
 user_file = os.path.join(os.path.expanduser("~"), ".pebble", "cn_holidays.json")
 print("~/.pebble/cn_holidays.json 存在:", os.path.exists(user_file))
 
-import multi_agents.agent_chat_service_v2 as svc
+import agent_core.agent_chat_service_v2 as svc
 
 BJ = timezone(timedelta(hours=8))
 

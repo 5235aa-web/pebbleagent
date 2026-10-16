@@ -7,8 +7,8 @@
 - **Entry points**: backend `run_backend.py` → `gateway/ws_server.py` (ws://127.0.0.1:19876); the desktop build launches the packaged backend `pebble-backend.exe` as a sidecar from the Tauri shell (`ui-gui-vue3/src-tauri`)
 - **Frontend**: `ui-gui-vue3/` (Vue 3 + Pinia + Vite + Tauri 2 desktop shell)
 - **Packaging**: PyInstaller (`pebble-backend.spec` → sidecar exe) → Tauri bundle (see Chapter 9)
-- **Deprecated code**: `ui-gui/` (React), `agent_router.py` (stub)
-- **Core modules**: 7 (gateway / multi_agents / tools / memory / mcp / snapshot / src-tauri)
+- **Deprecated code**: `ui-gui/` (React)
+- **Core modules**: 7 (gateway / agent_core / tools / memory / mcp / snapshot / src-tauri)
 
 ## The CKB Mechanism Itself
 

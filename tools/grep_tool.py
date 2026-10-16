@@ -34,7 +34,7 @@ def _get_cancel_signal() -> Optional[threading.Event]:
     """
     try:
         # 尝试从 agent_executor 获取当前取消信号
-        from multi_agents.agent_executor import AgentExecutor
+        from agent_core.agent_executor import AgentExecutor
         # 使用线程本地存储获取当前执行器
         # 这是一个简化的实现，实际可能需要更复杂的上下文传递
         return None  # 暂时返回 None，后续通过参数传递

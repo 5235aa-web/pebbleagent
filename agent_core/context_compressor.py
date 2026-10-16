@@ -2252,7 +2252,7 @@ def simple_structured_summary(messages: List[Message], input_budget: Optional[in
     file_paths = []
     path_re = re.compile(
         r'([A-Za-z]:[\\/][^\s"\'<>|?*]+'
-        r'|(?:src|ui-gui-vue3|gateway|multi_agents|tools|extensions|skills|agents|knowledgesource)[\\/][^\s"\'<>|?*]+)'
+        r'|(?:src|ui-gui-vue3|gateway|agent_core|tools|extensions|skills|agents|knowledgesource)[\\/][^\s"\'<>|?*]+)'
     )
     for msg in messages:
         if isinstance(msg.content, str):

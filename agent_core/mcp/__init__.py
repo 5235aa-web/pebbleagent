@@ -11,7 +11,7 @@ MCP (Model Context Protocol) - MCP 服务集成
 - mcp_integration: 与现有系统集成
 
 使用方式：
-    from multi_agents.mcp import get_mcp_manager
+    from agent_core.mcp import get_mcp_manager
     manager = get_mcp_manager()
     await manager.initialize()
     tools = manager.get_all_tools()

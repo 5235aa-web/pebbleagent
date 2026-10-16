@@ -113,7 +113,7 @@ All runtime data lives in `%USERPROFILE%\.pebble\` (override with the `PEBBLE_HO
 
 ```
 gateway/          Python WebSocket gateway (JSON-RPC, sessions, permissions)
-multi_agents/     Agent core (chat service, tool orchestration, memory, snapshots)
+agent_core/     Agent core (chat service, tool orchestration, memory, snapshots)
 tools/            Built-in tools
 skills/           Bundled skills
 knowledgesource/  Code knowledge base (chaptered)

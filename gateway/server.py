@@ -186,8 +186,8 @@ logger = logging.getLogger(__name__)
 
 sys.path.insert(0, os.path.join(os.path.dirname(__file__), ".."))
 
-from multi_agents.agent_chat_service_v2 import AgentChatServiceV2, current_pricing_period, get_cn_holidays_payload
-from multi_agents.agent_loader import list_available_agents_from_yaml
+from agent_core.agent_chat_service_v2 import AgentChatServiceV2, current_pricing_period, get_cn_holidays_payload
+from agent_core.agent_loader import list_available_agents_from_yaml
 
 _PROJECT_ROOT = Path(__file__).resolve().parent.parent
 _DATA_HOME = os.environ.get("PEBBLE_HOME") or os.path.join(Path.home(), ".pebble")
@@ -483,7 +483,7 @@ def handle_request(method: str, params: dict, rid: str) -> Optional[dict]:
         if ok:
             # 彻底清理 agent_chat.db：消息（含无 msg_uuid 的）+ 成本记录 + 会话行
             try:
-                from multi_agents.agent_chat_history import delete_agent_conversation_full
+                from agent_core.agent_chat_history import delete_agent_conversation_full
                 delete_agent_conversation_full(sid)
             except Exception as e:
                 logger.warning(f"[Server] Failed to delete agent_chat data for session {sid}: {e}")
@@ -560,7 +560,7 @@ def handle_request(method: str, params: dict, rid: str) -> Optional[dict]:
         if not raw_messages:
             return {"id": rid, "result": {"success": False, "reason": "no messages"}}
         try:
-            from multi_agents.context_compressor import manual_compress
+            from agent_core.context_compressor import manual_compress
             client, model = _get_llm_client()
 
             # 转换消息格式：get_messages 返回的格式 → manual_compress 期望的格式
@@ -620,7 +620,7 @@ def handle_request(method: str, params: dict, rid: str) -> Optional[dict]:
 
                     # agent_chat.db: 同步插入 marker
                     try:
-                        from multi_agents import agent_chat_history as history
+                        from agent_core import agent_chat_history as history
                         conv = history.get_agent_conversation_by_uuid(sid)
                         if conv:
                             # 注意：不再传 kept_count——agent_chat.db 是精简库（只存 user/assistant），
@@ -663,7 +663,7 @@ def handle_request(method: str, params: dict, rid: str) -> Optional[dict]:
         # 同步删除 agent_chat.db
         if deleted and msg_uuid:
             try:
-                from multi_agents.agent_chat_history import delete_agent_chat_message_by_uuid
+                from agent_core.agent_chat_history import delete_agent_chat_message_by_uuid
                 delete_agent_chat_message_by_uuid(msg_uuid)
             except Exception as e:
                 logger.warning(f"[Server] Failed to delete agent_chat message by uuid {msg_uuid}: {e}")
@@ -863,7 +863,7 @@ def handle_request(method: str, params: dict, rid: str) -> Optional[dict]:
                 json.dump(data, f, ensure_ascii=False, indent=2)
             # 同步推送给运行中的工具执行器
             try:
-                from multi_agents.tool_executor_impl import PermissionEnforcer
+                from agent_core.tool_executor_impl import PermissionEnforcer
                 svc = _ensure_service()
                 svc._load_path_whitelist()
             except Exception:
@@ -1124,7 +1124,7 @@ def handle_request(method: str, params: dict, rid: str) -> Optional[dict]:
         if config:
             # 尝试从 MCP manager 获取真实状态（只读，不触发初始化）
             try:
-                from multi_agents.mcp.mcp_manager import get_mcp_manager
+                from agent_core.mcp.mcp_manager import get_mcp_manager
                 mgr = get_mcp_manager()
                 state = mgr.get_state() if mgr._initialized else None
                 if state:
@@ -1202,8 +1202,8 @@ def handle_request(method: str, params: dict, rid: str) -> Optional[dict]:
         _atomic_write_json(user_mcp_path, data)
         reconnected = False
         try:
-            from multi_agents.mcp.mcp_config import build_user_override_configs, get_mcp_config_manager
-            from multi_agents.mcp.mcp_manager import get_mcp_manager
+            from agent_core.mcp.mcp_config import build_user_override_configs, get_mcp_config_manager
+            from agent_core.mcp.mcp_manager import get_mcp_manager
             overrides = build_user_override_configs()
             if overrides:
                 get_mcp_config_manager().set_dynamic_configs(overrides)
@@ -1309,8 +1309,8 @@ def handle_request(method: str, params: dict, rid: str) -> Optional[dict]:
         # 4. 热重连（非阻塞提交，同 set_secret 模式）
         reconnected = False
         try:
-            from multi_agents.mcp.mcp_config import build_user_override_configs, get_mcp_config_manager
-            from multi_agents.mcp.mcp_manager import get_mcp_manager
+            from agent_core.mcp.mcp_config import build_user_override_configs, get_mcp_config_manager
+            from agent_core.mcp.mcp_manager import get_mcp_manager
             overrides = build_user_override_configs()
             if overrides:
                 get_mcp_config_manager().set_dynamic_configs(overrides)
@@ -1379,14 +1379,14 @@ def handle_request(method: str, params: dict, rid: str) -> Optional[dict]:
         return path or str(_PROJECT_ROOT)
 
     if method == "memory.list":
-        from multi_agents.memory import get_auto_memory_manager
+        from agent_core.memory import get_auto_memory_manager
         memory_type = params.get("memory_type", None)
         auto_mgr = get_auto_memory_manager()
         auto_mgr.set_project(_get_working_project())
         try:
             mem_type_enum = None
             if memory_type:
-                from multi_agents.memory.auto_memory_types import MemoryType as Mt
+                from agent_core.memory.auto_memory_types import MemoryType as Mt
                 try:
                     mem_type_enum = Mt(memory_type)
                 except ValueError:
@@ -1410,7 +1410,7 @@ def handle_request(method: str, params: dict, rid: str) -> Optional[dict]:
             return {"id": rid, "result": {"success": False, "memories": [], "count": 0, "error": str(e)}}
 
     if method == "memory.get":
-        from multi_agents.memory import get_auto_memory_manager
+        from agent_core.memory import get_auto_memory_manager
         name = params.get("name", "")
         if not name:
             return {"id": rid, "error": {"code": -32000, "message": "name required"}}
@@ -1431,8 +1431,8 @@ def handle_request(method: str, params: dict, rid: str) -> Optional[dict]:
             return {"id": rid, "result": {"success": False, "memory": None, "error": str(e)}}
 
     if method == "memory.create":
-        from multi_agents.memory import get_auto_memory_manager
-        from multi_agents.memory.auto_memory_types import MemoryType as Mt
+        from agent_core.memory import get_auto_memory_manager
+        from agent_core.memory.auto_memory_types import MemoryType as Mt
         name = params.get("name", "").strip()
         memory_type = params.get("memory_type", "user")
         description = params.get("description", "")
@@ -1456,7 +1456,7 @@ def handle_request(method: str, params: dict, rid: str) -> Optional[dict]:
             return {"id": rid, "result": {"success": False, "memory": None, "error": str(e)}}
 
     if method == "memory.update":
-        from multi_agents.memory import get_auto_memory_manager
+        from agent_core.memory import get_auto_memory_manager
         name = params.get("name", "")
         description = params.get("description", None)
         content = params.get("content", None)
@@ -1481,7 +1481,7 @@ def handle_request(method: str, params: dict, rid: str) -> Optional[dict]:
             return {"id": rid, "result": {"success": False, "error": str(e)}}
 
     if method == "memory.delete":
-        from multi_agents.memory import get_auto_memory_manager
+        from agent_core.memory import get_auto_memory_manager
         name = params.get("name", "")
         if not name:
             return {"id": rid, "error": {"code": -32000, "message": "name required"}}
@@ -1495,7 +1495,7 @@ def handle_request(method: str, params: dict, rid: str) -> Optional[dict]:
             return {"id": rid, "result": {"success": False, "error": str(e)}}
 
     if method == "memory.prompt":
-        from multi_agents.memory import load_memory_prompt, get_memory_prompt_for_agent
+        from agent_core.memory import load_memory_prompt, get_memory_prompt_for_agent
         agent_name = params.get("agent_name", None)
         try:
             auto_prompt = load_memory_prompt()
@@ -1515,8 +1515,8 @@ def handle_request(method: str, params: dict, rid: str) -> Optional[dict]:
             return {"id": rid, "result": {"success": False, "error": str(e)}}
 
     if method == "agent-memory.get":
-        from multi_agents.memory import get_agent_memory_manager
-        from multi_agents.memory.agent_memory import AgentMemoryScope
+        from agent_core.memory import get_agent_memory_manager
+        from agent_core.memory.agent_memory import AgentMemoryScope
         agent_type = params.get("agent_type", "")
         scope = params.get("scope", "project")
         if not agent_type:
@@ -1532,8 +1532,8 @@ def handle_request(method: str, params: dict, rid: str) -> Optional[dict]:
             return {"id": rid, "result": {"success": False, "error": str(e)}}
 
     if method == "agent-memory.set":
-        from multi_agents.memory import get_agent_memory_manager
-        from multi_agents.memory.agent_memory import AgentMemoryScope
+        from agent_core.memory import get_agent_memory_manager
+        from agent_core.memory.agent_memory import AgentMemoryScope
         agent_type = params.get("agent_type", "")
         scope = params.get("scope", "project")
         content = params.get("content", "")
@@ -1550,8 +1550,8 @@ def handle_request(method: str, params: dict, rid: str) -> Optional[dict]:
             return {"id": rid, "result": {"success": False, "error": str(e)}}
 
     if method == "agent-memory.clear":
-        from multi_agents.memory import get_agent_memory_manager
-        from multi_agents.memory.agent_memory import AgentMemoryScope
+        from agent_core.memory import get_agent_memory_manager
+        from agent_core.memory.agent_memory import AgentMemoryScope
         agent_type = params.get("agent_type", "")
         scope = params.get("scope", "project")
         if not agent_type:
@@ -1746,8 +1746,8 @@ def handle_request(method: str, params: dict, rid: str) -> Optional[dict]:
         if not sid:
             return {"id": rid, "error": {"code": -32000, "message": "session_id required"}}
         try:
-            from multi_agents.snapshot.snapshot_manager import get_snapshot_manager
-            from multi_agents.snapshot.snapshot_diff import DiffEngine
+            from agent_core.snapshot.snapshot_manager import get_snapshot_manager
+            from agent_core.snapshot.snapshot_diff import DiffEngine
             project_path = params.get("project_path", "") or _session_project_paths.get(sid, str(_PROJECT_ROOT))
             if params.get("project_path"):
                 _session_project_paths[sid] = os.path.abspath(params["project_path"])
@@ -1792,7 +1792,7 @@ def handle_request(method: str, params: dict, rid: str) -> Optional[dict]:
         if not sid:
             return {"id": rid, "error": {"code": -32000, "message": "session_id required"}}
         try:
-            from multi_agents.snapshot.snapshot_manager import get_snapshot_manager
+            from agent_core.snapshot.snapshot_manager import get_snapshot_manager
             project_path = params.get("project_path", "") or _session_project_paths.get(sid, str(_PROJECT_ROOT))
             if params.get("project_path"):
                 _session_project_paths[sid] = os.path.abspath(params["project_path"])
@@ -1817,8 +1817,8 @@ def handle_request(method: str, params: dict, rid: str) -> Optional[dict]:
         if not sid or not raw_path:
             return {"id": rid, "error": {"code": -32000, "message": "session_id and relative_path required"}}
         try:
-            from multi_agents.snapshot.snapshot_manager import get_snapshot_manager
-            from multi_agents.snapshot.snapshot_diff import DiffEngine
+            from agent_core.snapshot.snapshot_manager import get_snapshot_manager
+            from agent_core.snapshot.snapshot_diff import DiffEngine
             project_path = params.get("project_path", "") or _session_project_paths.get(sid, str(_PROJECT_ROOT))
             if params.get("project_path"):
                 _session_project_paths[sid] = os.path.abspath(params["project_path"])
@@ -1859,8 +1859,8 @@ def handle_request(method: str, params: dict, rid: str) -> Optional[dict]:
         if not sid or not raw_path:
             return {"id": rid, "error": {"code": -32000, "message": "session_id and relative_path required"}}
         try:
-            from multi_agents.snapshot.snapshot_manager import get_snapshot_manager
-            from multi_agents.snapshot.snapshot_executor import RevertExecutor
+            from agent_core.snapshot.snapshot_manager import get_snapshot_manager
+            from agent_core.snapshot.snapshot_executor import RevertExecutor
             project_path = params.get("project_path", "") or _session_project_paths.get(sid, str(_PROJECT_ROOT))
             if params.get("project_path"):
                 _session_project_paths[sid] = os.path.abspath(params["project_path"])
@@ -1901,8 +1901,8 @@ def handle_request(method: str, params: dict, rid: str) -> Optional[dict]:
         if not sid or not message_id:
             return {"id": rid, "error": {"code": -32000, "message": "session_id and message_id required"}}
         try:
-            from multi_agents.snapshot.snapshot_manager import get_snapshot_manager
-            from multi_agents.snapshot.snapshot_executor import RevertExecutor
+            from agent_core.snapshot.snapshot_manager import get_snapshot_manager
+            from agent_core.snapshot.snapshot_executor import RevertExecutor
             project_path = params.get("project_path", "") or _session_project_paths.get(sid, str(_PROJECT_ROOT))
             if params.get("project_path"):
                 _session_project_paths[sid] = os.path.abspath(params["project_path"])

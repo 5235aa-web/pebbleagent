@@ -69,15 +69,15 @@ _mcp_init_task: asyncio.Task | None = None
 async def _init_mcp_background():
     """后台初始化 MCP 连接（启动后自动执行）"""
     try:
-        from multi_agents.mcp.mcp_manager import get_mcp_manager
-        from multi_agents.mcp.mcp_config import get_mcp_config_manager
+        from agent_core.mcp.mcp_manager import get_mcp_manager
+        from agent_core.mcp.mcp_config import get_mcp_config_manager
 
         cfg_mgr = get_mcp_config_manager()
         cfg_mgr.set_project_path(str(_PROJECT_ROOT))
 
         # 用户数据目录 .mcp.json 的覆盖配置（如 UI 填写的 GitHub Token）→ dynamic 层注入
         try:
-            from multi_agents.mcp.mcp_config import build_user_override_configs
+            from agent_core.mcp.mcp_config import build_user_override_configs
             overrides = build_user_override_configs()
             if overrides:
                 cfg_mgr.set_dynamic_configs(overrides)

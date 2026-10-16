@@ -80,7 +80,7 @@ def load_tools_info() -> Dict[str, list]:
     tools: Dict[str, list] = {"Agent": []}
     try:
         sys.path.insert(0, str(_PROJECT_ROOT))
-        from multi_agents.tool_definitions import get_tools_definition
+        from agent_core.tool_definitions import get_tools_definition
         for tool in get_tools_definition():
             name = tool.get("function", {}).get("name", "")
             if name:
