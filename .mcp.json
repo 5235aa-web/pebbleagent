@@ -2,14 +2,14 @@
   "mcpServers": {
     "github": {
       "command": "npx",
-      "args": ["-y", "@modelcontextprotocol/server-github"],
+      "args": ["-y", "@modelcontextprotocol/server-github@2025.4.8"],
       "env": {
         "GITHUB_PERSONAL_ACCESS_TOKEN": "ghp_xxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxx"
       }
     },
     "time": {
       "command": "npx",
-      "args": ["-y", "time-mcp"]
+      "args": ["-y", "time-mcp@1.0.6"]
     },
     "codebase-memory": {
       "command": "REPLACE_WITH_PATH_TO_codebase-memory-mcp.exe",
@@ -17,15 +17,15 @@
     },
     "think-tool": {
       "command": "npx",
-      "args": ["-y", "@cgize/mcp-think-tool"]
+      "args": ["-y", "@cgize/mcp-think-tool@1.0.1"]
     },
     "chrome-devtools": {
       "command": "npx",
-      "args": ["-y", "chrome-devtools-mcp@latest", "--headless"]
+      "args": ["-y", "chrome-devtools-mcp@1.11.0", "--headless"]
     },
     "blender": {
       "command": "uvx",
-      "args": ["mcp-for-blender"]
+      "args": ["mcp-for-blender@2.1.9"]
     }
   }
 }

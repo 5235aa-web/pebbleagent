@@ -16,6 +16,9 @@ MCP Manager - MCP 连接管理器
 
 import asyncio
 import logging
+import os
+import shutil
+import sys
 import time
 from typing import Dict, List, Optional, Any, Callable
 from collections import defaultdict
@@ -62,6 +65,39 @@ MAX_BACKOFF_MS = 30000            # 最大退避时间
 MCP_BATCH_FLUSH_MS = 0.016        # 批量刷新间隔（16ms）
 MAX_CONCURRENT_LOCAL = 3          # 本地服务器最大并发连接
 MAX_CONCURRENT_REMOTE = 20        # 远程服务器最大并发连接
+
+
+def _check_command_dependency(config) -> Optional[str]:
+    """
+    依赖预检：检查服务器的 command 是否可用。
+
+    返回缺失描述（字符串）或 None（可用/不适用）。
+    对未安装依赖（Node.js / uv 等）的服务器直接给出明确状态，
+    避免无谓的进程启动尝试（供应链安全 + 启动体验）。
+    """
+    # ScopedMcpServerConfig 为包装类，真实配置在 .config 字段
+    inner = getattr(config, "config", None)
+    command = getattr(inner, "command", None)
+    if command is None:
+        command = getattr(config, "command", None)
+    if not command:
+        return None  # 远程（HTTP/SSE）服务器无本地 command
+
+    if os.path.isabs(command):
+        return None if os.path.isfile(command) else f"command not found: {command}"
+
+    candidates = [command]
+    if sys.platform == "win32":
+        candidates += [command + ".cmd", command + ".bat", command + ".exe"]
+    for c in candidates:
+        if shutil.which(c):
+            return None
+
+    if command == "npx":
+        return "requires Node.js (npx not found in PATH)"
+    if command == "uvx":
+        return "requires uv (uvx not found in PATH)"
+    return f"command not found in PATH: {command}"
 
 
 # ==================== MCP 管理器 ====================
@@ -157,7 +193,15 @@ class McpManager:
                 self._clients[name] = DisabledMCPServer(name=name, config=config)
                 self._notify_state_change()
                 continue
-            
+
+            # 依赖预检：command 缺失时直接标记失败（明确原因，不做无谓的启动尝试）
+            dep_error = _check_command_dependency(config)
+            if dep_error:
+                logger.info(f"[MCP] Server '{name}' skipped: {dep_error}")
+                self._clients[name] = FailedMCPServer(name=name, config=config, error=dep_error)
+                self._notify_state_change()
+                continue
+
             if is_local_mcp_server(config):
                 local_servers[name] = config
             else:

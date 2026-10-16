@@ -137,10 +137,7 @@ class PowerShellTool(BaseTool[Dict[str, Any], str]):
     
     async def _execute_background(self, ps_command: list, timeout: float) -> str:
         """后台执行命令"""
-        # 使用后台任务管理器
         try:
-            from .agent_delegation import get_background_task_status
-            # 简单实现：启动进程并返回提示
             process = await asyncio.create_subprocess_exec(
                 *ps_command,
                 stdout=asyncio.subprocess.PIPE,
