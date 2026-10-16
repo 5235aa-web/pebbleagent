@@ -16,14 +16,15 @@
 
 - **Streaming agent chat with full execution visibility.** Reasoning, tool calls, file changes, and results unfold as a step-by-step timeline instead of a black box.
 - **Built-in tool system.** File read/write/edit, search, shell commands, to-do tracking, and clarifying questions, each audited and gated by the permission layer.
-- **Six MCP servers, wired in.** GitHub, Time, Codebase Memory, Think Tool, Chrome DevTools, and Blender are managed from a built-in panel with one-click install, token storage, and automatic path setup.
+- **Snapshot & rollback.** File changes are tracked with diffs, so you can roll back a single file or all changes at once.
 - **On-demand skills.** 100+ bundled skill folders covering design, debugging, TDD, Office documents, 3D workflows, and more, loaded only when a task needs them.
 - **Code Knowledge Graph (CKGD).** The agent indexes your repository into a chaptered knowledge graph, verifies it against the source, and keeps it in sync as the project evolves.
 - **Cross-session memory.** Persistent agent memory and user notes are injected into context, so preferences and project facts survive between sessions.
 - **Context compaction.** Automatic and manual compaction summarize long conversations without losing the thread, and folded history stays inspectable.
 - **Real-time cost tracking.** Per-model pricing with peak/off-peak tiers and cache-hit accounting, updated live per conversation.
 - **Permission controls.** Allow / deny / ask rule sets, a path whitelist, and an audit log for every sensitive operation.
-- **Desktop-grade shell.** A frameless Tauri 2 window with five color themes, a WebSocket JSON-RPC 2.0 protocol, and a self-contained Python backend shipped as a sidecar.
+- **Full UI theming.** Pick any color and the whole palette adapts instantly across the entire interface.
+- **Desktop-grade shell.** A frameless Tauri 2 window, a WebSocket JSON-RPC 2.0 protocol, and a self-contained Python backend shipped as a sidecar.
 
 ## Screenshots
 
