@@ -1,0 +1,34 @@
+# Third-Party Notices
+
+This repository bundles or references third-party materials. The applicable
+licenses and attributions are listed below. Each entry applies to the files
+under the path indicated; full license texts are included in the respective
+directories.
+
+## Bundled skills (skills/)
+
+| Path | License | Copyright / Source |
+|------|---------|--------------------|
+| skills/canvas-design | Apache-2.0 | Anthropic (official Claude skills collection) |
+| skills/frontend-design | Apache-2.0 | Anthropic (official Claude skills collection) |
+| skills/theme-factory | Apache-2.0 | Anthropic (official Claude skills collection) |
+| skills/web-artifacts-builder | Apache-2.0 | Anthropic (official Claude skills collection) |
+| skills/html-diagram/references/html-effectiveness | Apache-2.0 | Anthropic ("The unreasonable effectiveness of HTML" examples) |
+| skills/huashu-design | MIT | Copyright (c) 2026 alchaincyf (花叔 · 花生) |
+| skills/dream-loop | MIT | Copyright (c) 2026 Anshu Chimala |
+| skills/blender-character-workflow | MIT | Copyright (c) 2026 awesome-astra-blender-characters contributors |
+
+Each of the above directories contains its full license text (LICENSE or
+LICENSE.txt).
+
+## Fonts
+
+skills/canvas-design/canvas-fonts bundles a set of typefaces distributed under
+the SIL Open Font License; the corresponding license files (OFL.txt) are
+included in the directory.
+
+## Design acknowledgements
+
+The agent architecture, developer experience, and parts of the interface design
+of PebbleAgent were inspired by Claude Code (Anthropic) and opencode
+(MIT License, https://github.com/sst/opencode).

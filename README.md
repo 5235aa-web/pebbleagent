@@ -135,6 +135,13 @@ node tests/run_all.mjs     # JS tests (fold algorithm, WS recovery, UI formulas,
 
 Three billing/holiday regression scripts (`peb_check_*.py`) sit at the repo root and follow the same exit-code convention. All of the above, plus a full `compileall` syntax check and a `vue-tsc` type check, run in CI on every push (`.github/workflows/checks.yml`).
 
+## Acknowledgements
+
+PebbleAgent's agent architecture, developer experience, and parts of its
+interface design were inspired by Claude Code (Anthropic) and opencode.
+Bundled third-party skills and materials are listed in
+[THIRD_PARTY_NOTICES.md](THIRD_PARTY_NOTICES.md).
+
 ## License
 
 Licensed under the [GNU Affero General Public License v3.0](LICENSE).
