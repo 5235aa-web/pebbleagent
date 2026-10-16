@@ -31,7 +31,7 @@ Save: ModelConfigPanel.vue → config.saveProviders()
 
 Load: gateway.ts setupConnection() → configStore.loadProvidersFromBackend()
   → WebSocket "model.options" → server.py → _read_providers()
-  ⚠️ Note: loadProvidersFromBackend() was once never called; fixed 2026-07
+  Note: called on startup (2026-07)
 ```
 
 ### Path 3: WebSocket Event Types (15)

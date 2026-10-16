@@ -20,7 +20,7 @@
 | pebble-backend.spec | PyInstaller packaging config (entry run_backend.py; datas bundle skills / agent_core/agents / knowledgesource / config JSONs; output dist/pebble-backend.exe) | build (Tauri sidecar chain, see below) | 📦Build |
 | run_backend.py | Backend entry point (→ gateway/ws_server.py) | user / Tauri sidecar | 🟡Script |
 | skills_loader.py | Skills loader (skills/ directory scan & load) | - | 🟡Aux |
-| agent_chat.db | ⚠️ Deprecated old DB frozen on 2026-07-12 — the current message DB is {PEBBLE_HOME}/agent_chat.db (e.g. %USERPROFILE%\.pebble\); don't inspect the wrong one | - | 🗑️Deprecated |
+| agent_chat.db | Legacy DB (frozen 2026-07-12); the current message DB is {PEBBLE_HOME}/agent_chat.db (e.g. %USERPROFILE%\.pebble\) | - | 🗑️Deprecated |
 
 ### Tauri Desktop Shell & Packaging Pipeline (ui-gui-vue3/src-tauri/)
 

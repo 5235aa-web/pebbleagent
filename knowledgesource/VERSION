@@ -1,15 +1,15 @@
-2026-10-15: Full graph calibration (fixing outdated content — user investigation found the graph lagging behind actual development)
-- Background: the user found discrepancies — ① outdated file sizes (agent_chat_service_v2 graph 60KB vs actual 117KB; server.py 74KB→90KB; gateway.ts 31KB→37KB) ② 7 large modules described minimally (transcript_manager 42KB / lsp_client 65KB / bash_validator 19.5KB / code_network_guardV2 / electron_bridge / query_loop / agent_delegation_streaming) ③ the Tauri desktop shell (incl. packaging pipeline) entirely unrecorded ④ frontend omissions (ImageViewer / TreeNodes / useFileDrop / router) and an incomplete RPC list in Chapter 4
+2026-10-15: Full graph calibration (knowledge base brought in line with the codebase)
+- Scope: ① file sizes refreshed (agent_chat_service_v2 60KB→117KB; server.py 74KB→90KB; gateway.ts 31KB→37KB) ② 7 large modules given full entries (transcript_manager 42KB / lsp_client 65KB / bash_validator 19.5KB / code_network_guardV2 / electron_bridge) ③ the Tauri desktop shell (incl. packaging pipeline) recorded ④ frontend additions (ImageViewer / TreeNodes / useFileDrop / router) and the Chapter 4 RPC list completed
 - Calibration (by chapter):
-  - Ch5: agent_chat_service_v2 size fixed to 117KB; 7 module entries fleshed out (key symbols/callers/storage paths; lsp_client caller corrected agent_chat_service_v2→tool_executor_impl; query_loop and agent_delegation_streaming marked "not wired into main flow" orphans); added base_agent.py.bak deprecated row + misjudgments #11/#12
+  - Ch5: agent_chat_service_v2 size fixed to 117KB; 7 module entries added (key symbols/callers/storage paths; lsp_client caller corrected agent_chat_service_v2→tool_executor_impl); base_agent.py.bak deprecated row added
   - Ch4: added permission_audit.py entry (audit DB: event types/decision sources/checksum tamper protection); added "JSON-RPC Method List" section (60+ methods verified and grouped: session / project / message / model / agent / mcp / memory / permission / file / ...)
   - Ch2: topology updated (117KB/90KB + tool infrastructure + desktop shell layer); dependency table +7 rows (transcript_manager / permission_audit / bash_validator / lsp_client / code_network_guardV2 / electron_bridge / src-tauri)
   - Ch1: tech stack + Rust/Tauri 2; entry + sidecar chain; core module count 6→7
   - Ch6: new "Tool Execution Security & Validation Chain" section (bash 6-layer validation / network 3 guards / LSP tool family 9 / browser bridge / audit)
   - Ch8: gateway.ts 37KB; recorded ImageViewer (full-screen preview) / TreeNodes (file.open + file.search lazy load); MessageBubble + message deletion (message.delete); Sidebar + export (session.export_save → history/); + useFileDrop / router
-  - Ch9: new "Tauri Desktop Shell & Packaging Pipeline" section (sidecar lifecycle: resource_dir launch + priority boost + taskkill tree cleanup; packaging chain: pebble-backend.spec → sidecar exe → Tauri bundle); root table additions (pebble-backend.spec / run_backend.py / skills_loader.py / pebble-chat-ui.html / MODIFY.md / deprecated old-DB agent_chat.db warning / misc scripts); skills count 117 dirs
+  - Ch9: new "Tauri Desktop Shell & Packaging Pipeline" section (sidecar lifecycle: resource_dir launch + priority boost + taskkill tree cleanup; packaging chain: pebble-backend.spec → sidecar exe → Tauri bundle); root table additions (pebble-backend.spec / run_backend.py / skills_loader.py / pebble-chat-ui.html / MODIFY.md / legacy old-DB agent_chat.db entry / misc scripts); skills count 117 dirs
   - content.md: summary item 21 + stats updated (87 .py + 57 .vue/.ts + 2 .rs)
-- Verification: numbers all measured (get_file_info / find_files); reference relations verified by grep; deprecated old DB modification-time evidence (frozen 2026-07-12)
+- Verification: numbers all measured (get_file_info / find_files); reference relations verified by grep; legacy old-DB modification-time evidence (frozen 2026-07-12)
 
 2026-10-15: mcp_install.json fixes (codebase-memory 404 link + blender copy supplement)
 - Background: open-source portability verification found the codebase-memory download URL was 404 (username placeholder "user" not replaced + wrong asset-name format); the frontend "download" button opened a dead link
@@ -18,35 +18,35 @@
 - Note: requirements.txt untouched (MCP tools are separate processes, not pip runtime deps; belongs to the mcp_install.json mechanism)
 
 2026-10-15: Added requirements.txt (project Python dependency list, root)
-- Background: user requested a root requirements.txt (previously missing; the Chapter 9 entry already existed — this adds the actual file)
-- Content: 18 direct deps in four groups — core 4 (websockets>=16.0 / openai>=2.43.0 / httpx>=0.28.1 / PyYAML>=6.0.3) + optional 11 (tiktoken / aiohttp / numpy / Pillow / pypdf / python-docx / openpyxl / PyMuPDF / pdfplumber / easyocr / psutil) + skills 1 (playwright) + build 2 (pyinstaller / pyinstaller-hooks-contrib); version format = ">= version verified in the current environment" (user-confirmed)
+- Background: a root requirements.txt was added (previously missing; the Chapter 9 entry already existed — this adds the actual file)
+- Content: 18 direct deps in four groups — core 4 (websockets>=16.0 / openai>=2.43.0 / httpx>=0.28.1 / PyYAML>=6.0.3) + optional 11 (tiktoken / aiohttp / numpy / Pillow / pypdf / python-docx / openpyxl / PyMuPDF / pdfplumber / easyocr / psutil) + skills 1 (playwright) + build 2 (pyinstaller / pyinstaller-hooks-contrib); version format = ">= version verified in the current environment"
 - Method: full-project import scan (gateway/multi_agents/tools/skills/root) + PyInstaller PYZ-00.toc (46 third-party packages) cross-validation for direct/transitive separation + exact versions from site-packages dist-info
 - Notes: PyMuPDF/pdfplumber/easyocr/psutil/playwright not currently installed (annotated in comments); the external module uia3_tool referenced by tools/uia_tools.py (not a pip package) noted in the remarks section
 
 2026-10-15: ③ line cache (rimCached) full audit — conclusion: no bug (with evidence chain)
-- Background: after the v-memo content-mixing bug was rolled back, the user asked for a full audit of rendering-performance ③ (MessageContent.vue rimCached line cache) for similar hazards
+- Background: after the v-memo content-mixing bug was rolled back, a full audit of rendering-performance ③ (MessageContent.vue rimCached line cache) was run for similar hazards
 - Verification: check_rimcache_behavior.mjs 18/18 (pure-functionality/reference stability/clear boundaries/edge inputs/multi-instance isolation); check_rimcache_updatepath.mjs (real Vue createRenderer update path: unchanged lines skip patchProp, changed lines update, Fragment multi-line delta=1); SFC compile confirms lineCache lives in setup() (one per instance); runtime-core patchElement source confirms the `next!==prev` skip logic
 - Conclusion: rimCached is a pure function mapping (key = line text → HTML); same input always yields the same output, so content mixing is structurally impossible; the essential difference from v-memo: v-memo caches the whole vnode in shared slots (can mix), rimCached caches a text→HTML pure mapping (same input → same output)
 - Scripts archived: .pebble/_tmp_verify/check_rimcache_behavior.mjs, check_rimcache_updatepath.mjs
 
-2026-10-15: Segment-level v-memo freeze rolled back (major bug: thinking/body segments cross-contaminating content)
-- Symptom: the user reported all thinking cards showing the same content (segment 0 "用户说：新的前端任务…先读文件看") and all body cards the same (segment 1 "我先看一下价格面板…"); only the last segment was normal
+2026-10-15: Segment-level v-memo freeze rolled back (thinking/body segments cross-contaminated content)
+- Symptom: all thinking cards showed the same content (segment 0) and all body cards the same (segment 1); only the last segment was normal
 - Investigation: agent_chat.db / sessions.db data intact (segments differ, no pollution) → frontend rendering bug
 - Root cause: segment-level freeze v-memo misuse — inside v-for, Vue shares fixed cache slots across ALL list items (compiler output _withMemo(deps, fn, _cache, 0/1/2); runtime withMemo returns the old vnode without re-rendering when memo matches). After reload, every segment except the last has isFrozen=true → identical memo values → later segments all hit the first segment's cache (reasoning segments all show segment 0 / text all segment 1 / tool all segment 2); during streaming, unfinalized segments have memo constantly false → content updates also skipped (stuck at first-frame content, jumping at finalization)
 - Evidence: Vue 3.5.39 compiler output + runtime-core withMemo/isMemoSame source (.pebble/_tmp_verify/check_vmemo_compile.mjs, check_vmemo_runtime.mjs archived)
 - Rollback: MessageBubble.vue removed three v-memo usages + the isFrozen function (v-for restored without index); ① streaming throttle + ③ line cache kept (independent and safe); vue-tsc passes; verify_render_perf.mjs 21/21 (part 2 changed to rollback assertions)
-- Lesson: v-memo inside v-for cannot implement "per-item freezing" (shared slots); segment-level freezing needs child components + shouldUpdateComponent-style mechanisms instead
+- Note: v-memo inside v-for cannot implement "per-item freezing" (shared slots); segment-level freezing needs child components + shouldUpdateComponent-style mechanisms instead
 
 2026-10-15: Price panel column-header highlight tweak
 - index.css .mp-flb: the three column headers (cache miss / cache hit / output) changed from muted+50% opacity to full-bright accent theme color (the old style was too dim)
 - Verification: verify_pricing_labels.mjs 17/17 (new highlight assertions); pure CSS change, effective after frontend rebuild
 
-2026-10-15: Graph addition — diagnostic-asset retention note recorded (user decision: keep everything)
+2026-10-15: Graph addition — diagnostic-asset retention note recorded (decision: keep everything)
 - Background: user confirmed keeping — ① backend "Stream events dropped" disconnect log ② frontend [WS] lifecycle logs ③ .pebble/_tmp_verify/ diagnostic tools (thread_monitor.html / measure_mem.py / inspect_db.py / storage_perf.html) and past verification scripts; requested a graph note for future reference
 - Characterization: low frequency, zero cost, high diagnostic value — logs are silent in normal operation (only on disconnect/reconnect); tools used passively when diagnosing; removing them would require rebuilding when an issue recurs
 - Graph changes: Chapter 9 new ".pebble/ Auxiliary Directory" section; Chapter 4 ws_server / Chapter 8 gatewayClient.ts entries + "deliberately kept" note
 
-2026-10-15: Three-layer rendering-performance fix (streaming throttle + segment freeze + line cache) — curing the root cause of "main-thread freeze during streaming causing disconnects"
+2026-10-15: Three-layer rendering-performance fix (streaming throttle + segment freeze + line cache) — fixing the root cause of "main-thread freeze during streaming causing disconnects"
 - Background: after the deep 18:28 disconnect investigation (system logs/process memory/connection history/code paths) ruled out minimize/sleep/stringify (measured 24ms)/localStorage (QuotaExceeded fails fast), the streaming render path was identified — every frame rebuilt the giant message vnode + forced layout, cost growing with message size, heaviest during thinking output → main-thread freeze → WS heartbeat failure → disconnect
 - Fix ① (gateway.ts): scheduleStreamFlush changed from rAF every frame to setTimeout with a 120ms minimum interval (~8fps; executes immediately if >120ms since last flush, guaranteeing the first frame; also removes the rAF hazard of hanging when the window is invisible and stalling subsequent deltas)
 - Fix ② (MessageBubble.vue): executionOrder v-for with index; reasoning/text/tool three branches segment-frozen via v-memo (isFrozen: not the last item + finalized; tool needs completed/failed/cancelled, running/streaming not frozen to support parallel batches; the question branch not memoized to keep answer state instant) — per-frame cost drops from O(whole message) to O(active segments)
@@ -55,11 +55,11 @@
 - Effective: frontend rebuild (backend unrelated); watch streaming smoothness and memory peaks
 - Graph sync: Chapter 8 gateway.ts/MessageBubble.vue/MessageContent.vue entries
 
-2026-10-15: WS disconnect display-loss chronic issue fixed (three layers: frontend auto-recovery + backend disconnect log + frontend lifecycle logs)
-- Event (18:28 instance): WS abnormally dropped 11 seconds before the final report was generated (code=1006, not an app close — the backend kept running until 18:30) → the backend saved to DB first, then sent complete (silently dropped on the dead connection) → the frontend reconnected 28s later but took no recovery action → display stuck at pre-disconnect → the user misjudged it as "abnormal termination" → only after restart, loading from DB, was the full version visible
+2026-10-15: WS disconnect display-loss fixed (three layers: frontend auto-recovery + backend disconnect log + frontend lifecycle logs)
+- Case (18:28 instance): WS abnormally dropped 11 seconds before the final report was generated (code=1006, not an app close — the backend kept running until 18:30) → the backend saved to DB first, then sent complete (silently dropped on the dead connection) → the frontend reconnected 28s later but took no recovery action → display stuck at pre-disconnect (appearing as an abnormal termination) → only after restart, loading from DB, was the full version visible
 - Root causes: ① ws_server WebSocketWriter._send bare-passes ConnectionClosed (disconnect events silently lost) ② after reconnect the frontend's loadInitialSession is blocked by the initialLoadDone guard (spins without recovering) ③ the 28s disconnect-reconnect gap is abnormal (frontend reconnect logic is 3s; suspected main-thread blocking — new logs added to locate on next occurrence)
 - Fix A (frontend auto-recovery): gateway.ts — on mid-stream disconnect sets _streamLostOnDisconnect → after reconnect, 800ms later calls recoverAfterReconnect(): resume pulls the DB to restore display; if the tail is still a user message (backend task not persisted yet) short-polls 12×10s (stops if the user sends a new message)
-- Fix B (backend no longer silent): ws_server.py — _send logs once per ConnectionClosed (_send_failed dedup prevents spam)
+- Fix B (backend disconnect logging): ws_server.py — _send logs once per ConnectionClosed (_send_failed dedup prevents spam)
 - Fix C (observability): gatewayClient.ts — WS lifecycle logs (connected / reconnected after Xms / closed(code,clean) / reconnect attempt #N / error / connect failed); reconnect-duration data for locating the 28s anomaly
 - Verification: verify_ws_recovery.mjs 26/26 (source assertions + recoverAfterReconnect real-source extraction simulating 5 scenarios: DB-already-has-reply single recovery / poll until persisted / no interference during streaming / 13-attempt cap / stop on new user message) + py_compile + vue-tsc
 - Effective: restart backend + refresh frontend; on the next disconnect watch the frontend console and backend.log [WS] logs
@@ -87,12 +87,12 @@
 - Graph sync: Ch7 (new "Model Price Editor Panel" section + 3 date typos fixed), Ch8 (PricingPanel.vue entry + StatusBar entry + 2 date typos fixed)
 
 2026-10-15: thinking toggle & reasoning-effort revamp (frontend toggle + all-vendor reasoning_effort + Xiaomi adaptation)
-- Requirement: ① add a thinking toggle to the frontend LLM config panel (default on, controls thinking-mode on/off) ② reasoning_effort from "DeepSeek-only" to sent for all vendors (user called out Xiaomi)
+- Requirement: ① add a thinking toggle to the frontend LLM config panel (default on, controls thinking-mode on/off) ② reasoning_effort from "DeepSeek-only" to sent for all vendors (Xiaomi included)
 - Implementation (7 files): ① agent_chat_service_v2.py new module-level build_thinking_params(model, thinking_enabled, reasoning_effort) — enabled = thinking:enabled + reasoning_effort (all vendors); disabled = thinking:disabled (no effort sent); non-DeepSeek "max" downgraded to high (Xiaomi accepts only low/medium/high; max causes a 400); chat_stream and generate_conversation_title both route through it (title-generation params passed by the caller) ② gateway/server.py new _bool() lenient boolean parsing (with default fallback) + handle_prompt_submit reads provider.thinking_enabled (absent = on, old configs unchanged; replaces the former reasoning_effort is not None derivation) + three sync points: model.options readback / model.provider.save save / model.params.set update ③ frontend 4 files: types + thinkingEnabled; config.ts defaults/report/load mapping (!==false); ModelConfigPanel.vue new thinking toggle row (mcp-tg switch, default on) + reasoning tier row mcp-dim greyed out when off; index.css styles ④ llm_providers.json template + thinking_enabled:true
 - Vendor-spec basis (official docs / multi-source cross-check): DeepSeek none/low/high/max (medium→high server-side mapping); Xiaomi MiMo only low/medium/high + thinking:{enabled|disabled} to disable thinking (mimo2codex/openclaude two sources); the Claude compat layer ignores reasoning_effort; the Gemini compat layer supports none/minimal/low/medium/high
 - Verification: isolated tests 43/43 (build_thinking_params 10 scenarios + _bool 16 scenarios + server three-expression semantics + source existence 10 items); py_compile ×2; vue-tsc passes; script .pebble/_tmp_verify/verify_thinking_toggle.py
-- Effective: backend restart required; frontend refresh shows the toggle; Xiaomi max displays max but sends high (user-confirmed)
-- Graph sync: Ch7 (API-parameter section rewritten + priority table + misjudgment #2 rewritten), Ch8 (config.ts/ModelConfigPanel.vue entries), Ch3 (message path + thinking_enabled), Ch9 (llm_providers.json row)
+- Effective: backend restart required; frontend refresh shows the toggle; Xiaomi max displays max but sends high
+- Graph sync: Ch7 (API-parameter section rewritten + priority table + note #2 rewritten), Ch8 (config.ts/ModelConfigPanel.vue entries), Ch3 (message path + thinking_enabled), Ch9 (llm_providers.json row)
 
 2026-10-15: Jump-vs-compaction-fold conflict fix (jumping to a compacted message does not auto-expand; positions to the fold divider)
 - Requirement: when the three jump mechanisms (top jump bar TimelineBar / in-conversation search MessageSearch / sidebar cross-session search session.search) jump to a compacted-folded message, do NOT auto-expand; position at the fold divider pill of that message's segment instead, letting the user decide whether to expand (avoiding accidental render pressure)
@@ -110,39 +110,39 @@
 - Graph sync: Chapter 8 InputArea.vue entry
 
 2026-10-15: chat_agent tool-whitelist enforcement (enforce: schema filtering + execution interception)
-- Background: the chat agent previously received the full tool schema (50+ built-in + MCP + extensions) and could execute any tool — agent YAML tools.allowed was a legacy field with no consumer (filtering logic only lived in base_agent.py.bak)
+- Background: the chat agent previously received the full tool schema (50+ built-in + MCP + extensions) and could execute any tool — agent YAML tools.allowed was declarative only (tool schemas were injected in full via get_tools_definition_with_mcp())
 - Implementation (4 files): ① agent_loader.py: ToolPermissions + enforce switch (default false, backward-compatible) + new filter_tools_for_agent() (schema filtering) + check_agent_tool_policy() (execution-interception decision) ② agent_chat_service_v2.py: _get_tools_definition(agent_def) filters by policy — blacklisted tool descriptions not uploaded to the LLM ③ tool_executor_impl.py: execute() entry policy interception (against hallucinated calls/bypass) ④ chat_agent.yaml: enforce=true + allowed changed to the four tools read_file/search_files/edit_file/write_file + system prompt updated accordingly (removed web_search references, adjusted file-operation wording)
 - Impact: only chat_agent effective (code/analysis/article keep enforce off; MCP tools no longer injected or executable for chat_agent)
 - Verification: three isolated suites 32/32 all pass (unit 23 + execution-interception integration 5 + schema end-to-end 4: chat_agent schema filters to exactly 4 tools, code_agent 54 tools unaffected); py_compile ×3 + LSP ×3 pass; scripts .pebble/_tmp_verify/verify_agent_tool_policy.py / verify_executor_intercept.py / verify_service_schema.py
 - Effective: backend restart required (agent cache is process-level, no mtime invalidation)
-- Graph sync: Ch5 (agent_loader/tool_executor_impl/service index rows + Agent Definitions section + misjudgment #10), Ch6 #20 updated
+- Graph sync: Ch5 (agent_loader/tool_executor_impl/service index rows + Agent Definitions section + note #10), Ch6 #20 updated
 
 2026-10-15: ask_user_question multi-question pipeline fix + sidebar time-group English labels
 - Multi-question fix (5 places, dual-channel compatible): ① server.py ask_question event sends the full questions array (single-question fields kept for compatibility) ② gateway.ts clarify.request consumes the array preferentially / falls back to single fields ③ gateway.ts ask-question-submit carries a structured answers object (HTML comments merged into the matching answer key) ④ server.py clarify.respond accepts an answers parameter ⑤ _submit_clarify_answer dual-channel (new: object pass-through / old: {"0":...} wrapping)
-- Root cause: the tool schema supports 1-4 questions, but the event/answer pipeline was a single-question-era leftover (clarify.request sent only questions[0] + answers hardcoded "0") → the UI showed only the 1st question while the agent received the full questions + a single answer → misjudged "the user didn't answer the rest"
+- Root cause: the tool schema supports 1-4 questions, but the event/answer pipeline was a single-question-era leftover (clarify.request sent only questions[0] + answers hardcoded "0") → the UI showed only the 1st question while the agent received the full questions + a single answer
 - Verification: isolated tests 9/9 (dual channel + request_id/no-pending double guards + end-to-end format) + py_compile + vue-tsc pass; the frontend AskQuestionCard already supported multiple questions (rendering + answer-all guard), no change needed; the recovery path already mapped all, now consistent with the live path
 - Sidebar labels: time-group labels switched to English (today / yesterday / this week / this month / last month / earlier / last year)
 - Graph sync: Chapter 8 item 23 added + item 14 updated ("hardcoded 0" resolved)
 
 2026-10-15: Sidebar conversation time-based auto grouping + group-label highlight
-- Requirement: unpinned conversations auto-grouped by time (Today/Yesterday/This Week/This Month/Last Month/Three Months Ago/Last Year), with highlighted group labels (the user pointed out the pinned label had no highlight; fixed together)
+- Requirement: unpinned conversations auto-grouped by time (Today/Yesterday/This Week/This Month/Last Month/Three Months Ago/Last Year), with highlighted group labels (pinned-label highlight included in the same pass)
 - Implementation (2 files): ① Sidebar.vue: bucketOf(ts, now) seven-bucket decision (local-timezone calendar boundaries; sequential checks for overlaps — Monday's "yesterday" = last Sunday, cross-year weeks count as "this week") + timeGroups computed (empty groups hidden, fixed near-to-far order, original order within groups); unp flat rendering → grouped rendering ② styles/index.css: .sb-label highlight (color muted→accent, opacity .5→1; shared by pinned/time/search labels, effective together)
-- Boundary semantics (user-confirmed): "Three Months Ago" = earlier within this year before last month; "Last Year" = fallback for anything before this year
+- Boundary semantics: "Three Months Ago" = earlier within this year before last month; "Last Year" = fallback for anything before this year
 - Verification: vue-tsc passes; boundary tests 36/36 (4 scenarios: normal day/Monday/cross-year/early-month, covering every bucket boundary instant)
 - Pending user test: sidebar visuals (grouping display, label highlight)
 - Graph sync: Chapter 8 Sidebar.vue entry
 
-2026-10-15: "Silent stream termination" incident investigation & fix (A log persistence + B finish_reason recording + C suspicious-end detection & auto-retry)
-- Investigation conclusion: the event = the model silently stops at the "thinking→acting" junction (reasoning finished but no tool call / no closing text, stream just ends; occasionally `｜｜DSML｜｜` markers leak); the backend's `if not tool_calls: break` misjudged it as "task completed" (interrupted=0, invisible to the user). max_tokens truncation ruled out (the interrupted call's output was only 4147 tokens vs the 27648 cap). Historical similar events (2026-09-12/09-25 "you're stuck" complaints) match the pattern; the only DSML-marker leak in the whole database is this one (2 earlier suspected matches were false positives: HF model name/base64)
+2026-10-15: Intermittent empty-output turn end: detection & auto-retry (A log persistence + B finish_reason recording + C suspicious-end detection & auto-retry)
+- Behavior: the model can end its turn at the "thinking→acting" junction (reasoning finished but no tool call / no closing text, stream just ends; occasionally `｜｜DSML｜｜` markers leak); the backend's `if not tool_calls: break` treated it as "task completed" (interrupted=0). max_tokens truncation ruled out (the call's output was only 4147 tokens vs the 27648 cap). The same pattern appeared on 2026-09-12/09-25; the only DSML-marker leak in the whole database is this one (2 earlier suspected matches were false positives: HF model name/base64)
 - A Log persistence: new gateway/log_setup.py (setup_logging: stderr + RotatingFileHandler {PEBBLE_HOME}/logs/backend.log, 5MB×5 rotation UTF-8, idempotent, degradation-safe); wired into ws_server.run_server / entry.py (previously stderr → cmd window only, lost on restart)
 - B finish_reason recording: agent_chat_service_v2.py stream loop captures it (reset to None each iteration) + stream-end INFO log (finish_reason/content_len/reasoning_len/tool_calls)
 - C Suspicious-end detection + auto-retry: _is_suspicious_stream_end(finish_reason, response_text) (length truncation OR no text output = suspicious); in the main loop's "no tool calls" branch: suspicious and not yet retried → echo this turn's output (incl. reasoning_content) + inject "[System] output was unexpectedly interrupted, please continue" → continue, retry once; still suspicious → warning log, treat as completed; suspicious_retry_done limited to once per turn
 - Verification: py_compile ×4; isolated tests 13/13 (log: directory/file/content/format/idempotency 5 items + detection: 8 scenarios); LSP 450 symbols
-- Pending real-world test: auto-recovery on a genuine interruption (watch backend.log "Suspicious stream end" + recovery behavior next time); effective after backend restart
-- Graph sync: Ch4 (ws_server entry + log_setup new entry), Ch5 (service entry + misjudgment #9)
+- Pending real-world test: auto-recovery on a genuine interruption (watch backend.log "Suspicious stream end" + recovery behavior); effective after backend restart
+- Graph sync: Ch4 (ws_server entry + log_setup new entry), Ch5 (service entry + note #9)
 
-2026-10-15: Compacted-message frontend folding + pill (problem two delivered)
-- Requirement: compacted messages are kept but folded in the frontend; each compaction leaves a "divider + pill" (user decision: the pill stays toggleable, all folded by default, shows the message count, no Tooltip; large-segment expansion jank not optimized for now)
+2026-10-15: Compacted-message frontend folding + pill
+- Requirement: compacted messages are kept but folded in the frontend; each compaction leaves a "divider + pill" (the pill stays toggleable, all folded by default, shows the message count, no Tooltip; large-segment expansion jank not optimized for now)
 - Changes (4 files): ① types/agentChat.ts Message + isCompacted/isCompactBoundary ② gateway.ts convertBackendMessages: system boundary → anchor element (id=cb_uuid), the three message types pass is_compacted through ③ new CompactDivider.vue pill component ④ VirtualMessageList.vue segmentation/folded rendering/expand state/enhanced jump/session-switch reset
 - Key design: pure frontend render-layer folding (data layer untouched); folded-segment messages truly not rendered via v-if (measured 3011→459 items, -85%); segments computed from g.messages (not recomputed during streaming); scrollToMessageIndex auto-expands the target segment before jumping (search/timeline/message-position unified); expand/collapse scroll compensation keeps the pill in place; session switch resets fold state (compaction/streaming do not)
 - Compatibility: boundary anchors have no messageId / are not user messages, so resume cache merging/message deletion/question-card write-back/streaming append consumers are all unaffected; the localStorage cache contains anchors, so offline fallback recovery keeps fold info
@@ -150,14 +150,14 @@
 - Pending user test: browser rendering (pill visuals, expand/collapse, search-jump into folded segments, new pill after compaction)
 
 2026-10-15: Manual compaction trigger revamp (>10 → ≥2 messages, dynamic retention)
-- Requirement: the old "must exceed 10 messages" was unrealistic; changed to trigger whenever ≥2 messages exist (user-confirmed "keep at most 10" policy)
+- Requirement: the old "must exceed 10 messages" was unrealistic; changed to trigger whenever ≥2 messages exist ("keep at most 10" policy)
 - Changes (4 spots): ① context_compressor.py L1719 check `len(dialog_messages) <= recent_messages` → `< 2` ② L1749 dynamic retention `effective_keep = min(recent_messages, len(dialog_messages)-1)` (with ≤10 messages at least 1 compacted; ≥11 unchanged) ③ L1764 new defensive check (tool-pairing protection expanding the kept range leaving an empty compact set → "no messages to compact (tool pairing integrity forbids splitting)") ④ StatusBar.vue L11 frontend check `<10` → `<2` + copy "at least 2 messages required to compact"
 - Compatibility reasoning: kept_count is computed live from the compaction result (len(compressed)-2); the dual-DB marking chain (sessions.db shift+insert / agent_chat.db mark-all) is naturally compatible with dynamic retention; server.py / insert_compaction_result / auto-compaction paths untouched
 - Verification: isolated tests, 8 scenarios 26/26 assertions pass (2→keep 1, 5→keep 4, 11→keep 10, 15→keep 10, 1/0 rejected, tool-pair of 2→defensive block, tool-pair of 3→keep 2); LSP 527 symbols parse; script .pebble/_tmp_verify/test_compact_dynamic_keep.py
 - Graph sync: Ch7 compaction strategy section (trigger & retention + defense point #5)
 
 2026-10-15: Conversation-deletion race fix (FK crash + cascading database is locked)
-- Incident: after running a tool in a conversation, "FOREIGN KEY constraint failed" crashed → the error message also failed to save → the thread's increment_messages hit "database is locked"; DB forensics: conversation 61b0226c msgs=0, orphan messages in agent_chat.db (conv=70, sort_order=1 missing the user message), conversations table skipping 67-71
+- Case: after running a tool in a conversation, "FOREIGN KEY constraint failed" crashed → the error message also failed to save → the thread's increment_messages hit "database is locked"; DB forensics: conversation 61b0226c msgs=0, orphan messages in agent_chat.db (conv=70, sort_order=1 missing the user message), conversations table skipping 67-71
 - Root-cause chain: ① session.delete raced a running agent (the agent kept writing after deletion) ② Python sqlite3 DML failure doesn't auto-rollback → the connection held the write lock → cascading locked ③ agent_chat.db had no WAL/FK (default DELETE mode + FK OFF) → orphan messages silently produced
 - Fix (4 files): ① gateway/session.py 9 write methods + try/except/rollback/raise ② gateway/ws_server.py _prompt_worker + exception fallback logging ③ gateway/server.py three spots (set cancel_event before session.delete; add_tool_message/add_assistant_message save failures warn only, don't abort the session) ④ multi_agents/agent_chat_history.py new _connect() (WAL + foreign_keys=ON + timeout=10) + 20 connection replacements
 - Verification: py_compile ×4 + LSP (197/329 symbols) + temp-DB functional tests (PEBBLE_HOME isolation): after an FK failure in_transaction=False, cross-connection writes immediately succeed (lock released); orphan writes blocked by IntegrityError; journal_mode=wal; _connect() fk=1
@@ -171,15 +171,15 @@
 - Effective: backend restart required
 
 2026-10-15: search_files tool hardening (event-loop blocking + memory spike fix)
-- Root cause (controlled measurement): the old implementation = synchronous os.walk + full file reads (no pruning/timeout/limits), running directly on the WebSocket event loop; content-mode scan of this project measured 3GB read in 32.23s (warm cache), freezing the whole backend (frontend stuck at processing); a single file (88MB exe) read peaked RSS 15.6→391.8MB (content+lower double string copies 2×188MB, Python allocation peak 940MB); project landmines: ui-gui-vue3/src-tauri/target (Rust build output, 20035 files/2388MB), node_modules, .pebble/snapshots (3590 files)
+- Root cause (controlled measurement): the old implementation = synchronous os.walk + full file reads (no pruning/timeout/limits), running directly on the WebSocket event loop; content-mode scan of this project measured 3GB read in 32.23s (warm cache), freezing the whole backend (frontend stuck at processing); a single file (88MB exe) read peaked RSS 15.6→391.8MB (content+lower double string copies 2×188MB, Python allocation peak 940MB); large scan targets: ui-gui-vue3/src-tauri/target (Rust build output, 20035 files/2388MB), node_modules, .pebble/snapshots (3590 files)
 - Fix (single file multi_agents/tool_executor_impl.py; zero schema/call-site/frontend changes): ① asyncio.to_thread + 35s wait_for fallback (event loop never blocks) ② directory pruning _SEARCH_SKIP_DIRS (hidden dirs + node_modules/dist/build/target etc., 15 categories; prunes subdirectories only, an explicitly given start dir is unaffected) ③ streaming chunked search _stream_search (1MB chunks + incremental UTF-8 decoding + tail overlap for cross-chunk matching; constant memory, any file size, no size cap) ④ binary double-filter (_SEARCH_SKIP_EXTS trimmed blacklist + NUL-byte content detection, ripgrep-aligned semantics) ⑤ 30s time budget (checked per chunk) + 200-result cap (early exit) + Note hints (timed out / limit reached / binary skipped)
 - Verification (15/15 pass; isolated-process AST extraction of the real source): pruning/blacklist/NUL/Chinese/5MB-large-file tail/1MB chunk boundary crossing/UTF-8 multi-byte across chunks/result cap/internal timeout/outer wait_for fallback/file_pattern/isdir all pass; real-project content search 0.26s (old 32s+), event-loop heartbeat max delay 13.6ms, clean memory probe peak zero growth (36.6MB constant throughout)
 - Effective: backend restart required (the Python module has the old code loaded); find_files same-source issue untouched (filename matching only, lower risk)
-- Graph sync: Ch5 tool_executor_impl.py index row + new misjudgment #7 + content.md header
+- Graph sync: Ch5 tool_executor_impl.py index row + new note #7 + content.md header
 
-2026-10-03: WebSocket message-size limit removed + disconnect fake-death fix (image-send stuck at "loading" incident)
-- Incident: after sending an image the UI stuck at "Agent is responding..." forever; the message never reached the server (sessions.db evidence: incident conversation fa716f99 message_count=0, no message rows, title not updated — handle_prompt_submit never called)
-- Root cause: gateway/ws_server.py's websockets.serve() had no max_size, using the websockets 16.0 library default of 1 MiB; images upload as base64 (4/3 inflation) → an original image above ~768KB exceeded the whole-message limit → the server closed the connection at the protocol layer with 1009 (MESSAGE_TOO_BIG) and dropped the message (never delivered to the handler); compounded by a frontend defect: on disconnect onStatus didn't clear streaming → the UI faked death and couldn't resend
+2026-10-03: WebSocket message-size limit removed + reconnect-state fix (image-send stuck at "loading")
+- Case: after sending an image the UI stuck at "Agent is responding..." forever; the message never reached the server (sessions.db evidence: that conversation fa716f99 message_count=0, no message rows, title not updated — handle_prompt_submit never called)
+- Root cause: gateway/ws_server.py's websockets.serve() had no max_size, using the websockets 16.0 library default of 1 MiB; images upload as base64 (4/3 inflation) → an original image above ~768KB exceeded the whole-message limit → the server closed the connection at the protocol layer with 1009 (MESSAGE_TOO_BIG) and dropped the message (never delivered to the handler); compounded by a frontend state gap: on disconnect onStatus didn't clear streaming → the UI stayed stuck and couldn't resend
 - Fix 1 (backend core): ws_server.py serve() + max_size=None (removes the per-message size limit entirely; websockets officially supports None = disabled)
 - Fix 2 (frontend defense): gatewayClient.ts sendMessage returns boolean (not connected/exception → false, no silent drops); gateway.ts new failPendingStream() — on onStatus(false) while streaming, or sendMessage false, marks the unfinished stream as Error (Connection lost / Not connected) and resets streaming/agentMsgId/streamRef
 - Verification: isolated test (random port, no project services involved) — default config rejects a 2MiB message with 1009 (reproduced), max_size=None config sends/receives 2MiB fine (fix works); py_compile passes; vue-tsc --noEmit 0 errors
@@ -195,13 +195,13 @@
 2026-10-03: blender MCP server added (Hyper3D evaluated and not adopted after cost review)
 - .mcp.json: new "blender" (uvx mcp-for-blender → connects to the Blender addon socket localhost:9876)
 - mcp_install.json: prerequisites + uv (check: uvx) and blender (check: blender); servers + blender (uvx / mcp-for-blender / requires uv,blender)
-- Evaluation conclusion (Hyper3D): fully investigated and temporarily configured Hyper3D Rodin's official remote MCP (api.hyper3d.com/api/mcp via npx mcp-remote bridge, 7 rodin_* tools, OAuth flow tested working); after cost review the user decided against it — generation consumes paid credits ($1.5/credit direct or $30+/month subscription), free tier only generates previews without export; alternatives: the Blender MCP addon's built-in Hyper3D/Hunyuan3D generation (Tencent Hunyuan ~¥1.5-2/model + 100 free credits for new users) and the Poly Haven/Poly Pizza free asset libraries
+- Evaluation conclusion (Hyper3D): fully investigated and temporarily configured Hyper3D Rodin's official remote MCP (api.hyper3d.com/api/mcp via npx mcp-remote bridge, 7 rodin_* tools, OAuth flow tested working); after cost review it was not adopted — generation consumes paid credits ($1.5/credit direct or $30+/month subscription), free tier only generates previews without export; alternatives: the Blender MCP addon's built-in Hyper3D/Hunyuan3D generation (Tencent Hunyuan ~¥1.5-2/model + 100 free credits for new users) and the Poly Haven/Poly Pizza free asset libraries
 - Verification: project validate_server_config parses all 6 entries
 - Runtime prerequisites (user-installed): uv (Blender MCP runtime), Blender 3.0+ (with the MCP addon installed and enabled)
-- Graph sync: Ch9 .mcp.json row updated + mcp_install.json new row (13 files); Ch6 misjudgment #1 supplemented
+- Graph sync: Ch9 .mcp.json row updated + mcp_install.json new row (13 files); Ch6 note #1 supplemented
 
 2026-10-02: ask_user_question question alert sound (reusing the notification-sound mechanism)
-- Requirement: play an alert sound when the AI calls the ask-user tool (ask_user_question); the user confirmed reusing the existing "reply-completion sound" mechanism (shared sound settings & toggle)
+- Requirement: play an alert sound when the AI calls the ask-user tool (ask_user_question), reusing the existing "reply-completion sound" mechanism (shared sound settings & toggle)
 - gateway.ts: playCompletionSound() call added at the tail of the clarify.request branch (AI-question alert; silent when Off; shares localStorage pebble:completion-sound with the message.complete sound)
 - SoundSelect.vue: copy "Completion sound" → "Notification sound" (button Tooltip + panel title; the sound list unchanged)
 - Coverage: both clarify.request paths (streaming inline + no-stream fallback) trigger uniformly at the case tail; one ring per question; the completion sound still rings when the AI finishes after the user answers (two independent notification points)
@@ -214,12 +214,12 @@
 - Graph migration: the original PROJECT_GRAPH.md split into content.md (index) + 9 chapter files (1. Project Overview / 2. Module Topology / 3. Critical Paths / 4. Gateway System / 5. Agent System / 6. Tool System / 7. LLM Integration & Billing / 8. Frontend UI / 9. Configuration & Auxiliary Files); 20 boundary notes distributed to chapters by system; the "CKGD mechanism itself" section updated to v2.0; the original file deleted
 - Naming convention: chapter files = "{Chinese numeral}、{name}.md" (e.g. "四、Gateway网关系统.md"), strictly one-to-one with index entries; renames keep numbering continuous when chapter order changes
 - Incidental fixes: stores table title number 4→5, memory table title 6→7 (the old numbers didn't match the row counts)
-- Pending decision: files not in the old graph, e.g. gateway/permission_audit.py (permission audit module, 17.9KB) — whether to add their indexes was left to the user
+- Pending decision: files not in the old graph, e.g. gateway/permission_audit.py (permission audit module, 17.9KB) — index inclusion pending
 
 2026-09-25: code_agent prompt bans the brief tool
-- Background: the AI sometimes sent body text via the brief tool that should have been normal output — brief renders inside a tool card (tiny font, no formatting, hard to read)
+- Background: body text was sometimes sent via the brief tool — brief renders inside a tool card (tiny font, no formatting, hard to read)
 - Changes: code_agent_prompt.md two places — red-line rules section + new "🔴🔴🔴 brief tool banned (violation = failure)" subsection (ban + scenarios + correct practice + reason); output-spec "final reply guidance" + "final replies always output body text directly; calling brief is strictly forbidden"
-- Key finding: agent YAML tools.allowed was a legacy field with no effect (no consumer project-wide; filtering logic only in base_agent.py.bak) — tool schemas are injected in full via get_tools_definition_with_mcp(); the prompt ban was the only soft constraint at the time
+- Key finding: agent YAML tools.allowed was declarative only at the time (tool schemas were injected in full via get_tools_definition_with_mcp()); the prompt ban was the only soft constraint
 - Effective: agent cache is process-level (_agent_cache, no mtime invalidation) → backend restart required; packaged apps need rebuild/reinstall
 - Verification: load_agent_yaml('code_agent') measured — system_prompt contains the new ban (16168 chars, "brief" appears 8 times)
 
@@ -253,11 +253,11 @@
 - Verification: vue-tsc 0 errors; the isTimeBilling expression recomputed correctly for 4 models; CKGD graph synced (header/index/chapters/boundary #18)
 
 2026-09-25: Statutory-holiday billing (DeepSeek peak/off-peak excluding Chinese statutory holidays)
-- Background: DeepSeek's official time-of-day rule is "Monday–Friday (excluding Chinese statutory holidays) 9:00-12:00 & 14:00-18:00 peak; all other times incl. weekends and statutory holidays all day are off-peak"; but is_peak_period only judged weekends+time → Mid-Autumn Festival (2026-09-25, Friday) was misjudged as peak (user report: panel showed peak hours, local estimate inflated at the peak rate)
+- Background: DeepSeek's official time-of-day rule is "Monday–Friday (excluding Chinese statutory holidays) 9:00-12:00 & 14:00-18:00 peak; all other times incl. weekends and statutory holidays all day are off-peak"; but is_peak_period only judged weekends+time → Mid-Autumn Festival (2026-09-25, Friday) was treated as peak (the panel showed peak hours, the local estimate used the peak rate)
 - cn_holidays.json (new, project root): State Council schedule (incl. make-up days); 2025: 28 holiday days/5 make-up days + 2026: 33 holiday days/6 make-up days; source holiday-cn (GitHub, cross-verified with timor.tech); fields holidays/workdays/years_covered/updated_at/sources; make-up days do not participate per the official text (recorded only, for a future switch)
 - agent_chat_service_v2.py: is_peak_period + is_cn_holiday check (holidays off-peak all day); new module-level holiday block (_load_cn_holidays / _ensure_cn_holidays_fresh / is_cn_holiday / get_cn_holidays_payload / _snapshot_cn_holiday_files) — candidate-file snapshot hot reload (covers overwrite/append/delete/corruption-repair), degradation chain: data-dir corrupt→project root→empty set (weekend rule + warning), year-coverage check (log reminder when the current year is uncovered); preloaded at module load
 - server.py: config.get 'pricing' response + cn_holidays field (same source as backend judgment, for frontend local pre-judgment)
-- StatusBar.vue: isPeakLocal + holiday check (Intl Asia/Shanghai date against cn_holidays.holidays); peakInfo extended with the holidays array; refreshPeakInfo re-corrects the local judgment after fetching (lp2, fixing local misjudgment before the first holiday-data pull)
+- StatusBar.vue: isPeakLocal + holiday check (Intl Asia/Shanghai date against cn_holidays.holidays); peakInfo extended with the holidays array; refreshPeakInfo re-corrects the local judgment after fetching (lp2, correcting the local judgment before the first holiday-data pull)
 - gateway.ts: fetchPricing generic type + cn_holidays field
 - pebble-backend.spec: datas + cn_holidays.json (bundled fallback)
 - New check scripts: peb_check_holiday.py (30 decision cases + data-integrity checks), peb_check_holiday_env.py (isolated env: priority/hot reload/fallback/degradation 6 steps)
@@ -265,7 +265,7 @@
 - Graph sync: header / 5 index entries / time-of-day pricing chapter / boundary note #17
 
 2026-09-12: CKGD detection tool fix (glob false-negative defect → direct read_file)
-- Problem: in this environment the glob tool false-negatives on "relative paths with directory prefixes" (e.g. knowledgesource/PROJECT_GRAPH.md, knowledgesource/*, ui-gui-vue3/src/*.ts) — empty results even when files exist; projects with a graph were misjudged as "no graph", triggering unnecessary rebuilds
+- Problem: the glob tool false-negatives on "relative paths with directory prefixes" (e.g. knowledgesource/PROJECT_GRAPH.md, knowledgesource/*, ui-gui-vue3/src/*.ts) — empty results even when files exist
 - Fix: the CKGD detection step changed from "glob probe → read_file load" to "direct read_file (the read itself is the probe: success = graph exists / File not found = no graph)"; three synced locations: multi_agents/agents/code_agent_prompt.md, skills/ckgd/SKILL.md, skills/ckgd/CKGD_SPEC.md, plus a "do not use glob for detection" warning
 - Measured: glob relative-path patterns return 0 (while existing) vs glob "**/..." recursive patterns work; read_file / get_file_info reliable (explicit File not found / Path not found when absent)
 - Note: build-time file enumeration is unaffected (the pipeline uniformly uses **/ recursive patterns)
@@ -388,8 +388,8 @@
 - Frontend zero changes (**Error:** text renders normally on restore)
 - Verification: py_compile passes
 
-2026-07-31: Message-deletion fake-delete fix (assistant dual-DB uuid alignment)
-- Root cause: server.py didn't pass msg_uuid when saving assistant messages to sessions.db (auto-generated a new uuid), inconsistent with agent_chat.db's assistant_msg_uuid (sampled 8, all DIFF) → message.delete's by-uuid sync deletion of agent_chat always failed → deleted assistant messages stayed in the LLM context (fake delete)
+2026-07-31: Message-deletion uuid-alignment fix (assistant dual-DB sync)
+- Root cause: server.py didn't pass msg_uuid when saving assistant messages to sessions.db (auto-generated a new uuid), inconsistent with agent_chat.db's assistant_msg_uuid (sampled 8, all DIFF) → message.delete's by-uuid sync deletion of agent_chat always failed → deleted assistant messages stayed in the LLM context
 - server.py: add_assistant_message passes msg_uuid=chat_completed_data.assistant_msg_uuid (both normal and interrupted paths)
 - User messages were already consistent (user_msg_uuid throughout); system messages aren't deletable from the frontend
 - Limitation: historically deleted messages' residue can't be recovered (uuid mapping lost); they age out with the conversation
@@ -401,7 +401,7 @@
 - Frontend: config.ts project store (projects/activeProjectPath/loadProjects/addProject/deleteProject/setActiveProject/refreshUnassigned/adoptUnassigned + project-switched/project-adopted events); ProjectPanel.vue multi-project UI (click path to expand, hover delete cross + ConfirmDialog, add input, adopt-unassigned button); chat.ts loadConversations(projectPath) filter + switch-event refresh; gateway.ts session.create carries the current project
 - Semantics: fixed at creation (a conversation binds to its project at creation; switching projects doesn't affect old conversations)
 - Verification: data-layer unit tests all pass (create/list/get/fields); vue-tsc + vite build pass; API layer needs a backend restart to test live
-- Note: during testing, 9 real conversations were once mis-adopted into a test project; restored to unassigned
+- Note: test-created project adoptions were restored to unassigned afterwards
 
 2026-08-01: chat_agent added (daily chat assistant)
 - agents/chat_agent.yaml: inline system_prompt (no md), 13-tool streamlined whitelist (ask_user_question/brief/usernote_write/web_search/fetch_url/list_skills/load_skill/read_file/list_directory/get_file_info/get_system_info/todo_read/todo_write), professional_tone:false
@@ -416,10 +416,10 @@
 - Verification: vue-tsc + vite build pass (13.54s)
 
 2026-08-13: File-attachment mechanism fix (pdf/docx/xlsx support + unparseable hint)
-- Root cause: the attachment chain (frontend FileReader → gateway → ws_server → chat_stream) worked; but TEXT_RE only covered text extensions, so pdf/docx/xlsx attachments had empty text_content and weren't images → the backend silently ignored them → the LLM saw nothing (the user thought the mechanism was broken)
+- Root cause: the attachment chain (frontend FileReader → gateway → ws_server → chat_stream) worked; but TEXT_RE only covered text extensions, so pdf/docx/xlsx attachments had empty text_content and weren't images → the backend silently ignored them → the LLM saw nothing
 - agent_chat_service_v2.py: new _extract_attachment_text() (pypdf/python-docx/openpyxl parsing pdf/docx/xlsx/txt etc., 8000-char/20-page limits); attachment handling enhanced: when text content is missing, parse from base64 backend-side; unparseable attachments get a placeholder hint injected (so the LLM knows an attachment exists)
 - Dependency: pip install pypdf python-docx openpyxl (Tsinghua mirror)
-- Bug during the fix: io not imported inside the extractor → NameError → silent None (fixed)
+- Note: the extractor imports io inside the function (absence would yield a silent None)
 - Verification: extractor unit test passes (docx parses content); py_compile passes; WebSocket end-to-end (text attachment) confirmed the chain works
 
 2026-07-13: HTML interactive comment loop mechanism added
