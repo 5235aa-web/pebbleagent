@@ -1,2 +1,5 @@
 # Auto detect text files and perform LF normalization
 * text=auto
+
+# Keep GitHub language stats focused on real source code (exclude bundled skill assets)
+skills/** linguist-vendored
