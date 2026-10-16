@@ -54,6 +54,8 @@ from .agent_loader import get_cached_agent, get_agent_system_prompt, filter_tool
 from .context_compressor import (
     # 核心函数
     is_prompt_too_long_error,
+    # Token 计数统一口径（2026-10-17 问题8：全项目单一实现，tiktoken + 中英文比例降级）
+    estimate_tokens,
 )
 # 导入 Transcript 管理器
 from .transcript_manager import (
@@ -101,28 +103,10 @@ def get_model_context_limit(model_name: str) -> int:
 
 # ==================== Token 计数辅助 ====================
 
-_encoding_cache = {}
-
-def _get_encoding():
-    if 'enc' not in _encoding_cache:
-        try:
-            import tiktoken
-            _encoding_cache['enc'] = tiktoken.get_encoding("cl100k_base")
-        except Exception:
-            _encoding_cache['enc'] = None
-    return _encoding_cache['enc']
-
 def count_tokens(text: str) -> int:
-    """使用 tiktoken 精确计算 token 数，失败时降级为 len//3"""
-    if not text:
-        return 0
-    enc = _get_encoding()
-    if enc:
-        try:
-            return len(enc.encode(text))
-        except Exception:
-            pass
-    return len(text) // 3
+    """计算 token 数（2026-10-17 问题8：统一委托 context_compressor.estimate_tokens，
+    消除此前 tiktoken/len//3/len//4 三套口径并存的问题）"""
+    return estimate_tokens(text)
 
 def count_tokens_for_full_context(
     system_prompt: str,
@@ -988,11 +972,16 @@ class AgentChatServiceV2:
                     continue
             
             # assistant 消息的 tool_calls 必须每个都有 id
+            # （2026-10-17 问题8：不再原地修改入参，改为构造副本）
             if role == "assistant" and msg.get("tool_calls"):
-                for j, tc in enumerate(msg["tool_calls"]):
-                    if not tc.get("id"):
-                        tc["id"] = f"fallback_tc_{i}_{j}"
-                        logger.debug(f"[SANITIZE] messages[{i}] tool_calls[{j}] missing id, generated: {tc['id']}")
+                if any(not tc.get("id") for tc in msg["tool_calls"]):
+                    new_tool_calls = []
+                    for j, tc in enumerate(msg["tool_calls"]):
+                        if not tc.get("id"):
+                            tc = {**tc, "id": f"fallback_tc_{i}_{j}"}
+                            logger.debug(f"[SANITIZE] messages[{i}] tool_calls[{j}] missing id, generated: {tc['id']}")
+                        new_tool_calls.append(tc)
+                    msg = {**msg, "tool_calls": new_tool_calls}
             
             sanitized.append(msg)
         
@@ -1000,6 +989,67 @@ class AgentChatServiceV2:
             logger.debug(f"[SANITIZE] Removed {removed_count} orphan/invalid tool messages")
         
         return sanitized
+    
+    def _build_and_sanitize_tool_calls(self, tool_calls_chunks: Dict, tools: List[Dict[str, Any]]) -> Optional[List[Dict[str, Any]]]:
+        """从流式 chunks 构建工具调用列表并清洗（2026-10-17 问题8：自 chat_stream 提取）
+
+        1. 空 id 修复：流式返回中 tool_call.id 可能因网络波动/chunk 乱序/取消时机
+           而保持空字符串。统一生成稳定 UUID，确保下游消息构建、execution_order
+           记录、数据库保存、取消后重建全链路 id 永远非空。
+        2. 清洗：空名/未知名工具调用不是可恢复的真实工具调用；如果把它们回灌给
+           模型，会形成"空工具名 -> 错误反馈 -> 再次尝试空工具名"的循环，故丢弃。
+        3. 工具名大小写修复。
+        """
+        if not tool_calls_chunks:
+            return None
+        tool_calls = [tool_calls_chunks[idx] for idx in sorted(tool_calls_chunks.keys())]
+        
+        # ========== 空 id 修复 ==========
+        for tc in tool_calls:
+            if not tc.get("id"):
+                tc["id"] = f"call_{uuid.uuid4().hex[:16]}"
+                logger.warning(
+                    f"[AgentChatServiceV2] Fixed empty tool_call.id -> {tc['id']} "
+                    f"(function={tc.get('function', {}).get('name', 'unknown')})"
+                )
+
+        # 有效工具名表（含小写索引）
+        valid_tool_names = {}
+        for tool_def in tools:
+            tool_name = tool_def.get("function", {}).get("name", "")
+            if tool_name and tool_name != "_unknown_tool":
+                valid_tool_names[tool_name] = tool_name
+                valid_tool_names[tool_name.lower()] = tool_name
+
+        sanitized_tool_calls = []
+        dropped_tool_calls = []
+        for tc in tool_calls:
+            function = tc.get("function", {})
+            tool_name = function.get("name", "")
+
+            if not tool_name:
+                dropped_tool_calls.append((tc.get("id", ""), "empty_name"))
+                continue
+
+            corrected = valid_tool_names.get(tool_name) or valid_tool_names.get(tool_name.lower())
+            if not corrected:
+                dropped_tool_calls.append((tc.get("id", ""), f"unknown_name:{tool_name}"))
+                continue
+
+            if corrected != tool_name:
+                logger.info(f"[AgentChatServiceV2] Repaired tool name case: '{tool_name}' -> '{corrected}'")
+                tc["function"]["name"] = corrected
+
+            sanitized_tool_calls.append(tc)
+
+        if dropped_tool_calls:
+            logger.warning(
+                "[AgentChatServiceV2] Dropped invalid tool calls before execution: %s",
+                dropped_tool_calls
+            )
+            tool_calls = sanitized_tool_calls
+        
+        return tool_calls
     
     async def _extract_memories_async(
         self,
@@ -1386,24 +1436,6 @@ class AgentChatServiceV2:
                 # ========== 调用 LLM ==========
                 tools = self._get_tools_definition(agent_def)
                 
-                # print(f"[AgentChatServiceV2] ========== ITERATION {iteration} ==========")
-                # print(f"[AgentChatServiceV2] tools from _get_tools_definition: {len(tools) if tools else 0} tools")
-                # if tools:
-                #     tool_names = [t.get('function', {}).get('name', 'unknown') for t in tools]
-                #     print(f"[AgentChatServiceV2] tool names: {tool_names[:5]}...")  # 只打印前5个
-                
-                # print(f"[AgentChatServiceV2] messages count: {len(messages)}")
-                # for i, msg in enumerate(messages[-3:]):  # 只打印最后3条消息
-                #     role = msg.get('role', 'unknown')
-                #     # 跳过 system 消息的详细打印（太长）
-                #     if role == 'system':
-                #         print(f"[AgentChatServiceV2] messages[{len(messages)-3+i}]: role=system, content=<system prompt omitted>")
-                #         continue
-                #     content_preview = str(msg.get('content', ''))[:100]
-                #     reasoning_preview = str(msg.get('reasoning_content', ''))[:50] if msg.get('reasoning_content') else 'None'
-                #     tool_calls_info = 'has tool_calls' if msg.get('tool_calls') else 'no tool_calls'
-                #     print(f"[AgentChatServiceV2] messages[{len(messages)-3+i}]: role={role}, content={content_preview}..., reasoning={reasoning_preview}..., {tool_calls_info}")
-
                 stream_params = {
                     "model": use_model,
                     "messages": messages,
@@ -1420,14 +1452,6 @@ class AgentChatServiceV2:
                     # DeepSeek 思考模式不支持 tool_choice 参数
                     if not (is_deepseek and final_thinking_enabled):
                         stream_params["tool_choice"] = "auto"
-                        # print(
-                        #     f"[AgentChatServiceV2] Added tools to stream_params, "
-                        #     f"tool_choice={stream_params['tool_choice']}"
-                        # )
-                    # else:
-                    #     print(f"[AgentChatServiceV2] Added tools to stream_params, tool_choice skipped (DeepSeek thinking mode)")
-                # else:
-                #     print(f"[AgentChatServiceV2] WARNING: No tools added to stream_params!")
                 
                 logger.debug(f"[AgentChatServiceV2] Final stream_params keys: {list(stream_params.keys())}")
                 
@@ -1623,68 +1647,9 @@ class AgentChatServiceV2:
                         logger.warning(f"[Cost] Failed to calculate cost: {e}", exc_info=True)
                 # ========================================
                 
-                # 构建工具调用列表
-                tool_calls = None
-                if tool_calls_chunks:
-                    tool_calls = [tool_calls_chunks[idx] for idx in sorted(tool_calls_chunks.keys())]
-                    
-                    # ========== 空 id 修复 ==========
-                    # 流式返回中 tool_call.id 可能因网络波动/chunk 乱序/取消时机
-                    # 而保持空字符串。在此统一修复：为每个空 id 生成稳定 UUID，
-                    # 确保下游消息构建、execution_order 记录、数据库保存、取消后
-                    # 重建全链路 id 永远非空。
-                    for tc in tool_calls:
-                        if not tc.get("id"):
-                            tc["id"] = f"call_{uuid.uuid4().hex[:16]}"
-                            logger.warning(
-                                f"[AgentChatServiceV2] Fixed empty tool_call.id -> {tc['id']} "
-                                f"(function={tc.get('function', {}).get('name', 'unknown')})"
-                            )
-
-                    # 在写入 assistant 消息之前清洗工具调用。
-                    # 空名/未知名工具调用不是可恢复的真实工具调用；如果把它们回灌给模型，
-                    # 会形成“空工具名 -> 错误反馈 -> 再次尝试空工具名”的循环。
-                    valid_tool_names = {}
-                    for tool_def in tools:
-                        tool_name = tool_def.get("function", {}).get("name", "")
-                        if tool_name and tool_name != "_unknown_tool":
-                            valid_tool_names[tool_name] = tool_name
-                            valid_tool_names[tool_name.lower()] = tool_name
-
-                    sanitized_tool_calls = []
-                    dropped_tool_calls = []
-                    for tc in tool_calls:
-                        function = tc.get("function", {})
-                        tool_name = function.get("name", "")
-
-                        if not tool_name:
-                            dropped_tool_calls.append((tc.get("id", ""), "empty_name"))
-                            continue
-
-                        corrected = valid_tool_names.get(tool_name) or valid_tool_names.get(tool_name.lower())
-                        if not corrected:
-                            dropped_tool_calls.append((tc.get("id", ""), f"unknown_name:{tool_name}"))
-                            continue
-
-                        if corrected != tool_name:
-                            logger.info(f"[AgentChatServiceV2] Repaired tool name case: '{tool_name}' -> '{corrected}'")
-                            tc["function"]["name"] = corrected
-
-                        sanitized_tool_calls.append(tc)
-
-                    if dropped_tool_calls:
-                        logger.warning(
-                            "[AgentChatServiceV2] Dropped invalid tool calls before execution: %s",
-                            dropped_tool_calls
-                        )
-                        tool_calls = sanitized_tool_calls
+                # 构建工具调用列表（2026-10-17 问题8：清洗逻辑提取为 _build_and_sanitize_tool_calls）
+                tool_calls = self._build_and_sanitize_tool_calls(tool_calls_chunks, tools)
                 # ========================================
-                
-                # ========== 调试日志 ==========
-                # print(f"[AgentChatServiceV2] Stream ended: response_text={len(response_text)} chars, reasoning_text={len(reasoning_text)} chars, tool_calls_chunks={len(tool_calls_chunks)}")
-                # if tool_calls_chunks:
-                #     for idx, tc in tool_calls_chunks.items():
-                #         print(f"  tool_calls_chunks[{idx}]: id={tc.get('id')}, name={tc.get('function', {}).get('name')}")
                 
                 # ========== 判断是否终止 ==========
                 if not tool_calls:
@@ -2184,29 +2149,6 @@ class AgentChatServiceV2:
             tools = get_tools_definition()
         # 按 Agent 权限过滤（enforce 未启用时原样返回）
         return filter_tools_for_agent(tools, agent_def)
-    
-    async def _execute_tool(self, tool_name: str, args: Dict[str, Any]) -> str:
-        """
-        执行工具
-        
-        注意：权限检查已下沉到 tool_executor_impl.py 中统一处理
-        此方法仅负责设置项目路径和调用执行器
-        """
-        logger.info(f"[AgentChatServiceV2] _execute_tool: {tool_name}")
-        
-        # 更新工具执行器的项目路径
-        self._tool_executor.set_project_path(self._current_project_path)
-        
-        # 创建执行上下文
-        context = ToolExecutionContext(
-            conversation_uuid="",
-            agent_name="",
-            project_path=self._current_project_path,
-            cancel_event=asyncio.Event()
-        )
-        
-        # 权限检查由 tool_executor.execute() 内部统一处理
-        return await self._tool_executor.execute(tool_name, args, context)
 
 
 # ==================== 单例 ====================

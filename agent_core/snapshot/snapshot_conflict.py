@@ -79,8 +79,16 @@ class ConflictDetector:
     # ── 阶段一: SHA256 完整性检测 ─────────────────────────────
 
     def _phase_one_sha256(self, records: List[FileSnapshotRecord]) -> List[Dict[str, Any]]:
-        """逐文件对比当前磁盘 SHA256 与快照记录的 SHA256"""
+        """逐文件对比当前磁盘 SHA256 与快照记录的 SHA256
+
+        2026-10-17 问题6 升级：SHA 不同时不再一律判为"将被覆盖"。
+        若当前 SHA 不在该文件的"AI 掌控已知集合"（所有 backup_sha256 ∪
+        write_result_sha256）中，说明回退点之后的内容可能来自外部修改
+        （别的程序/人工），报 external_modification 冲突而非静默覆盖。
+        兼容：无 write_result 数据的旧记录回退到原行为（will_overwrite）。
+        """
         results = []
+        known_cache: Dict[str, tuple] = {}
         for record in records:
             result = {'file': record.relative_path, 'has_conflict': False, 'conflict': None}
 
@@ -102,12 +110,34 @@ class ConflictDetector:
                 results.append(result)
                 continue
 
-            # SHA256 不同是正常情况——这正是回退操作要恢复的
-            # 不算冲突，只是标记为"将被覆盖"
-            stat = os.stat(record.absolute_path)
+            # 收集该文件的已知 SHA 集合（缓存，文件级）
+            known = known_cache.get(record.relative_path)
+            if known is None:
+                known = self._manager.collect_known_sha256(record.relative_path)
+                known_cache[record.relative_path] = known
+            known_set, has_write_result = known
+
             result['current_sha'] = current_sha
             result['snapshot_sha'] = record.backup_sha256
-            result['will_overwrite'] = True
+
+            if (not has_write_result) or (current_sha in known_set):
+                # 正常：当前内容在 AI 掌控内（这正是回退操作要恢复的），标记"将被覆盖"
+                result['will_overwrite'] = True
+            else:
+                # 外部修改：当前内容不在任何已知状态中
+                stat = os.stat(record.absolute_path)
+                result['has_conflict'] = True
+                result['conflict'] = FileConflict(
+                    relative_path=record.relative_path,
+                    absolute_path=record.absolute_path,
+                    snapshot_record_id=record.record_id,
+                    snapshot_sha256=record.backup_sha256,
+                    current_sha256=current_sha,
+                    conflict_type='external_modification',
+                    expectation='回退时此文件将被恢复为快照版本',
+                    actual='文件当前内容不在 AI 的已知修改记录中（可能被外部程序或人工修改）',
+                    last_modified_at=stat.st_mtime,
+                )
             results.append(result)
 
         return results

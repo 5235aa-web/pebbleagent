@@ -64,7 +64,7 @@ Shell = Tauri 2 (Rust), productName "pebble-agent", identifier com.pebble.agent.
 
 > Retention rationale (user-confirmed 2026-10-15): these assets are used passively only when diagnosing, cost nothing at rest; rebuilding them after removal would be expensive if an issue recurs, so they are kept wholesale. Companion long-term logs: backend "Stream events dropped" (Chapter 4 ws_server.py) and frontend [WS] lifecycle (Chapter 8 gatewayClient.ts).
 
-### Built-in Skills (117 skill directories total)
+### Built-in Skills (115 skill directories total)
 
 | Skill | Path | Function |
 |-------|------|------|
@@ -83,4 +83,4 @@ Shell = Tauri 2 (Rust), productName "pebble-agent", identifier com.pebble.agent.
 | dream-loop | skills/dream-loop/ | Closed-loop 3D visual construction (target image → Blender build → critic iteration; from achimala/dream-loop, incl. references/scripts) |
 | blender-character-workflow | skills/blender-character-workflow/ | Blender character creation/repair workflow (nine-view references, face/hair shaping, production delivery; from icesixgod/awesome-astra-blender-characters) |
 
-**Extended skills (103, calibrated 2026-10-15)**: deck-* (20 presentation templates), officecli-* (8 Office document workflows: docx / pptx / xlsx / pitch-deck / academic-paper / financial-model / word-form / data-dashboard), frame-* (7 motion frames), social-* (6 social cards), web-proto-* (3), imagegen-* (2), plus theme-factory / taste-skill / soft-skill / minimalist-skill / brutalist-skill / stitch-skill / redesign-skill / image-to-code-skill / output-skill / 音乐播放 etc., loaded dynamically via `list_skills` / `load_skill`.
+**Extended skills (101, calibrated 2026-10-15)**: deck-* (20 presentation templates), officecli-* (8 Office document workflows: docx / pptx / xlsx / pitch-deck / academic-paper / financial-model / word-form / data-dashboard), frame-* (7 motion frames), social-* (6 social cards), web-proto-* (3), imagegen-* (2), plus theme-factory / taste-skill / soft-skill / minimalist-skill / brutalist-skill / stitch-skill / redesign-skill / image-to-code-skill / output-skill / 音乐播放 etc., loaded dynamically via `list_skills` / `load_skill`.

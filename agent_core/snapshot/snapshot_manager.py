@@ -168,6 +168,13 @@ class SnapshotManager:
                 self._db.execute(FILE_SNAPSHOTS_TABLE_DDL)
                 for index_ddl in FILE_SNAPSHOTS_INDEXES_DDL:
                     self._db.execute(index_ddl)
+                # 迁移（2026-10-17 问题6）：已有库补 write_result_sha256 列
+                try:
+                    self._db.execute(
+                        "ALTER TABLE file_snapshots ADD COLUMN write_result_sha256 TEXT NOT NULL DEFAULT ''"
+                    )
+                except sqlite3.OperationalError:
+                    pass  # 列已存在
                 self._db.commit()
             except sqlite3.Error as e:
                 logger.error(f"[SnapshotManager] Failed to init tables: {e}")
@@ -291,6 +298,7 @@ class SnapshotManager:
                     (record_id, snapshot_id, session_uuid, message_id, tool_call_id,
                      tool_name, tool_input_json, absolute_path, relative_path,
                      backup_path, backup_sha256, backup_size, backup_mtime,
+                     write_result_sha256,
                      file_existed_before, file_existed_after,
                      operation_type, move_counterpart_path,
                      created_at, revert_status, reverted_at, revert_id)
@@ -298,6 +306,7 @@ class SnapshotManager:
                     (:record_id, :snapshot_id, :session_uuid, :message_id, :tool_call_id,
                      :tool_name, :tool_input_json, :absolute_path, :relative_path,
                      :backup_path, :backup_sha256, :backup_size, :backup_mtime,
+                     :write_result_sha256,
                      :file_existed_before, :file_existed_after,
                      :operation_type, :move_counterpart_path,
                      :created_at, :revert_status, :reverted_at, :revert_id)
@@ -473,6 +482,56 @@ class SnapshotManager:
         )
         return snapshot_id
 
+    async def record_write_result(
+        self,
+        tool_name: str,
+        tool_args: Dict[str, Any],
+        message_id: int,
+        tool_call_id: str
+    ) -> None:
+        """工具执行后回填"写入结果 SHA"（2026-10-17 问题6）
+
+        回退冲突检测需要区分"AI 修改后的状态"与"外部修改"：仅有写前备份时，
+        最后一次写入的结果不在任何 backup_sha256 中，无法区分。本方法在工具
+        执行后记录文件的实际结果状态，detect 时据此判定 external_modification。
+        """
+        snapshot_id = f"{message_id}_{tool_call_id}"
+        files = self._resolve_files_for_tool(tool_name, tool_args)
+        for file_info in files:
+            abs_path = file_info['absolute_path']
+            rel_path = file_info['relative_path']
+            sha = self._sha256_file(abs_path) if os.path.isfile(abs_path) else ""
+            self._db_execute(
+                """UPDATE file_snapshots SET write_result_sha256 = ?
+                   WHERE session_uuid = ? AND snapshot_id = ? AND relative_path = ?""",
+                (sha, self.session_uuid, snapshot_id, rel_path)
+            )
+
+    def collect_known_sha256(self, relative_path: str) -> tuple:
+        """收集某文件在 AI 掌控内的全部已知 SHA（2026-10-17 问题6）
+
+        Returns:
+            (known: set[str], has_write_result: bool)
+            known = 所有历史记录的 backup_sha256 ∪ write_result_sha256；
+            has_write_result 表示该文件是否有回填数据（无则回退到兼容判定）。
+        """
+        rows = self._db_query(
+            """SELECT backup_sha256, write_result_sha256 FROM file_snapshots
+               WHERE session_uuid = ? AND relative_path = ?""",
+            (self.session_uuid, relative_path)
+        )
+        known = set()
+        has_write_result = False
+        for r in rows:
+            b = (r.get('backup_sha256') or '').strip()
+            if b:
+                known.add(b)
+            w = (r.get('write_result_sha256') or '').strip()
+            if w:
+                known.add(w)
+                has_write_result = True
+        return known, has_write_result
+
     def _resolve_files_for_tool(self, tool_name: str, args: Dict[str, Any]) -> List[Dict[str, Any]]:
         """根据工具类型和参数，返回需要备份的文件列表"""
         if tool_name == 'write_file':
@@ -483,6 +542,8 @@ class SnapshotManager:
             return self._resolve_delete_file(args)
         elif tool_name == 'move_file':
             return self._resolve_move_file(args)
+        elif tool_name == 'copy_file':
+            return self._resolve_copy_file(args)
         return []
 
     def _resolve_write_file(self, args: Dict) -> List[Dict]:
@@ -540,6 +601,24 @@ class SnapshotManager:
                            'operation_type': 'move_dest', 'file_existed_before': True,
                            'file_existed_after': True, 'move_counterpart': source})
         return result
+
+    def _resolve_copy_file(self, args: Dict) -> List[Dict]:
+        """copy_file（2026-10-17 问题7e：此前不建快照）
+
+        回退语义：目标文件被创建 → 回退删除；目标被覆盖 → 回退恢复旧内容。
+        源文件不变，无需备份。
+        """
+        dest = self._resolve_path(args.get('destination', ''))
+        if not dest:
+            return []
+        rel = self._to_relative(dest)
+        if os.path.isfile(dest):
+            return [{'absolute_path': dest, 'relative_path': rel,
+                     'operation_type': 'modify', 'file_existed_before': True,
+                     'file_existed_after': True}]
+        return [{'absolute_path': dest, 'relative_path': rel,
+                 'operation_type': 'create', 'file_existed_before': False,
+                 'file_existed_after': True}]
 
     # ────────────────────────────────────────────────────────────────
     # 查询

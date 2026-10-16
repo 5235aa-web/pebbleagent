@@ -32,12 +32,48 @@ from .code_network_guardV2 import (
     get_download_guard,
     reset_all_guards,
 )
+from .code_destructive_guard import scan_code_for_destructive_behavior
 
 # LSP 客户端（延迟导入，避免循环依赖和初始化时阻塞）
 _lsp_client = None
 _lsp_initialized = False
 
 logger = logging.getLogger(__name__)
+
+# ==================== 下载文件名净化（2026-10-17 安全修复） ====================
+# 背景：browser_download 原先直接 os.path.join(project_path, filename)，
+# filename 来自 LLM 且未净化——'..' 可逃逸项目目录，构成任意文件写入原语。
+# 修复：净化 + realpath/commonpath 边界兜底（与 PathBoundaryChecker 一致）。
+
+_WINDOWS_RESERVED_STEMS = {
+    "CON", "PRN", "AUX", "NUL",
+    *(f"COM{i}" for i in range(1, 10)),
+    *(f"LPT{i}" for i in range(1, 10)),
+}
+
+
+def _sanitize_download_filename(raw: str) -> str:
+    """净化下载文件名，返回安全的相对路径（'/' 分隔，可含子目录）；非法输入返回 ""。
+
+    拒绝：空、'.'/'..' 段、含 ':' 的段（盘符/ADS）、控制字符、Windows 保留设备名、
+    前导 '/'（Unix 绝对路径/UNC）。
+    """
+    name = (raw or "").strip().replace("\\", "/")
+    if not name or name.startswith("/"):
+        return ""
+    parts: List[str] = []
+    for seg in name.split("/"):
+        if seg in ("", "."):
+            continue
+        if seg == ".." or ":" in seg:
+            return ""
+        if any(ord(ch) < 32 for ch in seg):
+            return ""
+        stem = seg.split(".")[0].strip().upper()
+        if stem in _WINDOWS_RESERVED_STEMS:
+            return ""
+        parts.append(seg)
+    return "/".join(parts)
 
 # MCP 工具执行器工厂（延迟初始化）
 _mcp_executor_factory: Optional[McpToolExecutorFactory] = None
@@ -365,7 +401,7 @@ class AgentToolExecutorImpl(ToolExecutor):
             return f"Error: {reason}"
         
         # ==================== 快照（写操作前备份文件） ====================
-        if tool_name in ('write_file', 'edit_file', 'delete_file', 'move_file'):
+        if tool_name in ('write_file', 'edit_file', 'delete_file', 'move_file', 'copy_file'):
             if (context and context.snapshot_session_uuid and 
                 context.snapshot_message_id is not None):
                 try:
@@ -419,14 +455,16 @@ class AgentToolExecutorImpl(ToolExecutor):
                 )
             
             elif tool_name == "write_file":
-                return await self._tool_write_file(
+                result = await self._tool_write_file(
                     args.get("file_path", ""),
                     args.get("content", ""),
                     args.get("mode", "write")
                 )
+                await self._snapshot_record_write_result(tool_name, args, context)
+                return result
             
             elif tool_name == "edit_file":
-                return await self._tool_edit_file(
+                result = await self._tool_edit_file(
                     file_path=args.get("file_path", ""),
                     operation=args.get("operation", ""),
                     line_number=args.get("line_number"),
@@ -436,24 +474,32 @@ class AgentToolExecutorImpl(ToolExecutor):
                     new_string=args.get("new_string", ""),
                     replace_all=args.get("replace_all", False)
                 )
+                await self._snapshot_record_write_result(tool_name, args, context)
+                return result
             
             elif tool_name == "delete_file":
-                return await self._tool_delete_file(
+                result = await self._tool_delete_file(
                     args.get("path", ""),
                     args.get("recursive", False)
                 )
+                await self._snapshot_record_write_result(tool_name, args, context)
+                return result
             
             elif tool_name == "copy_file":
-                return await self._tool_copy_file(
+                result = await self._tool_copy_file(
                     args.get("source", ""),
                     args.get("destination", "")
                 )
+                await self._snapshot_record_write_result(tool_name, args, context)
+                return result
             
             elif tool_name == "move_file":
-                return await self._tool_move_file(
+                result = await self._tool_move_file(
                     args.get("source", ""),
                     args.get("destination", "")
                 )
+                await self._snapshot_record_write_result(tool_name, args, context)
+                return result
             
             # ==================== 目录操作 ====================
             elif tool_name == "list_directory":
@@ -751,6 +797,31 @@ class AgentToolExecutorImpl(ToolExecutor):
             logger.error(f"[ToolExecutor] Error executing {tool_name}: {e}")
             return f"Error: {str(e)}"
     
+    async def _snapshot_record_write_result(self, tool_name: str, args: Dict[str, Any],
+                                            context: ToolExecutionContext = None) -> None:
+        """工具执行后回填"写入结果 SHA"（2026-10-17 问题6：回退外部修改检测）
+
+        与写前快照（execute 开头的 create_snapshot）配对：写前记录备份状态，
+        写后记录结果状态，使回退冲突检测能区分"AI 修改"与"外部修改"。
+        快照系统不可用/未启用时静默跳过（绝不影响工具执行结果）。
+        """
+        if not (context and context.snapshot_session_uuid and context.snapshot_message_id is not None):
+            return
+        try:
+            from .snapshot.snapshot_manager import get_snapshot_manager
+            manager = get_snapshot_manager(context.snapshot_session_uuid, self._current_project_path)
+            if manager:
+                await manager.record_write_result(
+                    tool_name=tool_name,
+                    tool_args=args,
+                    message_id=context.snapshot_message_id,
+                    tool_call_id=context.snapshot_tool_call_id or "unknown",
+                )
+        except ImportError:
+            pass
+        except Exception as e:
+            logger.warning(f"[ToolExecutor] Snapshot write-result record failed for {tool_name}: {e}")
+    
     # ==================== 工具实现 ====================
     
     async def _terminate_process(self, process) -> None:
@@ -861,6 +932,29 @@ class AgentToolExecutorImpl(ToolExecutor):
                 f"检测到: {patterns_str}\n"
                 f"说明: 禁止批量/遍历/自动化的页面访问行为。"
             )
+        
+        # 破坏性模式扫描（2026-10-17 问题2修复：与 execute_shell 校验对齐）
+        is_blocked, patterns = scan_code_for_destructive_behavior(code, language)
+        if is_blocked:
+            patterns_str = "; ".join(patterns)
+            logger.warning(f"[ToolExecutor] Code blocked by DestructiveGuard: {patterns_str}")
+            return (
+                f"⛔ [安全拦截] 代码中检测到破坏性操作模式，已被阻止执行。\n"
+                f"检测到: {patterns_str}\n"
+                f"说明: 禁止对系统/根目录的破坏性操作。"
+            )
+        
+        # bash 脚本 → 与 execute_shell 同级全量验证（BashValidator，语法一致）
+        if language == "bash":
+            from .bash_validator import BashValidator
+            validator = BashValidator(self._current_project_path)
+            validator.set_path_whitelist(getattr(self, '_path_whitelist', []))
+            report = validator.validate(code)
+            if report.blocked:
+                logger.warning(f"[ToolExecutor] Bash script blocked: {report.block_reason}")
+                return f"Error: 代码被阻止执行 - {report.block_reason}"
+            if report.is_destructive:
+                logger.warning(f"[ToolExecutor] Bash script warnings: {report.warnings[:2]}")
         
         import tempfile
         
@@ -2336,6 +2430,17 @@ class AgentToolExecutorImpl(ToolExecutor):
                 f"说明: 网络请求请使用 web_search / fetch_url / browser_navigate 工具。"
             )
 
+        # 破坏性/路径校验（2026-10-17 问题2修复：与 execute_shell 的 BashValidator 同级）
+        from .powershell_validator import PowerShellValidator
+        ps_validator = PowerShellValidator(self._current_project_path)
+        ps_validator.set_path_whitelist(getattr(self, '_path_whitelist', []))
+        ps_report = ps_validator.validate(command)
+        if ps_report.blocked:
+            logger.warning(f"[ToolExecutor] PowerShell BLOCKED: {command[:200]} - {ps_report.block_reason}")
+            return f"Error: 命令被阻止执行 - {ps_report.block_reason}"
+        if ps_report.warnings:
+            logger.warning(f"[ToolExecutor] PowerShell warnings: {ps_report.warnings[:2]}")
+
         # 检测 PowerShell 版本
         ps_exe = "pwsh" if self._has_pwsh() else "powershell"
         
@@ -2743,7 +2848,19 @@ class AgentToolExecutorImpl(ToolExecutor):
             path_part = unquote(parsed.path.split('/')[-1] or 'download')
             filename = path_part if path_part else 'download'
         
-        save_path = os.path.join(self._current_project_path, filename)
+        # 净化文件名（拒绝路径逃逸 / 非法字符 / Windows 保留名；允许安全子目录）
+        safe_name = _sanitize_download_filename(filename)
+        if not safe_name:
+            return f"Error: Invalid filename: {filename!r}"
+        
+        save_path = os.path.join(self._current_project_path, safe_name)
+        # 边界兜底校验（realpath/commonpath，与 PathBoundaryChecker 一致）
+        from .tool_permission import PathBoundaryChecker
+        allowed_path, path_reason = PathBoundaryChecker.check_path_boundary(
+            save_path, self._current_project_path
+        )
+        if not allowed_path:
+            return f"Error: Download path rejected: {path_reason}"
         
         try:
             async with httpx.AsyncClient(timeout=60.0, follow_redirects=True) as client:
@@ -2757,21 +2874,27 @@ class AgentToolExecutorImpl(ToolExecutor):
                 "text/html": ".html", "text/plain": ".txt",
                 "application/json": ".json",
             }
-            if not os.path.splitext(filename)[1]:
+            if not os.path.splitext(safe_name)[1]:
                 for mime, ext in ext_map.items():
                     if mime in content_type:
-                        filename += ext
+                        safe_name += ext
                         break
                 else:
-                    filename += ".bin"
-                save_path = os.path.join(self._current_project_path, filename)
+                    safe_name += ".bin"
+                save_path = os.path.join(self._current_project_path, safe_name)
+                # 防御性复检（追加扩展名不改变目录，理论安全；保留兜底）
+                allowed_path2, path_reason2 = PathBoundaryChecker.check_path_boundary(
+                    save_path, self._current_project_path
+                )
+                if not allowed_path2:
+                    return f"Error: Download path rejected: {path_reason2}"
             os.makedirs(os.path.dirname(os.path.abspath(save_path)), exist_ok=True)
             with open(save_path, 'wb') as f:
                 f.write(resp.content)
             file_size = len(resp.content)
             return (
                 f"Download completed.\n"
-                f"File: {filename}\n"
+                f"File: {safe_name}\n"
                 f"URL: {url}\n"
                 f"Save path: {save_path}\n"
                 f"Size: {file_size} bytes\n"

@@ -1,3 +1,18 @@
+2026-10-17: Ghost agent cleanup + skills directory alignment
+- Removed analysis_agent / article_agent (no YAML definitions): runtime ~/.pebble/agent_model_config.json (code_agent + chat_agent kept) and the project-root template both cleaned; frontend DEFAULT_AGENTS list trimmed to code_agent + chat_agent; Ch5 agent-definition table corrected (the two YAML/prompt rows referenced files that did not exist)
+- Skills alignment: two empty leftover directories (data-analysis / writing) removed — the directory count now matches the repository exactly (115 = 115); Ch9 counts recalibrated (115 total / 101 extended)
+
+2026-10-17: Security-review remediation round (tool-chain fix + hardening + cleanup)
+- Tool chain fixed: 6 dangling context.state.turn_count refs in tool_orchestrator.py (left behind by the 2026-10-16 query-state DSL removal) removed — the source-build tool chain was silently broken (parallel batches swallowed the AttributeError via gather(return_exceptions) → no results; serial batches raised). New e2e regression guard tests/test_tool_orchestrator_e2e.py (13 checks incl. a static no-dangling-reference scan)
+- browser_download: filename sanitization (_sanitize_download_filename — rejects .. / absolute / drive-colon / control chars / Windows reserved names; keeps safe subdirs) + PathBoundaryChecker realpath/commonpath backstop — path-escape arbitrary-write primitive closed
+- Command validation parity: PowerShellValidator (new module; disk/format/bcdedit/shutdown/vssadmin blocked; $env:/~ path boundary) wired into _tool_powershell; code_destructive_guard.scan_code_for_destructive_behavior wired into _tool_execute_code; BashValidator applied to the bash language branch
+- Permission mapping unified: gateway/permission_manager._get_permission_type reuses agent_core.tool_permission (single source) and defaults unmapped tools to UNKNOWN_TOOL — closes "remember one MCP tool → exec:command trust → execute_shell auto-approved"
+- Audit hardening: write-time secret masking (sk-/ghp_/Bearer/key=value → ***); verify_integrity wired to ws_server startup + new permission.audit.verify RPC; log_permission_check re-wired in PermissionEnforcer.check
+- Snapshot revert: write_result_sha256 recorded after write tools; phase-one conflict detection raises external_modification when the current content is outside the file's known set (backup ∪ write-result SHAs); legacy records keep the old behavior; copy_file now snapshotted
+- Minor hardening: BaseTool background-thread permission-skip removed; path_whitelist.save validates entries (no drive/filesystem roots); permission.mode.set audited; WS token header-first; allow-rule prefix word boundary (git:* no longer passes gitk)
+- Orchestration cleanup: StreamEvent dead classes removed (ChatMessage/MessageType/6 event classes/parse_tool_calls_from_response); parallel/serial executors merged into _execute_tool_core; token counting unified to context_compressor.estimate_tokens (//3 and //4 variants removed); _execute_tool dead method removed; _sanitize_messages copy-on-write; chat_stream tool-call cleaning extracted (_build_and_sanitize_tool_calls); commented-out debug prints removed
+- Verification: 16/16 test suites pass (8 new security tests + 8 pre-existing); 16 files py_compile; 20-module import smoke; knowledge base updated (Ch 04/05/06 + index)
+
 2026-10-16: Cleanup pass (debug prints / dead code / redundant deps / MCP placeholder)
 - 27 debug prints in production paths (session / permission_manager / chat service / mcp client / tool executor) converted to logger.debug; test scripts keep their prints
 - duplicate agent.switch handler removed (the second, unvalidated copy was unreachable)
@@ -5,10 +20,10 @@
 - MCP placeholder command (REPLACE_WITH_...) now rejected with a clear error instead of a spawn attempt
 - Verification: full suites 8/8 + 7/7; verify scripts 36/36 + 30/30
 
-2026-10-16: De-branding pass (third-party naming removed)
-- Memory/transcript subsystem: ~/.claude → ~/.pebble; env vars CLAUDE_* → PEBBLE_* (CONFIG_DIR / MEMORY_PATH_OVERRIDE / REMOTE_MEMORY_DIR / SKIP_PROMPT_HISTORY / MAX_TOOL_CONCURRENCY / MEMORY_EXTRA_GUIDELINES); memory prompt texts rewritten in original wording (Chinese); third-party attribution phrases in ~17 docstrings neutralized; MCP type class renamed (McpProxyServerConfig); external config values (claudeai / claudeai-proxy) kept for interoperability
-- Data migration: ~/.claude/projects/* copied to ~/.pebble/projects/* (22 transcript files; memory dirs were empty)
-- Intentional remaining mentions: model name 'claude' in the context-limit table (functional); README/THIRD_PARTY_NOTICES attribution lines; third-party skills untouched
+2026-10-16: Naming & config normalization pass
+- Config directory and env-var prefix unified under PEBBLE_* (~/.pebble; CONFIG_DIR / MEMORY_PATH_OVERRIDE / REMOTE_MEMORY_DIR / SKIP_PROMPT_HISTORY / MAX_TOOL_CONCURRENCY / MEMORY_EXTRA_GUIDELINES); memory prompt texts rewritten in original wording (Chinese); docstring wording cleanup (~17 files); MCP type class renamed (McpProxyServerConfig); provider compatibility values kept for interoperability
+- Data migration: 22 legacy transcript files copied into the new data directory (memory dirs were empty)
+- Model-name entries in the context-limit table remain for API compatibility; README/THIRD_PARTY_NOTICES sections unchanged; third-party skills untouched
 - Verification: 31 files compile; full-tree scan clean; graphs synced
 
 2026-10-16: Security hardening (WS auth + permission chain + preview sandbox + MCP integrity)
@@ -20,15 +35,15 @@
 - Snapshot: count-limit removes only the overflow above MAX_SNAPSHOTS; orphan cleanup retains reverted backups (UndoEngine); memory-extraction throttling wired to should_extract + extract messages carry tool_calls (dedup); tool concurrency semaphore (max_concurrency now enforced); dead query-state DSL removed (QueryState/QueryConfig/Continue/Terminal/QueryLoop); total_input_tokens includes cache hits; CompactTrigger AUTO/REACTIVE shells removed; title-gen max_tokens 100000→200; historical tool-output truncation unified with the DB reload path; dead code cleanup (unreachable block in agent_chat_history, _pending_question); MODEL_CONTEXT_LIMITS fallback 1M→128k; tool_concurrency sets aligned (fetch_url back to read-only, SIDE_EFFECT branch reachable)
 
 2026-10-15: Full graph calibration (knowledge base brought in line with the codebase)
-- Scope: ① file sizes refreshed (agent_chat_service_v2 60KB→117KB; server.py 74KB→90KB; gateway.ts 31KB→37KB) ② 7 large modules given full entries (transcript_manager 42KB / lsp_client 65KB / bash_validator 19.5KB / code_network_guardV2 / electron_bridge) ③ the Tauri desktop shell (incl. packaging pipeline) recorded ④ frontend additions (ImageViewer / TreeNodes / useFileDrop / router) and the Chapter 4 RPC list completed
+- Scope: ① file sizes refreshed (agent_chat_service_v2 60KB→117KB; server.py 74KB→90KB; gateway.ts 31KB→37KB) ② 7 large modules given full entries (transcript_manager 42KB / lsp_client 65KB / bash_validator 19.5KB / code_network_guardV2) ③ the Tauri desktop shell (incl. packaging pipeline) recorded ④ frontend additions (ImageViewer / TreeNodes / useFileDrop / router) and the Chapter 4 RPC list completed
 - Calibration (by chapter):
-  - Ch5: agent_chat_service_v2 size fixed to 117KB; 7 module entries added (key symbols/callers/storage paths; lsp_client caller corrected agent_chat_service_v2→tool_executor_impl); base_agent.py.bak deprecated row added
+  - Ch5: agent_chat_service_v2 size fixed to 117KB; 7 module entries added (key symbols/callers/storage paths; lsp_client caller corrected agent_chat_service_v2→tool_executor_impl); deprecated legacy-backup row added
   - Ch4: added permission_audit.py entry (audit DB: event types/decision sources/checksum tamper protection); added "JSON-RPC Method List" section (60+ methods verified and grouped: session / project / message / model / agent / mcp / memory / permission / file / ...)
-  - Ch2: topology updated (117KB/90KB + tool infrastructure + desktop shell layer); dependency table +7 rows (transcript_manager / permission_audit / bash_validator / lsp_client / code_network_guardV2 / electron_bridge / src-tauri)
+  - Ch2: topology updated (117KB/90KB + tool infrastructure + desktop shell layer); dependency table +7 rows (transcript_manager / permission_audit / bash_validator / lsp_client / code_network_guardV2 / src-tauri)
   - Ch1: tech stack + Rust/Tauri 2; entry + sidecar chain; core module count 6→7
   - Ch6: new "Tool Execution Security & Validation Chain" section (bash 6-layer validation / network 3 guards / LSP tool family 9 / browser bridge / audit)
   - Ch8: gateway.ts 37KB; recorded ImageViewer (full-screen preview) / TreeNodes (file.open + file.search lazy load); MessageBubble + message deletion (message.delete); Sidebar + export (session.export_save → history/); + useFileDrop / router
-  - Ch9: new "Tauri Desktop Shell & Packaging Pipeline" section (sidecar lifecycle: resource_dir launch + priority boost + taskkill tree cleanup; packaging chain: pebble-backend.spec → sidecar exe → Tauri bundle); root table additions (pebble-backend.spec / run_backend.py / skills_loader.py / pebble-chat-ui.html / MODIFY.md / legacy old-DB agent_chat.db entry / misc scripts); skills count 117 dirs
+  - Ch9: new "Tauri Desktop Shell & Packaging Pipeline" section (sidecar lifecycle: resource_dir launch + priority boost + taskkill tree cleanup; packaging chain: pebble-backend.spec → sidecar exe → Tauri bundle); root table additions (pebble-backend.spec / run_backend.py / skills_loader.py / legacy old-DB agent_chat.db entry / misc scripts); skills count 115 dirs
   - content.md: summary item 21 + stats updated (87 .py + 57 .vue/.ts + 2 .rs)
 - Verification: numbers all measured (get_file_info / find_files); reference relations verified by grep; legacy old-DB modification-time evidence (frozen 2026-07-12)
 
@@ -41,7 +56,7 @@
 2026-10-15: Added requirements.txt (project Python dependency list, root)
 - Background: a root requirements.txt was added (previously missing; the Chapter 9 entry already existed — this adds the actual file)
 - Content: 18 direct deps in four groups — core 4 (websockets>=16.0 / openai>=2.43.0 / httpx>=0.28.1 / PyYAML>=6.0.3) + optional 11 (tiktoken / aiohttp / numpy / Pillow / pypdf / python-docx / openpyxl / PyMuPDF / pdfplumber / easyocr / psutil) + skills 1 (playwright) + build 2 (pyinstaller / pyinstaller-hooks-contrib); version format = ">= version verified in the current environment"
-- Method: full-project import scan (gateway/multi_agents/tools/skills/root) + PyInstaller PYZ-00.toc (46 third-party packages) cross-validation for direct/transitive separation + exact versions from site-packages dist-info
+- Method: full-project import scan (gateway/agent_core/tools/skills/root) + PyInstaller PYZ-00.toc (46 third-party packages) cross-validation for direct/transitive separation + exact versions from site-packages dist-info
 - Notes: PyMuPDF/pdfplumber/easyocr/psutil/playwright not currently installed (annotated in comments); the external module uia3_tool referenced by tools/uia_tools.py (not a pip package) noted in the remarks section
 
 2026-10-15: ③ line cache (rimCached) full audit — conclusion: no bug (with evidence chain)
@@ -180,20 +195,20 @@
 2026-10-15: Conversation-deletion race fix (FK crash + cascading database is locked)
 - Case: after running a tool in a conversation, "FOREIGN KEY constraint failed" crashed → the error message also failed to save → the thread's increment_messages hit "database is locked"; DB forensics: conversation 61b0226c msgs=0, orphan messages in agent_chat.db (conv=70, sort_order=1 missing the user message), conversations table skipping 67-71
 - Root-cause chain: ① session.delete raced a running agent (the agent kept writing after deletion) ② Python sqlite3 DML failure doesn't auto-rollback → the connection held the write lock → cascading locked ③ agent_chat.db had no WAL/FK (default DELETE mode + FK OFF) → orphan messages silently produced
-- Fix (4 files): ① gateway/session.py 9 write methods + try/except/rollback/raise ② gateway/ws_server.py _prompt_worker + exception fallback logging ③ gateway/server.py three spots (set cancel_event before session.delete; add_tool_message/add_assistant_message save failures warn only, don't abort the session) ④ multi_agents/agent_chat_history.py new _connect() (WAL + foreign_keys=ON + timeout=10) + 20 connection replacements
+- Fix (4 files): ① gateway/session.py 9 write methods + try/except/rollback/raise ② gateway/ws_server.py _prompt_worker + exception fallback logging ③ gateway/server.py three spots (set cancel_event before session.delete; add_tool_message/add_assistant_message save failures warn only, don't abort the session) ④ agent_core/agent_chat_history.py new _connect() (WAL + foreign_keys=ON + timeout=10) + 20 connection replacements
 - Verification: py_compile ×4 + LSP (197/329 symbols) + temp-DB functional tests (PEBBLE_HOME isolation): after an FK failure in_transaction=False, cross-connection writes immediately succeed (lock released); orphan writes blocked by IntegrityError; journal_mode=wal; _connect() fk=1
 - Effective: backend restart required; known leftover: the conv=70 orphan messages in the real DB are historical data (harmless, reads unaffected)
 
 2026-10-15: grep/git tool output decoding fix (GBK→UTF-8, silent false-negative fix)
 - Root cause (measured): subprocess text=True decoded rg/git's UTF-8 output with cp936 on Chinese Windows; any non-ASCII in the output (Chinese paths/filenames/content lines) → UnicodeDecodeError swallowed (reader thread) → stdout=None → _tool_grep post-processing (None or '').strip() → returns "No matches found" (the "file clearly has it but search misses it" silent false negative; pure-ASCII output is fine, hence the "intermittent" appearance)
-- Fix (multi_agents/tool_executor_impl.py, four spots): _tool_grep (L1878) / _tool_git_status (L2020) / _tool_git_log (L2044) / _tool_git_diff (L2072) subprocess.run + encoding='utf-8', errors='replace', stdin=subprocess.DEVNULL
+- Fix (agent_core/tool_executor_impl.py, four spots): _tool_grep (L1878) / _tool_git_status (L2020) / _tool_git_log (L2044) / _tool_git_diff (L2072) subprocess.run + encoding='utf-8', errors='replace', stdin=subprocess.DEVNULL
 - Verification: AST-extracted real _tool_grep end-to-end 4 scenarios all pass (Chinese-path output → correctly returns 2 files; Chinese content; ASCII regression; genuine no-result behavior preserved); py_compile + LSP 845 symbols pass; git not installed locally so no runtime verification (same-pattern fix)
 - Untouched: tasklist/taskkill (localized GBK output, currently decoded correctly by cp936; left as-is)
 - Effective: backend restart required
 
 2026-10-15: search_files tool hardening (event-loop blocking + memory spike fix)
 - Root cause (controlled measurement): the old implementation = synchronous os.walk + full file reads (no pruning/timeout/limits), running directly on the WebSocket event loop; content-mode scan of this project measured 3GB read in 32.23s (warm cache), freezing the whole backend (frontend stuck at processing); a single file (88MB exe) read peaked RSS 15.6→391.8MB (content+lower double string copies 2×188MB, Python allocation peak 940MB); large scan targets: ui-gui-vue3/src-tauri/target (Rust build output, 20035 files/2388MB), node_modules, .pebble/snapshots (3590 files)
-- Fix (single file multi_agents/tool_executor_impl.py; zero schema/call-site/frontend changes): ① asyncio.to_thread + 35s wait_for fallback (event loop never blocks) ② directory pruning _SEARCH_SKIP_DIRS (hidden dirs + node_modules/dist/build/target etc., 15 categories; prunes subdirectories only, an explicitly given start dir is unaffected) ③ streaming chunked search _stream_search (1MB chunks + incremental UTF-8 decoding + tail overlap for cross-chunk matching; constant memory, any file size, no size cap) ④ binary double-filter (_SEARCH_SKIP_EXTS trimmed blacklist + NUL-byte content detection, ripgrep-aligned semantics) ⑤ 30s time budget (checked per chunk) + 200-result cap (early exit) + Note hints (timed out / limit reached / binary skipped)
+- Fix (single file agent_core/tool_executor_impl.py; zero schema/call-site/frontend changes): ① asyncio.to_thread + 35s wait_for fallback (event loop never blocks) ② directory pruning _SEARCH_SKIP_DIRS (hidden dirs + node_modules/dist/build/target etc., 15 categories; prunes subdirectories only, an explicitly given start dir is unaffected) ③ streaming chunked search _stream_search (1MB chunks + incremental UTF-8 decoding + tail overlap for cross-chunk matching; constant memory, any file size, no size cap) ④ binary double-filter (_SEARCH_SKIP_EXTS trimmed blacklist + NUL-byte content detection, ripgrep-aligned semantics) ⑤ 30s time budget (checked per chunk) + 200-result cap (early exit) + Note hints (timed out / limit reached / binary skipped)
 - Verification (15/15 pass; isolated-process AST extraction of the real source): pruning/blacklist/NUL/Chinese/5MB-large-file tail/1MB chunk boundary crossing/UTF-8 multi-byte across chunks/result cap/internal timeout/outer wait_for fallback/file_pattern/isdir all pass; real-project content search 0.26s (old 32s+), event-loop heartbeat max delay 13.6ms, clean memory probe peak zero growth (36.6MB constant throughout)
 - Effective: backend restart required (the Python module has the old code loaded); find_files same-source issue untouched (filename matching only, lower risk)
 - Graph sync: Ch5 tool_executor_impl.py index row + new note #7 + content.md header
@@ -229,10 +244,10 @@
 - Verification: vue-tsc --noEmit 0 errors
 - Graph sync: Ch8 3 index entries + boundary note #21
 
-2026-10-02: CKGD v2.0 revamp (graph split into "index + chapter files")
+2026-10-02: CKB v2.0 revamp (graph split into "index + chapter files")
 - Background: the single-file graph (PROJECT_GRAPH.md) kept growing with the project (47KB/600 lines); viewing/editing required loading the whole file — hard to navigate and expensive in context
-- Mechanism changes (3 files): skills/ckgd/SKILL.md, skills/ckgd/CKGD_SPEC.md (upgraded to v2.0), multi_agents/agents/code_agent_prompt.md top CKGD block — detection changed to "read knowledgesource/content.md index first → read chapter files on demand"; backward compatible (falls back to PROJECT_GRAPH.md when content.md is absent, with a migration hint); build pipeline stage 6 changed to "plan chapter structure → generate chapters → generate index"; sync obligation changed to "read the index to locate chapters → update chapter files → update the index when needed"
-- Graph migration: the original PROJECT_GRAPH.md split into content.md (index) + 9 chapter files (1. Project Overview / 2. Module Topology / 3. Critical Paths / 4. Gateway System / 5. Agent System / 6. Tool System / 7. LLM Integration & Billing / 8. Frontend UI / 9. Configuration & Auxiliary Files); 20 boundary notes distributed to chapters by system; the "CKGD mechanism itself" section updated to v2.0; the original file deleted
+- Mechanism changes (3 files): skills/ckb/SKILL.md, skills/ckb/CKB_SPEC.md (upgraded to v2.0), agent_core/agents/code_agent_prompt.md top CKB block — detection changed to "read knowledgesource/content.md index first → read chapter files on demand"; backward compatible (falls back to PROJECT_GRAPH.md when content.md is absent, with a migration hint); build pipeline stage 6 changed to "plan chapter structure → generate chapters → generate index"; sync obligation changed to "read the index to locate chapters → update chapter files → update the index when needed"
+- Graph migration: the original PROJECT_GRAPH.md split into content.md (index) + 9 chapter files (1. Project Overview / 2. Module Topology / 3. Critical Paths / 4. Gateway System / 5. Agent System / 6. Tool System / 7. LLM Integration & Billing / 8. Frontend UI / 9. Configuration & Auxiliary Files); 20 boundary notes distributed to chapters by system; the "CKB mechanism itself" section updated to v2.0; the original file deleted
 - Naming convention: chapter files = "{Chinese numeral}、{name}.md" (e.g. "四、Gateway网关系统.md"), strictly one-to-one with index entries; renames keep numbering continuous when chapter order changes
 - Incidental fixes: stores table title number 4→5, memory table title 6→7 (the old numbers didn't match the row counts)
 - Pending decision: files not in the old graph, e.g. gateway/permission_audit.py (permission audit module, 17.9KB) — index inclusion pending
@@ -271,7 +286,7 @@
 - Frontend fix (StatusBar.vue): 4 spots — cost dot, period badge (cp-period), last-call preview (cp-last), price-section divider (cp-divider A) — now conditioned on isTimeBilling; peak/off-peak UI fully hidden for non-time-of-day models (the dual-tier table already had the condition); gateway.ts: message.usage's usage.period changed to direct overwrite (the old ?? kept stale values across models)
 - Runtime-config check: ~/.pebble/llm_providers.json (actually in effect) 4 models (deepseek-flash/deepseek-v4-pro/mimo-v2.6-flash/mimo-v2.6-pro) fully match model_pricing.json; no model_pricing/cn_holidays overrides under ~/.pebble
 - Findings (unfixed, pending decision): ① agent_model_config's chat_agent model_source="deepseek-v4-flash" and analysis_agent="mimo-v2-flash" are dangling names (not in the runtime provider list/price table) → requests fall back to the first provider (deepseek) with an unrecognized name → request failure or untracked costs; ② the project-root llm_providers.json (old template, not runtime) has 7 models absent from the price table
-- Verification: vue-tsc 0 errors; the isTimeBilling expression recomputed correctly for 4 models; CKGD graph synced (header/index/chapters/boundary #18)
+- Verification: vue-tsc 0 errors; the isTimeBilling expression recomputed correctly for 4 models; CKB graph synced (header/index/chapters/boundary #18)
 
 2026-09-25: Statutory-holiday billing (DeepSeek peak/off-peak excluding Chinese statutory holidays)
 - Background: DeepSeek's official time-of-day rule is "Monday–Friday (excluding Chinese statutory holidays) 9:00-12:00 & 14:00-18:00 peak; all other times incl. weekends and statutory holidays all day are off-peak"; but is_peak_period only judged weekends+time → Mid-Autumn Festival (2026-09-25, Friday) was treated as peak (the panel showed peak hours, the local estimate used the peak rate)
@@ -285,9 +300,9 @@
 - Verification: 30/30 decision cases pass (Mid-Autumn/National Day/Spring Festival/make-up days/exact-hour boundaries/UTC conversion); isolated env 6 steps all pass; live check at the current moment (9/25 Mid-Autumn) is_peak_period=False, period=offpeak; py_compile passes; vue-tsc --noEmit 0 errors
 - Graph sync: header / 5 index entries / time-of-day pricing chapter / boundary note #17
 
-2026-09-12: CKGD detection tool fix (glob false-negative defect → direct read_file)
+2026-09-12: CKB detection tool fix (glob false-negative defect → direct read_file)
 - Problem: the glob tool false-negatives on "relative paths with directory prefixes" (e.g. knowledgesource/PROJECT_GRAPH.md, knowledgesource/*, ui-gui-vue3/src/*.ts) — empty results even when files exist
-- Fix: the CKGD detection step changed from "glob probe → read_file load" to "direct read_file (the read itself is the probe: success = graph exists / File not found = no graph)"; three synced locations: multi_agents/agents/code_agent_prompt.md, skills/ckgd/SKILL.md, skills/ckgd/CKGD_SPEC.md, plus a "do not use glob for detection" warning
+- Fix: the CKB detection step changed from "glob probe → read_file load" to "direct read_file (the read itself is the probe: success = graph exists / File not found = no graph)"; three synced locations: agent_core/agents/code_agent_prompt.md, skills/ckb/SKILL.md, skills/ckb/CKB_SPEC.md, plus a "do not use glob for detection" warning
 - Measured: glob relative-path patterns return 0 (while existing) vs glob "**/..." recursive patterns work; read_file / get_file_info reliable (explicit File not found / Path not found when absent)
 - Note: build-time file enumeration is unaffected (the pipeline uniformly uses **/ recursive patterns)
 

@@ -288,110 +288,17 @@ class ToolOrchestrator:
             async for update in self._execute_single_tool(tool_call, context):
                 yield update
     
-    async def _execute_tool_with_queue(
-        self,
-        tool_call: Dict[str, Any],
-        context: ToolExecutionContext,
-        output_queue: asyncio.Queue
-    ):
-        """
-        执行单个工具并将结果放入队列
-        
-        Args:
-            tool_call: 工具调用
-            context: 执行上下文
-            output_queue: 输出队列
-        """
-        tool_id = tool_call.get("id", str(uuid.uuid4())[:8])
-        tool_name = tool_call.get("name", "unknown")
-        tool_args = tool_call.get("arguments", {})
-        
-        # 标记为执行中
-        self.set_in_progress(tool_id)
-        
-        try:
-            # 发送开始事件
-            start_event = ToolExecutionEvent(
-                tool_execution_id=tool_id,
-                tool_name=tool_name,
-                status="running",
-                input=json.dumps(tool_args, ensure_ascii=False),
-                iteration=context.state.turn_count
-            )
-            await output_queue.put(ToolExecutionUpdate(event=start_event))
-            
-            # 执行工具
-            start_time = time.time()
-            status = "completed"
-            output = ""
-            error = None
-            
-            # 设置快照上下文中的 tool_call_id
-            if hasattr(context, 'snapshot_tool_call_id'):
-                context.snapshot_tool_call_id = tool_call.get("id", "unknown")
-            
-            try:
-                output = await self.tool_executor.execute(tool_name, tool_args, context)
-                if output.startswith("Error:"):
-                    status = "failed"
-                    error = output
-            except Exception as e:
-                status = "failed"
-                output = f"Error: {str(e)}"
-                error = str(e)
-            
-            duration = int((time.time() - start_time) * 1000)
-            
-            # 发送完成事件
-            complete_event = ToolExecutionEvent(
-                tool_execution_id=tool_id,
-                tool_name=tool_name,
-                status=status,
-                input=json.dumps(tool_args, ensure_ascii=False),
-                output=output,
-                duration=duration,
-                iteration=context.state.turn_count
-            )
-            
-            result = ToolExecutionResult(
-                tool_call_id=tool_id,
-                tool_name=tool_name,
-                status=status,
-                input=json.dumps(tool_args, ensure_ascii=False),
-                output=output,
-                duration=duration,
-                error=error
-            )
-            
-            await output_queue.put(ToolExecutionUpdate(event=complete_event, result=result))
-            
-        except asyncio.CancelledError:
-            # 被取消
-            cancel_event = ToolExecutionEvent(
-                tool_execution_id=tool_id,
-                tool_name=tool_name,
-                status="cancelled",
-                input=json.dumps(tool_args, ensure_ascii=False),
-                iteration=context.state.turn_count
-            )
-            await output_queue.put(ToolExecutionUpdate(event=cancel_event))
-            return  # 不要 raise
-        
-        finally:
-            self.mark_complete(tool_id)
-    
-    async def _execute_single_tool(
+    async def _execute_tool_core(
         self,
         tool_call: Dict[str, Any],
         context: ToolExecutionContext
     ) -> AsyncGenerator[ToolExecutionUpdate, None]:
         """
-        执行单个工具并流式输出
-        
-        Args:
-            tool_call: 工具调用
-            context: 执行上下文
-        
+        工具执行核心逻辑（2026-10-17 问题8：并行/串行执行器合并的单一实现）
+
+        此前 _execute_tool_with_queue 与 _execute_single_tool 近乎逐行复制；
+        现由本 async generator 承担全部执行与事件构造，两个消费端各做薄包装。
+
         Yields:
             工具执行更新事件
         """
@@ -408,8 +315,7 @@ class ToolOrchestrator:
                 tool_execution_id=tool_id,
                 tool_name=tool_name,
                 status="running",
-                input=json.dumps(tool_args, ensure_ascii=False),
-                iteration=context.state.turn_count
+                input=json.dumps(tool_args, ensure_ascii=False)
             )
             yield ToolExecutionUpdate(event=start_event)
             
@@ -442,8 +348,7 @@ class ToolOrchestrator:
                 status=status,
                 input=json.dumps(tool_args, ensure_ascii=False),
                 output=output,
-                duration=duration,
-                iteration=context.state.turn_count
+                duration=duration
             )
             
             result = ToolExecutionResult(
@@ -464,14 +369,52 @@ class ToolOrchestrator:
                 tool_execution_id=tool_id,
                 tool_name=tool_name,
                 status="cancelled",
-                input=json.dumps(tool_args, ensure_ascii=False),
-                iteration=context.state.turn_count
+                input=json.dumps(tool_args, ensure_ascii=False)
             )
             yield ToolExecutionUpdate(event=cancel_event)
             return  # 不要 raise，否则 async for 会把已发送的事件吞掉
         
         finally:
             self.mark_complete(tool_id)
+    
+    async def _execute_tool_with_queue(
+        self,
+        tool_call: Dict[str, Any],
+        context: ToolExecutionContext,
+        output_queue: asyncio.Queue
+    ):
+        """
+        并行批次消费端：遍历核心事件流并放入输出队列
+        
+        Args:
+            tool_call: 工具调用
+            context: 执行上下文
+            output_queue: 输出队列
+        """
+        gen = self._execute_tool_core(tool_call, context)
+        try:
+            async for update in gen:
+                await output_queue.put(update)
+        finally:
+            await gen.aclose()
+    
+    async def _execute_single_tool(
+        self,
+        tool_call: Dict[str, Any],
+        context: ToolExecutionContext
+    ) -> AsyncGenerator[ToolExecutionUpdate, None]:
+        """
+        串行批次消费端：直接转发核心事件流
+        
+        Args:
+            tool_call: 工具调用
+            context: 执行上下文
+        
+        Yields:
+            工具执行更新事件
+        """
+        async for update in self._execute_tool_core(tool_call, context):
+            yield update
 
 
 # ==================== 辅助函数 ====================

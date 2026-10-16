@@ -280,14 +280,6 @@ def estimate_messages_tokens(messages: List[Message]) -> int:
     return sum(estimate_message_tokens(msg) for msg in messages)
 
 
-def rough_token_count_estimation(text: str) -> int:
-    """粗略估算 Token 数量（用于快速计算）"""
-    if not text:
-        return 0
-    # 使用 ~4 字符/token 的估算
-    return len(text) // 4
-
-
 # ============================================================================
 # 1. 结构化摘要提示词
 # ============================================================================
@@ -1171,7 +1163,7 @@ def create_skill_attachment_if_needed(
             skill.content, 
             POST_COMPACT_MAX_TOKENS_PER_SKILL
         )
-        tokens = rough_token_count_estimation(truncated_content)
+        tokens = estimate_tokens(truncated_content)
         
         if used_tokens + tokens > POST_COMPACT_SKILLS_TOKEN_BUDGET:
             continue
@@ -1193,12 +1185,24 @@ def create_skill_attachment_if_needed(
 
 
 def truncate_to_tokens(content: str, max_tokens: int) -> str:
-    """截断内容到指定 token 数量，保留头部"""
-    if rough_token_count_estimation(content) <= max_tokens:
+    """截断内容到指定 token 数量，保留头部
+
+    2026-10-17 问题8：统一使用 estimate_tokens 口径；字符预算按
+    estimate_tokens 降级公式的中英文比例反推（不再使用独立的 //4 口径）。
+    """
+    if estimate_tokens(content) <= max_tokens:
         return content
     
     truncation_marker = "\n\n[... content truncated for compaction; read the full file if needed]"
-    char_budget = max_tokens * 4 - len(truncation_marker)
+    # 字符预算：按中英文比例估算每 token 字符数（与 estimate_tokens 降级公式一致）
+    total_chars = len(content)
+    chinese_chars = sum(1 for c in content if '\u4e00' <= c <= '\u9fff')
+    if total_chars:
+        chinese_ratio = chinese_chars / total_chars
+        chars_per_token = 1.5 * chinese_ratio + 4 * (1 - chinese_ratio)
+    else:
+        chars_per_token = 4
+    char_budget = max(int(max_tokens * chars_per_token) - len(truncation_marker), 0)
     return content[:char_budget] + truncation_marker
 
 
@@ -1958,7 +1962,7 @@ def create_post_compact_file_attachments(
     
     for path, state in sorted_files:
         content = truncate_to_tokens(state.content, POST_COMPACT_MAX_TOKENS_PER_FILE)
-        tokens = rough_token_count_estimation(content)
+        tokens = estimate_tokens(content)
         
         if used_tokens + tokens > POST_COMPACT_TOKEN_BUDGET:
             continue

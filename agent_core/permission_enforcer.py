@@ -285,6 +285,25 @@ class PermissionEnforcer:
             audit_info["permission_level"] = perm_level.value
         except ImportError:
             audit_info["permission_level"] = "medium"
+
+        # 记录权限检查请求（2026-10-17 接入：log_permission_check 此前定义但从未被调用；
+        # 脱敏由 PermissionAuditLogger.log_event 统一处理）
+        audit_logger = self._get_audit_logger()
+        if audit_logger:
+            try:
+                audit_logger.log_permission_check(
+                    tool_name=tool_name,
+                    tool_args=args,
+                    permission_type=str(perm_type.value if hasattr(perm_type, "value") else perm_type),
+                    permission_level=audit_info["permission_level"],
+                    target=str(content or ""),
+                    content=str(content or ""),
+                    project_path=self._current_project_path,
+                    conversation_uuid=context.conversation_uuid if context else "",
+                    agent_name=context.agent_name if context else "",
+                )
+            except Exception as e:
+                logger.warning(f"[PermissionEnforcer] audit check-log failed for {tool_name}: {e}")
         
         check_start_time = time.time()
         

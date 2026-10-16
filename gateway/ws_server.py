@@ -83,17 +83,19 @@ def _load_or_create_gateway_token() -> str:
 
 
 def _extract_ws_token(ws) -> str:
-    """Extract the auth token from the request (query string or header)."""
+    """Extract the auth token from the request (X-Pebble-Token header preferred,
+    ?token= query string as fallback for browser clients, which cannot set
+    custom headers on WebSocket handshakes)."""
     try:
         request = ws.request
-        path = getattr(request, "path", "") or ""
-        qs = parse_qs(urlparse(path).query)
-        token = (qs.get("token") or [""])[0]
-        if token:
-            return token
         headers = getattr(request, "headers", None)
         if headers is not None:
-            return headers.get("X-Pebble-Token", "") or ""
+            token = headers.get("X-Pebble-Token", "")
+            if token:
+                return token
+        path = getattr(request, "path", "") or ""
+        qs = parse_qs(urlparse(path).query)
+        return (qs.get("token") or [""])[0]
     except Exception:
         pass
     return ""
@@ -204,6 +206,16 @@ async def _init_mcp_background():
             )
     except Exception as e:
         logger.warning(f"[MCP] Auto-init deferred (will init on first request): {e}")
+
+async def _verify_audit_integrity_background():
+    """启动时后台校验审计日志完整性（2026-10-17 接入：verify_integrity 此前从未被调用）"""
+    try:
+        from gateway.permission_audit import get_audit_logger
+        ok = await asyncio.to_thread(get_audit_logger().verify_integrity)
+        if not ok:
+            logger.error("[WS] Permission audit integrity check FAILED — audit log may have been tampered")
+    except Exception as e:
+        logger.warning(f"[WS] Audit integrity check skipped: {e}")
 
 def _prompt_worker(sid: str, text: str, writer: WebSocketWriter, attachments: list | None = None, project_path: str | None = None):
     """Run handle_prompt_submit in a thread, using the writer for events."""
@@ -395,6 +407,9 @@ async def main(host: str = "127.0.0.1", port: int = 19876):
 
     # 后台启动 MCP 自动初始化
     _mcp_init_task = asyncio.create_task(_init_mcp_background())
+
+    # 后台校验审计日志完整性（启动时一次；2026-10-17 接入 verify_integrity）
+    asyncio.create_task(_verify_audit_integrity_background())
 
     # max_size: allow large prompt.submit messages with base64 image attachments
     # (websockets default 1 MiB rejects them with close code 1009); the real

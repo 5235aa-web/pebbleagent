@@ -78,6 +78,9 @@ class FileSnapshotRecord:
     backup_size: int = 0            # 备份文件大小（字节）
     backup_mtime: float = 0.0       # 备份文件的原始修改时间
 
+    # 写入结果（2026-10-17 问题6：工具执行后回填；用于回退时的外部修改检测）
+    write_result_sha256: str = ""   # 该次工具调用结束后文件的 SHA256（不存在则为空）
+
     # 文件状态
     file_existed_before: bool = True    # 快照前此文件是否存在
     file_existed_after: bool = True     # 快照后此文件是否仍存在
@@ -117,6 +120,7 @@ class FileSnapshotRecord:
             'backup_sha256': self.backup_sha256,
             'backup_size': self.backup_size,
             'backup_mtime': self.backup_mtime,
+            'write_result_sha256': self.write_result_sha256,
             'file_existed_before': int(self.file_existed_before),
             'file_existed_after': int(self.file_existed_after),
             'operation_type': self.operation_type,
@@ -144,6 +148,7 @@ class FileSnapshotRecord:
             backup_sha256=row.get('backup_sha256', ''),
             backup_size=row.get('backup_size', 0),
             backup_mtime=row.get('backup_mtime', 0.0),
+            write_result_sha256=row.get('write_result_sha256', '') or '',
             file_existed_before=bool(row.get('file_existed_before', True)),
             file_existed_after=bool(row.get('file_existed_after', True)),
             operation_type=row.get('operation_type', 'modify'),
@@ -255,6 +260,7 @@ CREATE TABLE IF NOT EXISTS file_snapshots (
     backup_sha256        TEXT NOT NULL DEFAULT '',
     backup_size          INTEGER NOT NULL DEFAULT 0,
     backup_mtime         REAL NOT NULL DEFAULT 0.0,
+    write_result_sha256  TEXT NOT NULL DEFAULT '',
     file_existed_before  INTEGER NOT NULL DEFAULT 1,
     file_existed_after   INTEGER NOT NULL DEFAULT 1,
     operation_type       TEXT NOT NULL DEFAULT 'modify',

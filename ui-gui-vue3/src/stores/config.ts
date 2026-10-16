@@ -9,8 +9,6 @@ const DEFAULT_PROVIDERS: LLMProvider[] = [
 ]
 const DEFAULT_AGENTS: AgentInfo[] = [
   { name:'code_agent',displayName:'Code Agent',description:'Code expert for programming & debugging',modelSource:'deepseek-flash' },
-  { name:'analysis_agent',displayName:'Analysis Agent',description:'Analysis expert for data analysis & research',modelSource:'mimo-v2.6-flash' },
-  { name:'article_agent',displayName:'Article Agent',description:'Writing expert for articles & copy',modelSource:'deepseek-flash' },
   { name:'chat_agent',displayName:'Chat Agent',description:'Everyday chat assistant for casual talk & Q&A',modelSource:'deepseek-flash' },
 ]
 const LS_PROJECT_PATH='pebble:projectPath';const DEFAULT_PROJECT_PATH='E:\\workspace'

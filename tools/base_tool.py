@@ -136,41 +136,10 @@ class BaseTool(ABC, Generic[InputT, OutputT]):
         if not self.requires_permission:
             return PermissionResult(allowed=True, reason="No permission required")
         
-        # 【修复】检测是否在子agent的后台线程中运行
-        # 只有当当前代码在后台线程中执行时，才跳过权限检查
-        # 不能仅凭有后台任务在运行就跳过，因为主agent也可能在后台任务运行时调用工具
-        try:
-            import asyncio
-            import threading
-            
-            # 检查当前是否在后台线程中
-            # 后台线程的特征：
-            # 1. 不是主线程
-            # 2. 有运行中的事件循环
-            # 3. 该事件循环是通过 asyncio.new_event_loop() 创建的
-            
-            current_thread = threading.current_thread()
-            is_main_thread = current_thread is threading.main_thread()
-            
-            # 如果在主线程中，必须进行权限检查
-            if is_main_thread:
-                # 主线程中运行，正常进行权限检查
-                pass
-            else:
-                # 在非主线程中，检查是否有运行中的事件循环
-                try:
-                    current_loop = asyncio.get_running_loop()
-                    # 在后台线程中有事件循环运行，说明是子agent
-                    logger.info(f"[{self.name}] Running in background thread (non-main), skipping permission check")
-                    return PermissionResult(allowed=True, reason="Background task - permission check skipped")
-                except RuntimeError:
-                    # 没有运行中的事件循环，继续正常权限检查
-                    pass
-                    
-        except ImportError:
-            pass
-        except Exception as e:
-            logger.debug(f"[{self.name}] Error checking thread status: {e}")
+        # 2026-10-17 安全修复（评审问题7a）：移除非主线程跳过逻辑。
+        # 此前"非主线程 + 有运行中事件循环"被当作子 agent 直接跳过权限检查
+        # （返回 allowed=True），构成"在后台线程执行工具即可绕过权限"的提权面。
+        # 当前项目的工具执行（无论哪个线程）都应经过统一权限层。
         
         # 默认实现：调用权限管理器
         try:

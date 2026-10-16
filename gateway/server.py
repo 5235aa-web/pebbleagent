@@ -976,6 +976,15 @@ def handle_request(method: str, params: dict, rid: str) -> Optional[dict]:
             return {"id": rid, "error": {"code": -32602, "message": "paths must be a list"}}
         if len(new_paths) > 5:
             return {"id": rid, "error": {"code": -32602, "message": "maximum 5 paths allowed"}}
+        # 2026-10-17 安全修复（评审问题7b）：路径内容校验，防止"白名单盘根"关掉边界
+        for p in new_paths:
+            if not isinstance(p, str) or not p.strip():
+                return {"id": rid, "error": {"code": -32602, "message": "paths entries must be non-empty strings"}}
+            if not os.path.isabs(p):
+                return {"id": rid, "error": {"code": -32602, "message": f"path must be absolute: {p}"}}
+            stripped = os.path.abspath(p).rstrip("\\/")
+            if not stripped or (len(stripped) == 2 and stripped[1] == ":"):
+                return {"id": rid, "error": {"code": -32602, "message": f"path too broad (drive/filesystem root not allowed): {p}"}}
         try:
             data = {"paths": new_paths}
             if whitelist_path.exists():
@@ -1018,6 +1027,19 @@ def handle_request(method: str, params: dict, rid: str) -> Optional[dict]:
             mode = PermissionMode(mode_str)
             mgr = get_permission_manager()
             mgr.set_mode(mode)
+            # 2026-10-17 安全修复（评审问题7c）：模式切换写审计（bypass/autoAllow 等高危切换可追溯）
+            try:
+                from gateway.permission_audit import get_audit_logger, AuditEvent, AuditEventType
+                get_audit_logger().log_event(AuditEvent(
+                    event_type=AuditEventType.MODE_CHANGED.value,
+                    target=mode_str,
+                    content=f"permission mode -> {mode_str}",
+                    allowed=True,
+                    decision_source="user_setting",
+                    reason="permission.mode.set RPC",
+                ))
+            except Exception as audit_err:
+                logger.warning(f"[Server] audit mode change failed: {audit_err}")
             logger.info(f"[Server] Permission mode set to: {mode_str}")
             return {"id": rid, "result": {"ok": True, "mode": mode_str}}
         except Exception as e:
@@ -1063,6 +1085,16 @@ def handle_request(method: str, params: dict, rid: str) -> Optional[dict]:
             return {"id": rid, "result": {"ok": True}}
         except Exception as e:
             logger.warning(f"[Server] permission.decide error: {e}")
+            return {"id": rid, "error": {"code": -32000, "message": str(e)}}
+
+    if method == "permission.audit.verify":
+        """校验权限审计日志完整性（2026-10-17 接入 verify_integrity）"""
+        try:
+            from gateway.permission_audit import get_audit_logger
+            ok = get_audit_logger().verify_integrity()
+            return {"id": rid, "result": {"ok": ok}}
+        except Exception as e:
+            logger.warning(f"[Server] permission.audit.verify error: {e}")
             return {"id": rid, "error": {"code": -32000, "message": str(e)}}
 
     # ==================== 配置管理 ====================

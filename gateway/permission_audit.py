@@ -17,6 +17,7 @@ import sqlite3
 import json
 import logging
 import os
+import re
 import threading
 from datetime import datetime
 from typing import Optional, List, Dict, Any
@@ -188,6 +189,31 @@ class PermissionAuditLogger:
         except (TypeError, ValueError):
             return "1" if value else "0"
 
+    # ===== 敏感信息脱敏（2026-10-17 安全修复，评审问题 5）=====
+    # 审计库中 target/content/tool_args 等字段会记录命令与代码原文；
+    # 含 API key / token / 密码的命令此前会原样落盘。写入前统一掩码。
+    _SENSITIVE_PATTERNS = [
+        (re.compile(r'sk-[A-Za-z0-9_\-]{8,}'), 'sk-***'),
+        (re.compile(r'ghp_[A-Za-z0-9]{20,}'), 'ghp_***'),
+        (re.compile(r'gho_[A-Za-z0-9]{20,}'), 'gho_***'),
+        (re.compile(r'github_pat_[A-Za-z0-9_]{20,}'), 'github_pat_***'),
+        (re.compile(r'(?i)(bearer\s+)[A-Za-z0-9._\-]{8,}'), r'\1***'),
+        (re.compile(
+            r'(?i)((?:api[_-]?key|apikey|access[_-]?token|auth[_-]?token|token|password|passwd|secret)'
+            r'["\']?\s*[=:]\s*["\']?)([^\s"\',;}{]{6,})'
+        ), r'\1***'),
+    ]
+
+    @classmethod
+    def _mask_sensitive(cls, text: str) -> str:
+        """掩码敏感信息（API key / token / 密码等），防止明文落盘"""
+        if not text or not isinstance(text, str):
+            return text
+        masked = text
+        for pattern, repl in cls._SENSITIVE_PATTERNS:
+            masked = pattern.sub(repl, masked)
+        return masked
+
     def _checksum_payload(self, mapping: dict) -> str:
         """规范化校验字段负载（v2/v3 共用）"""
         payload = {f: mapping.get(f, "") for f in self._CHECKSUM_FIELDS}
@@ -215,6 +241,15 @@ class PermissionAuditLogger:
         """
         if not event.timestamp:
             event.timestamp = datetime.utcnow().isoformat()
+        
+        # 脱敏（2026-10-17）：防止 API key / 密码等明文落盘
+        # （在 checksum 计算之前执行，校验和覆盖脱敏后的值）
+        event.target = self._mask_sensitive(event.target)
+        event.content = self._mask_sensitive(event.content)
+        event.tool_args = self._mask_sensitive(event.tool_args)
+        event.reason = self._mask_sensitive(event.reason)
+        event.error_message = self._mask_sensitive(event.error_message)
+        event.extra = self._mask_sensitive(event.extra)
         
         with self._write_lock:
             conn = sqlite3.connect(self.db_path)
