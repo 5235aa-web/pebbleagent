@@ -1,0 +1,35 @@
+{
+  "providers": [
+    {
+      "id": "default",
+      "provider": "deepseek",
+      "apiKey": "sk-xxxx",
+      "baseUrl": "https://api.deepseek.com/v1/",
+      "models": [
+        "deepseek-flash",
+        "deepseek-pro"
+      ],
+      "temperature": 0.2,
+      "maxTokens": 4096,
+      "topP": 0.15,
+      "reasoning_effort": "max",
+      "thinking_enabled": true
+    },
+    {
+      "id": "1774763858220kcj1dmnpb",
+      "provider": "xiaomimimo",
+      "apiKey": "sk-xxxx",
+      "baseUrl": "https://api.xiaomimimo.com/v1",
+      "models": [
+        "mimo-v2.6-flash",
+        "mimo-v2.6-pro"
+      ],
+      "temperature": 0.2,
+      "maxTokens": 4096,
+      "topP": 0.2,
+      "reasoning_effort": "high",
+      "thinking_enabled": true
+    }
+  ],
+  "activeProviderIndex": 0
+}

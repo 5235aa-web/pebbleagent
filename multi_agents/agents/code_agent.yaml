@@ -1,0 +1,113 @@
+# CodeAgent - Code Expert Agent
+
+name: code_agent
+description: Code expert for programming, debugging, and file operations
+
+
+# Tool permission control
+tools:
+  # Allowed tools (whitelist mode)
+  allowed:
+    # Code execution
+    - execute_code
+    - execute_python
+    - execute_shell
+    # Code search and files
+    - search_files
+    - grep
+    - search_codebase
+    - glob
+    - ls
+    - read_file
+    - write_file
+    - edit_file
+    # Network
+    - web_search
+    # UI automation
+    - uia_get_elements
+    - uia_find_element
+    - uia_get_window_list
+    # Skills
+    - load_skill
+    - list_skills
+    # Plan mode and task management
+    - enter_plan_mode
+    - exit_plan_mode
+    - create_plan
+    - get_plan
+    - todo_write
+    - todo_read
+    # LSP code intelligence
+    - lsp_go_to_definition
+    - lsp_find_references
+    - lsp_hover
+    - lsp_document_symbol
+    - lsp_workspace_symbol
+    - lsp_go_to_implementation
+    - lsp_prepare_call_hierarchy
+    - lsp_incoming_calls
+    - lsp_outgoing_calls
+    # User interaction
+    - ask_user_question
+    - usernote_write
+    # Tool search and discovery
+    - tool_search
+    - list_tools
+    # Additional tools
+    - powershell
+    - notebook_edit
+    - brief
+  
+# Agent behavior traits
+behavior:
+  # Professional style, no emotional expression
+  professional_tone: true
+  # Auto-execute code (no user confirmation)
+  auto_execute: false
+  # Verbosity level
+  verbosity: detailed  # Options: minimal, moderate, detailed
+
+# System prompt file reference
+system_prompt_file: code_agent_prompt.md
+
+# Preloaded Skills
+skills:
+  - ckgd
+
+# Trigger keywords (for auto-routing)
+triggers:
+  - write code
+  - programming
+  - program
+  - script
+  - python
+  - javascript
+  - js
+  - html
+  - css
+  - java
+  - debug
+  - error
+  - bug
+  - file
+  - create file
+  - read file
+  - modify file
+  - regex
+  - algorithm
+  - function
+  - class
+  - api
+  - webpage
+  - website
+  - web
+  - frontend
+  - backend
+
+# Metadata
+meta:
+  version: "1.1"
+  author: "Pebble"
+  source: "built-in"
+  created_at: "2026-04-08"
+  updated_at: "2026-04-18"

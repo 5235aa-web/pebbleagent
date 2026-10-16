@@ -1,0 +1,34 @@
+{
+  "mode": "autoAllow",
+  "allow": [
+    "Read",
+    "LS",
+    "Grep",
+    "Bash(ls:*)",
+    "Bash(cat:*)",
+    "Bash(git:*)",
+    "Bash(npm:*)",
+    "Bash(node:*)",
+    "Bash(python:*)",
+    "Bash(pip:*)"
+  ],
+  "deny": [],
+  "ask": [
+    "Bash(rm:*)",
+    "Bash(sudo:*)",
+    "Bash(chmod:*)",
+    "Bash(chown:*)",
+    "Bash(mkfs:*)",
+    "Bash(dd:*)",
+    "Bash(shutdown:*)",
+    "Bash(reboot:*)",
+    "Write(.env)",
+    "Write(*.pem)",
+    "Write(*.key)",
+    "Write(.git/*)",
+    "Write(.ssh/*)",
+    "Write(*.secret)",
+    "Write(credentials*)",
+    "Delete"
+  ]
+}

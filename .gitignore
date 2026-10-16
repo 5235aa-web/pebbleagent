@@ -1,0 +1,45 @@
+# ============================================================
+# PebbleAgent - .gitignore
+# Excludes: build artifacts, caches, runtime data, personal config
+# ============================================================
+
+# ---------- Python ----------
+__pycache__/
+*.py[cod]
+*.egg-info/
+.venv/
+venv/
+.pytest_cache/
+.mypy_cache/
+.ruff_cache/
+
+# ---------- Build artifacts ----------
+/build/
+/dist/
+ui-gui-vue3/dist/
+*.tsbuildinfo
+
+# ---------- Dependencies ----------
+node_modules/
+
+# ---------- Tauri / Rust ----------
+ui-gui-vue3/src-tauri/target/
+ui-gui-vue3/src-tauri/gen/schemas/
+ui-gui-vue3/src-tauri/binaries/*.exe
+
+# ---------- Runtime data (personal) ----------
+/.pebble/
+/history/
+/agent_chat.db
+gateway/permission_audit.db
+gateway/err.txt
+/.claude/
+
+# ---------- Personal config / backups / logs ----------
+*.bak
+*.log
+
+# ---------- OS junk ----------
+Thumbs.db
+Desktop.ini
+.DS_Store

@@ -1,0 +1,6 @@
+<script setup lang="ts">import{ref}from'vue';import Tooltip from'./Tooltip.vue';import{COMPLETION_SOUNDS,getCompletionSound,playCompletionSound,setCompletionSound,type CompletionSoundId}from'../services/soundNotify'
+const o=ref(false);const s=ref<CompletionSoundId>(getCompletionSound())
+function cs(sid:CompletionSoundId){s.value=sid;setCompletionSound(sid);if(sid!=='off')playCompletionSound(sid)}
+</script>
+<template><div class="snd"><Tooltip text="Notification sound"><button class="snd-btn" :class="{active:o}" @click="o=!o"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"><path d="M11 5 6 9H3v6h3l5 4V5z"/><path d="M15.5 8.5a5 5 0 0 1 0 7"/><path d="M18.5 5.5a9 9 0 0 1 0 13"/></svg></button></Tooltip><span class="snd-label">Sound</span>
+<div v-if="o" class="snd-panel"><div class="snd-hdr"><span class="snd-title">Notification sound</span><span class="snd-current">{{COMPLETION_SOUNDS.find(x=>x.id===s)?.label}}</span></div><div class="snd-list"><button v-for="sd in COMPLETION_SOUNDS" :key="sd.id" class="snd-row" :class="{selected:s===sd.id}" @click="cs(sd.id)"><span class="snd-row-main"><span class="snd-dot"/><span class="snd-row-label">{{sd.label}}</span></span><span class="snd-row-desc">{{sd.description}}</span></button></div></div></div></template>

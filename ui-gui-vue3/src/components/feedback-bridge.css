@@ -1,0 +1,138 @@
+/* PebbleAgent Feedback Bridge — injected into iframe HTML preview.
+   Provides comment popup, element selection, and saved markers. */
+#__pebble_fb_root,
+#__pebble_fb_root * {
+  box-sizing: border-box;
+  font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", system-ui, sans-serif;
+}
+
+/* ---- Comment editor popup (fixed in iframe viewport) ---- */
+.__pf_editor {
+  position: fixed;
+  z-index: 2147483643;
+  width: 320px;
+  background: #fff;
+  border: 1px solid #d0d0d0;
+  border-radius: 10px;
+  box-shadow: 0 12px 40px rgba(0,0,0,0.18);
+  padding: 12px;
+  opacity: 0;
+  pointer-events: none;
+  transform: translateY(4px);
+  transition: opacity 0.12s ease, transform 0.12s ease;
+}
+.__pf_editor.__pf_visible {
+  opacity: 1;
+  pointer-events: auto;
+  transform: translateY(0);
+}
+.__pf_editor_quote {
+  font-size: 12px;
+  color: #666;
+  border-left: 3px solid #ccc;
+  padding: 2px 8px;
+  margin-bottom: 8px;
+  max-height: 4.5em;
+  overflow: hidden;
+  font-style: italic;
+}
+.__pf_editor textarea {
+  width: 100%;
+  font-family: inherit;
+  font-size: 14px;
+  border: 1px solid #d0d0d0;
+  border-radius: 6px;
+  padding: 8px 10px;
+  resize: vertical;
+  min-height: 60px;
+}
+.__pf_editor textarea:focus { outline: none; border-color: #2563eb; }
+.__pf_editor_actions {
+  display: flex;
+  justify-content: flex-end;
+  gap: 8px;
+  margin-top: 8px;
+}
+
+/* ---- Buttons ---- */
+.__pf_btn {
+  background: #fff;
+  color: #1a1a1a;
+  border: 1px solid #d0d0d0;
+  border-radius: 6px;
+  padding: 6px 14px;
+  font-size: 13px;
+  cursor: pointer;
+  transition: background 0.1s;
+}
+.__pf_btn:hover { background: #f0f0f0; }
+.__pf_btn_primary {
+  background: #2563eb;
+  color: #fff;
+  border: none;
+  border-radius: 6px;
+  padding: 6px 14px;
+  font-size: 13px;
+  font-weight: 600;
+  cursor: pointer;
+  transition: background 0.1s;
+}
+.__pf_btn_primary:hover { background: #1d4ed8; }
+.__pf_btn_danger {
+  background: transparent;
+  color: #999;
+  border: none;
+  font-size: 12px;
+  cursor: pointer;
+  padding: 4px 8px;
+}
+.__pf_btn_danger:hover { color: #e53e3e; }
+
+/* ---- Element hover / selected outlines ---- */
+.__pf_hover {
+  outline: 2px dashed #2563eb !important;
+  outline-offset: 2px;
+  background: rgba(37,99,235,0.04);
+  cursor: pointer !important;
+}
+.__pf_selected {
+  outline: 3px solid #2563eb !important;
+  outline-offset: 2px;
+  background: rgba(37,99,235,0.06);
+}
+
+/* ---- Saved comment marker (dot on the page) ---- */
+.__pf_marker {
+  position: absolute;
+  z-index: 2147483640;
+  width: 20px;
+  height: 20px;
+  background: #2563eb;
+  color: #fff;
+  border-radius: 50%;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  font-size: 11px;
+  font-weight: 700;
+  cursor: pointer;
+  box-shadow: 0 2px 8px rgba(0,0,0,0.15);
+  transition: transform 0.1s;
+}
+.__pf_marker:hover { transform: scale(1.15); }
+.__pf_marker_remove {
+  position: absolute;
+  top: -6px;
+  right: -6px;
+  width: 16px;
+  height: 16px;
+  background: #e53e3e;
+  color: #fff;
+  border-radius: 50%;
+  font-size: 10px;
+  line-height: 16px;
+  text-align: center;
+  cursor: pointer;
+  display: none;
+}
+.__pf_marker:hover .__pf_marker_remove { display: block; }

@@ -1,0 +1,71 @@
+# ============================================================
+# PebbleAgent — Python Requirements (requirements.txt)
+# Environment: Python 3.14 (Windows) | Generated: 2026-10-15
+# Install: pip install -r requirements.txt
+# ------------------------------------------------------------
+# Notes:
+#   1. Core dependencies — required to run; the backend service will not start if missing
+#   2. Optional dependencies — corresponding features degrade or become unavailable if missing (try/fallback in code)
+#   3. Version pins = versions verified in the current development environment, used as minimum requirements
+#   4. Transitive dependencies (certifi / anyio / pydantic / yarl, etc.) are resolved automatically by pip
+# ============================================================
+
+# ---------- Core Dependencies (required to run) ----------
+
+# WebSocket server (gateway/ws_server.py, ws://127.0.0.1:19876)
+websockets>=16.0
+
+# LLM API SDK (DeepSeek and other providers; agent_chat_service_v2, etc.)
+openai>=2.43.0
+
+# HTTP client (electron_bridge.py / tool_executor_impl.py)
+httpx>=0.28.1
+
+# Agent YAML config loading (agent_loader.py)
+PyYAML>=6.0.3
+
+# ---------- Optional Feature Dependencies ----------
+
+# Exact token counting (falls back to len//3 estimation if missing)
+tiktoken>=0.13.0
+
+# MCP HTTP transport (mcp_client.py)
+aiohttp>=3.14.1
+
+# Image / array processing (PDF OCR pipeline)
+numpy>=2.4.6
+
+# Image processing (PDF OCR)
+Pillow>=12.2.0
+
+# PDF text extraction (third tier of the fallback chain)
+pypdf>=6.15.0
+
+# Word document parsing
+python-docx>=1.2.0
+
+# Excel parsing
+openpyxl>=3.1.5
+
+# PDF parsing primary engine
+PyMuPDF
+
+# PDF parsing fallback engine
+pdfplumber
+
+# Image OCR recognition
+easyocr
+
+# System information utilities
+psutil
+
+# ---------- Skill Tool Dependencies (optional) ----------
+
+# huashu-design skill verification script (skills/huashu-design/scripts/verify.py)
+playwright
+
+# ---------- Build Tools (for packaging the exe) ----------
+
+# PyInstaller packaging (pebble-backend.spec → dist/pebble-backend.exe)
+pyinstaller>=6.21.0
+pyinstaller-hooks-contrib>=2026.6

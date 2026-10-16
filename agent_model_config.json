@@ -1,0 +1,23 @@
+{
+  "version": "1.0",
+  "agents": {
+    "code_agent": {
+      "model_source": "deepseek-v4-pro",
+      "custom_model": null,
+      "temperature": null,
+      "max_tokens": null
+    },
+    "analysis_agent": {
+      "model_source": "mimo-v2.6-flash",
+      "custom_model": null,
+      "temperature": null,
+      "max_tokens": null
+    },
+    "article_agent": {
+      "model_source": "deepseek-v4-pro",
+      "custom_model": null,
+      "temperature": null,
+      "max_tokens": null
+    }
+  }
+}
