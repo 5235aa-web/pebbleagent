@@ -17,18 +17,18 @@ from enum import Enum
 # ==================== 配置作用域 ====================
 
 class ConfigScope(str, Enum):
-    """配置作用域 - 对应 Claude-Code 的 ConfigScope"""
+    """配置作用域"""
     LOCAL = "local"           # 本地项目配置 (settings.local.json)
-    USER = "user"             # 用户全局配置 (~/.claude/settings.json)
+    USER = "user"             # 用户全局配置 (~/.pebble/settings.json)
     PROJECT = "project"       # 项目配置 (.mcp.json, 从 CWD 向上遍历)
     DYNAMIC = "dynamic"       # 动态配置 (--mcp-config 或插件注入)
     ENTERPRISE = "enterprise" # 企业管理配置
-    CLAUDEAI = "claudeai"     # claude.ai 连接器
+    EXTERNAL = "claudeai"     # 外部连接器（外部配置值兼容）
     MANAGED = "managed"       # 托管设置
 
 
 class TransportType(str, Enum):
-    """传输类型 - 对应 Claude-Code 的 Transport"""
+    """传输类型"""
     STDIO = "stdio"           # 标准输入/输出（子进程）
     SSE = "sse"               # Server-Sent Events
     SSE_IDE = "sse-ide"       # IDE 扩展 SSE
@@ -36,7 +36,7 @@ class TransportType(str, Enum):
     WS = "ws"                 # WebSocket
     WS_IDE = "ws-ide"         # IDE 扩展 WebSocket
     SDK = "sdk"               # SDK 进程内传输
-    CLAUDEAI_PROXY = "claudeai-proxy"  # claude.ai 代理
+    EXTERNAL_PROXY = "claudeai-proxy"  # 外部代理（外部配置值兼容）
 
 
 # ==================== 服务器配置 ====================
@@ -115,8 +115,8 @@ class McpSdkServerConfig:
 
 
 @dataclass
-class McpClaudeAIProxyServerConfig:
-    """Claude.ai 代理服务器配置"""
+class McpProxyServerConfig:
+    """外部代理服务器配置（type 值为外部配置兼容格式）"""
     type: Literal["claudeai-proxy"] = "claudeai-proxy"
     url: str = ""
     id: str = ""
@@ -131,7 +131,7 @@ McpServerConfig = Union[
     McpHTTPServerConfig,
     McpWebSocketServerConfig,
     McpSdkServerConfig,
-    McpClaudeAIProxyServerConfig,
+    McpProxyServerConfig,
 ]
 
 

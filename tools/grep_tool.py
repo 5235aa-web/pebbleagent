@@ -1,7 +1,7 @@
 """
 Grep工具 - 文件内容搜索
 
-参照Claude Code的GrepTool实现，使用ripgrep进行文件内容搜索
+使用 ripgrep 进行文件内容搜索
 
 【修复】支持工具执行中中断：
 - 使用 Popen 替代 subprocess.run
@@ -46,7 +46,7 @@ def _kill_process_tree(proc: subprocess.Popen):
     """
     终止进程树（包括所有子进程）
     
-    参照 Claude Code 的 treeKill 实现
+    跨平台进程树终止实现
     """
     try:
         if sys.platform == 'win32':

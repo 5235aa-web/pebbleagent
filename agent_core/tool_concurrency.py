@@ -369,7 +369,7 @@ def get_max_concurrency() -> int:
     可以通过环境变量配置
     """
     import os
-    return int(os.getenv("CLAUDE_CODE_MAX_TOOL_USE_CONCURRENCY", "10"))
+    return int(os.getenv("PEBBLE_MAX_TOOL_CONCURRENCY", "10"))
 
 
 # ==================== 工具定义注册 ====================

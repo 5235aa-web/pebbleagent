@@ -1,7 +1,7 @@
 """
 MCP (Model Context Protocol) - MCP 服务集成
 
-基于 Claude-Code MCP 服务实现，将 MCP 协议集成到 Agent 系统中。
+将 MCP（Model Context Protocol）协议集成到 Agent 系统中。
 
 核心组件：
 - mcp_types: 类型定义（配置、连接状态、工具）

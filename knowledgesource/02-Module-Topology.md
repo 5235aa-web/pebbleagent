@@ -44,7 +44,7 @@
 | config.py | Gateway | server.py | llm_providers.json |
 | gateway.ts | Frontend | - | WebSocket |
 | config.ts | Frontend | gateway.ts | server.py (via WebSocket) |
-| transcript_manager.py | Data (JSONL transcript archive ~/.claude/projects/) | context_compressor, agent_chat_service_v2 | transcript files |
+| transcript_manager.py | Data (JSONL transcript archive ~/.pebble/projects/) | context_compressor, agent_chat_service_v2 | transcript files |
 | permission_audit.py | Data (audit permission_audit.db) | permission_enforcer, tool_executor_impl | permission_audit.db |
 | bash_validator.py | Tool infra (6-layer command validation) | tool_executor_impl, permission_enforcer, tool_concurrency | - |
 | lsp_client.py | Tool infra (LSP client) | tool_executor_impl | LSP server subprocess |

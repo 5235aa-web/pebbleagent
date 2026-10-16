@@ -9,7 +9,7 @@ Transcript Manager - 会话转录记录管理器
 6. load_transcript_file - 加载转录文件
 
 转录文件格式：JSONL (每行一个 JSON 对象)
-存储路径：~/.claude/projects/{project_hash}/{session_id}.jsonl
+存储路径：~/.pebble/projects/{project_hash}/{session_id}.jsonl
 
 核心功能：
 - 压缩前保存被压缩的消息，以便后续查阅
@@ -40,7 +40,7 @@ logger = logging.getLogger(__name__)
 # ============================================================================
 
 # 默认配置目录
-DEFAULT_CONFIG_HOME = os.path.expanduser("~/.claude")
+DEFAULT_CONFIG_HOME = os.path.expanduser("~/.pebble")
 
 # 最大读取字节数 (50MB)
 MAX_TRANSCRIPT_READ_BYTES = 50 * 1024 * 1024
@@ -189,7 +189,7 @@ class ContentReplacementTranscriptEntry(TranscriptEntry):
 
 def get_config_home() -> str:
     """获取配置主目录"""
-    env_path = os.environ.get("CLAUDE_CONFIG_DIR")
+    env_path = os.environ.get("PEBBLE_CONFIG_DIR")
     if env_path:
         return env_path
     return DEFAULT_CONFIG_HOME
@@ -418,7 +418,7 @@ class TranscriptManager:
     
     def should_skip_persistence(self) -> bool:
         """检查是否应该跳过持久化"""
-        return self._persistence_disabled or os.environ.get("CLAUDE_CODE_SKIP_PROMPT_HISTORY") == "1"
+        return self._persistence_disabled or os.environ.get("PEBBLE_SKIP_PROMPT_HISTORY") == "1"
     
     # ========================================================================
     # 写入操作

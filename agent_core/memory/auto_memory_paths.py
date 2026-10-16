@@ -7,7 +7,7 @@ Auto Memory Paths - 记忆路径管理
 4. 路径验证和安全检查
 
 存储结构：
-~/.claude/
+~/.pebble/
 ├── projects/
 │   └── <sanitized-project-path>/
 │       └── memory/
@@ -19,9 +19,9 @@ Auto Memory Paths - 记忆路径管理
 └── ...
 
 支持环境变量：
-- CLAUDE_CONFIG_DIR: 配置主目录
-- CLAUDE_COWORK_MEMORY_PATH_OVERRIDE: 记忆目录覆盖（用于 Cowork）
-- CLAUDE_CODE_REMOTE_MEMORY_DIR: 远程记忆目录
+- PEBBLE_CONFIG_DIR: 配置主目录
+- PEBBLE_MEMORY_PATH_OVERRIDE: 记忆目录覆盖（部署/测试用）
+- PEBBLE_REMOTE_MEMORY_DIR: 远程记忆目录
 """
 
 import os
@@ -40,7 +40,7 @@ logger = logging.getLogger(__name__)
 # ============================================================================
 
 # 默认配置目录
-DEFAULT_CONFIG_HOME = '~/.claude'
+DEFAULT_CONFIG_HOME = '~/.pebble'
 
 # 记忆目录名
 MEMORY_DIRNAME = 'memory'
@@ -58,13 +58,13 @@ def get_config_home() -> str:
     获取配置主目录
     
     解析顺序：
-    1. CLAUDE_CONFIG_DIR 环境变量
-    2. 默认 ~/.claude
+    1. PEBBLE_CONFIG_DIR 环境变量
+    2. 默认 ~/.pebble
     
     Returns:
         配置主目录路径
     """
-    env_path = os.environ.get('CLAUDE_CONFIG_DIR')
+    env_path = os.environ.get('PEBBLE_CONFIG_DIR')
     if env_path:
         return os.path.expanduser(env_path)
     return os.path.expanduser(DEFAULT_CONFIG_HOME)
@@ -75,13 +75,13 @@ def get_memory_base_dir() -> str:
     获取记忆基础目录
     
     解析顺序：
-    1. CLAUDE_CODE_REMOTE_MEMORY_DIR 环境变量（远程模式）
+    1. PEBBLE_REMOTE_MEMORY_DIR 环境变量（远程模式）
     2. 配置主目录
     
     Returns:
         记忆基础目录路径
     """
-    remote_dir = os.environ.get('CLAUDE_CODE_REMOTE_MEMORY_DIR')
+    remote_dir = os.environ.get('PEBBLE_REMOTE_MEMORY_DIR')
     if remote_dir:
         return remote_dir
     return get_config_home()
@@ -233,7 +233,7 @@ def get_auto_memory_dir(project_path: str) -> str:
     获取 Auto Memory 目录路径
     
     解析顺序：
-    1. CLAUDE_COWORK_MEMORY_PATH_OVERRIDE 环境变量
+    1. PEBBLE_MEMORY_PATH_OVERRIDE 环境变量
     2. settings.json 中的 autoMemoryDirectory
     3. <memoryBase>/projects/<sanitized-project>/memory/
     
@@ -244,7 +244,7 @@ def get_auto_memory_dir(project_path: str) -> str:
         Auto Memory 目录路径
     """
     # 检查环境变量覆盖
-    override = os.environ.get('CLAUDE_COWORK_MEMORY_PATH_OVERRIDE')
+    override = os.environ.get('PEBBLE_MEMORY_PATH_OVERRIDE')
     if override:
         validated = validate_memory_path(override, expand_tilde=False)
         if validated:
@@ -351,22 +351,22 @@ def get_agent_memory_dir(
     safe_agent_type = agent_type.replace(':', '-')
     
     if scope == 'user':
-        # 用户级：~/.claude/agent-memory/<agent-type>/
+        # 用户级：~/.pebble/agent-memory/<agent-type>/
         return os.path.join(get_agent_memory_base_dir(), safe_agent_type) + os.sep
     
     elif scope == 'project':
-        # 项目级：<project>/.claude/agent-memory/<agent-type>/
+        # 项目级：<project>/.pebble/agent-memory/<agent-type>/
         if not project_path:
             raise ValueError("Project path required for 'project' scope")
-        return os.path.join(project_path, '.claude', 'agent-memory', safe_agent_type) + os.sep
+        return os.path.join(project_path, '.pebble', 'agent-memory', safe_agent_type) + os.sep
     
     elif scope == 'local':
-        # 本地级：<project>/.claude/agent-memory-local/<agent-type>/
+        # 本地级：<project>/.pebble/agent-memory-local/<agent-type>/
         if not project_path:
             raise ValueError("Project path required for 'local' scope")
         
         # 检查远程记忆目录
-        remote_dir = os.environ.get('CLAUDE_CODE_REMOTE_MEMORY_DIR')
+        remote_dir = os.environ.get('PEBBLE_REMOTE_MEMORY_DIR')
         if remote_dir:
             # 远程模式：使用项目命名空间
             return os.path.join(
@@ -374,7 +374,7 @@ def get_agent_memory_dir(
                 'agent-memory-local', safe_agent_type
             ) + os.sep
         
-        return os.path.join(project_path, '.claude', 'agent-memory-local', safe_agent_type) + os.sep
+        return os.path.join(project_path, '.pebble', 'agent-memory-local', safe_agent_type) + os.sep
     
     else:
         raise ValueError(f"Invalid scope: {scope}")
@@ -423,10 +423,10 @@ def is_agent_memory_path(file_path: str, project_path: Optional[str] = None) -> 
     # 检查项目级和本地级
     if project_path:
         project_agent_dir = os.path.normpath(
-            os.path.join(project_path, '.claude', 'agent-memory')
+            os.path.join(project_path, '.pebble', 'agent-memory')
         )
         project_local_dir = os.path.normpath(
-            os.path.join(project_path, '.claude', 'agent-memory-local')
+            os.path.join(project_path, '.pebble', 'agent-memory-local')
         )
         
         if normalized.startswith(project_agent_dir + os.sep):
@@ -454,9 +454,9 @@ def get_memory_scope_display(scope: Optional[str]) -> str:
     if scope == 'user':
         return f"User ({get_agent_memory_base_dir()}/)"
     elif scope == 'project':
-        return "Project (.claude/agent-memory/)"
+        return "Project (.pebble/agent-memory/)"
     elif scope == 'local':
-        return "Local (.claude/agent-memory-local/)"
+        return "Local (.pebble/agent-memory-local/)"
     else:
         return "None"
 

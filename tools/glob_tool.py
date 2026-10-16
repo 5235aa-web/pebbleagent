@@ -1,7 +1,7 @@
 """
 Glob工具 - 文件名模式匹配
 
-参照Claude Code的GlobTool实现，提供文件名模式匹配功能
+提供文件名模式匹配功能
 """
 from .base_tool import BaseTool, ToolResult, ToolStatus
 from typing import Dict, Any, Optional, List

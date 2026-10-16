@@ -62,7 +62,7 @@ class AutoMemoryManager:
     """
     Auto Memory 管理器
     
-    管理 ~/.claude/projects/<project>/memory/ 目录下的记忆文件
+    管理 ~/.pebble/projects/<project>/memory/ 目录下的记忆文件
     
     功能：
     1. 记忆的 CRUD 操作
@@ -137,7 +137,7 @@ class AutoMemoryManager:
     
     def is_persistence_disabled(self) -> bool:
         """检查是否禁用持久化"""
-        return self._persistence_disabled or os.environ.get('CLAUDE_CODE_SKIP_PROMPT_HISTORY') == '1'
+        return self._persistence_disabled or os.environ.get('PEBBLE_SKIP_PROMPT_HISTORY') == '1'
     
     def _clear_cache(self) -> None:
         """清除缓存"""
@@ -561,7 +561,7 @@ class AutoMemoryManager:
             "- 代码模式、约定、架构、文件路径或项目结构——这些可以从当前项目状态推导",
             "- Git 历史、最近更改或谁改了什么——`git log` / `git blame` 是权威来源",
             "- 调试解决方案或修复配方——修复在代码中；提交消息有上下文",
-            "- 已在 CLAUDE.md 文件中记录的任何内容",
+            "- 项目已有文档中记录的任何内容",
             "- 临时任务细节：进行中的工作、临时状态、当前对话上下文",
             "",
             "## 何时访问记忆",

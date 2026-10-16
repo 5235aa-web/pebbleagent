@@ -774,7 +774,7 @@ def build_user_override_configs() -> Dict[str, ScopedMcpServerConfig]:
     用途：UI 中填写的密钥（如 GitHub Token）持久化于该文件，以 dynamic scope
     （优先级高于 project/local）注入，覆盖内嵌配置中的占位符。
     与 _load_user_configs 的区别：数据源为 .mcp.json（用户可见的运行时覆盖文件），
-    而非 mcp_config.json（Claude 兼容的 user scope）。
+    而非 mcp_config.json（兼容的 user scope 配置文件）。
     """
     _home = os.environ.get("PEBBLE_HOME") or DEFAULT_USER_CONFIG_DIR
     config_path = os.path.join(_home, ".mcp.json")

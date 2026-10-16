@@ -8,7 +8,7 @@ import os
 import sys
 
 # Must be set before importing the compressor: skips transcript persistence.
-os.environ["CLAUDE_CODE_SKIP_PROMPT_HISTORY"] = "1"
+os.environ["PEBBLE_SKIP_PROMPT_HISTORY"] = "1"
 
 ROOT = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
 if ROOT not in sys.path:

@@ -147,7 +147,7 @@ def get_tools_definition() -> List[Dict[str, Any]]:
             "type": "function",
             "function": {
                 "name": "edit_file",
-                "description": "编辑文件。支持三种模式（优先级从高到低）：\n1.【最推荐】搜索-替换块：提供 search_block 和 replace_block。search_block 包含要替换的代码片段及其上下文（前后各 1-3 行），引擎使用模糊匹配自动定位唯一位置。容忍缩进/空白差异，自动处理多候选歧义。类似 Claude Code/Aider/Cursor 的编辑方式，最健壮。\n2.【推荐】字符串匹配替换：提供 old_string 和 new_string，精确查找并替换文件中的文本片段。old_string 必须在文件中唯一出现（除非指定 replace_all=true）。\n3. 行号编辑：提供 operation 和 line_number，按行号进行插入/删除/替换。\n\n使用前必须先用 read_file 读取目标文件。search_block/old_string 必须从 read_file 返回的行号前缀后的实际文件内容中复制（保留精确的缩进和空格），不能包含行号前缀。\n\n优先创建新文件使用 write_file，本工具仅用于编辑已存在的文件。",
+                "description": "编辑文件。支持三种模式（优先级从高到低）：\n1.【最推荐】搜索-替换块：提供 search_block 和 replace_block。search_block 包含要替换的代码片段及其上下文（前后各 1-3 行），引擎使用模糊匹配自动定位唯一位置。容忍缩进/空白差异，自动处理多候选歧义。类似主流 AI 编程工具的编辑方式，最健壮。\n2.【推荐】字符串匹配替换：提供 old_string 和 new_string，精确查找并替换文件中的文本片段。old_string 必须在文件中唯一出现（除非指定 replace_all=true）。\n3. 行号编辑：提供 operation 和 line_number，按行号进行插入/删除/替换。\n\n使用前必须先用 read_file 读取目标文件。search_block/old_string 必须从 read_file 返回的行号前缀后的实际文件内容中复制（保留精确的缩进和空格），不能包含行号前缀。\n\n优先创建新文件使用 write_file，本工具仅用于编辑已存在的文件。",
                 "parameters": {
                     "type": "object",
                     "properties": {

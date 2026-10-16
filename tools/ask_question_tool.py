@@ -1,7 +1,7 @@
 """
 AskUserQuestion工具 - 多选题询问用户
 
-参照Claude Code的AskUserQuestionTool实现，提供多选题询问用户功能
+提供多选题询问用户功能
 支持用户自定义输入回答
 """
 from .base_tool import BaseTool, ToolResult, ToolStatus

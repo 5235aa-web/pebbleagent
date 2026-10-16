@@ -1228,7 +1228,7 @@ class AgentToolExecutorImpl(ToolExecutor):
         1.【最推荐】搜索-替换块（search_block + replace_block）
            - 带上下文的搜索块，模糊唯一匹配
            - 容忍缩进/空白差异，自动处理多候选歧义
-           - 类似 Claude Code/Aider/Cursor 的编辑方式
+           - 类似主流 AI 编程工具的编辑方式
         
         2.【推荐】字符串匹配替换（old_string + new_string）
            - 在文件中精确查找 old_string 并替换为 new_string
@@ -1349,7 +1349,7 @@ class AgentToolExecutorImpl(ToolExecutor):
         """
         字符串匹配替换模式（推荐）
         
-        完整实现 Claude Code FileEditTool 的核心逻辑：
+        字符串匹配替换的核心逻辑：
         1. 读取文件内容
         2. 精确查找 old_string
         3. 验证唯一性（除非 replace_all）

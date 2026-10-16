@@ -1,7 +1,7 @@
 """
 统一工具系统
 
-参照Claude Code设计，提供：
+提供：
 - 统一的工具基类
 - Pydantic Schema验证
 - 权限系统集成
@@ -32,7 +32,7 @@ from .execute_code_tool import ExecuteCodeTool, ExecutePythonTool, ExecuteShellT
 from .file_tools import ReadFileTool, WriteFileTool, EditFileTool, SearchFilesTool
 from .skill_tools import LoadSkillTool, ListSkillsTool
 
-# 新迁移的工具（从 claude-code-main）
+# 扩展工具
 from .powershell_tool import PowerShellTool, PowerShellEdition
 from .notebook_edit_tool import NotebookEditTool
 from .brief_tool import BriefTool
@@ -77,7 +77,7 @@ __all__ = [
     'SearchFilesTool',
     'LoadSkillTool',
     'ListSkillsTool',
-    # 新迁移的工具（从 claude-code-main）
+    # 扩展工具
     'PowerShellTool',
     'PowerShellEdition',
     'NotebookEditTool',

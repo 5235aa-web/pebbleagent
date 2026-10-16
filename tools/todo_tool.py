@@ -1,7 +1,7 @@
 """
 TodoWrite工具 - 任务列表管理
 
-参照Claude Code的TodoWriteTool实现，提供任务列表管理功能
+提供任务列表管理功能
 支持实时事件推送到前端
 """
 from .base_tool import BaseTool, ToolResult, ToolStatus

@@ -1600,7 +1600,7 @@ class AgentChatServiceV2:
                     logger.info("[AgentChatServiceV2] Interrupted after streaming, breaking main loop")
                     break
                 
-                # ========== 捕获 usage 并计费（对齐 opencode：仅使用 API 原始 token 值） ==========
+                # ========== 捕获 usage 并计费（仅使用 API 原始 token 值） ==========
                 if hasattr(chunk, 'usage') and chunk.usage:
                     try:
                         cost_info = self._calculate_cost(use_model, chunk.usage)

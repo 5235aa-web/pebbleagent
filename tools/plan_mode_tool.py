@@ -1,7 +1,7 @@
 """
 PlanMode工具 - 计划模式管理
 
-参照Claude Code的EnterPlanModeTool和ExitPlanModeTool实现
+提供计划模式（进入/退出/创建/查看计划）
 """
 from .base_tool import BaseTool, ToolResult, ToolStatus
 from typing import Dict, Any, Optional, List

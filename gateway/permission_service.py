@@ -1,6 +1,6 @@
 """
 权限申请服务
-参考 Claude Desktop、Cursor 等 Agent 的安全机制
+参考主流 Agent 产品的安全机制
 """
 import asyncio
 import json

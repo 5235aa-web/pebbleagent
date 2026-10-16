@@ -1,12 +1,12 @@
 """
 Memory System - 记忆系统
 
-完整实现 Claude Code 的记忆机制：
+自动记忆机制：
 - Auto Memory: 跨会话持久化记忆（用户画像、反馈、项目上下文、外部引用）
 - Agent Memory: Agent 级别记忆（为特定 Agent 类型提供独立知识存储）
 
 存储结构：
-~/.claude/projects/<project-hash>/memory/
+~/.pebble/projects/<project-hash>/memory/
 ├── MEMORY.md          # 索引文件（最多200行，25KB）
 ├── user_*.md          # 用户画像记忆
 ├── feedback_*.md      # 反馈记忆
@@ -14,9 +14,9 @@ Memory System - 记忆系统
 └── reference_*.md     # 引用记忆
 
 Agent Memory:
-~/.claude/agent-memory/<agent-type>/MEMORY.md     # 用户级
-<project>/.claude/agent-memory/<agent-type>/      # 项目级
-<project>/.claude/agent-memory-local/<agent-type>/ # 本地级
+~/.pebble/agent-memory/<agent-type>/MEMORY.md     # 用户级
+<project>/.pebble/agent-memory/<agent-type>/      # 项目级
+<project>/.pebble/agent-memory-local/<agent-type>/ # 本地级
 """
 
 from .auto_memory_types import (

@@ -1,5 +1,5 @@
 """
-权限管理器 - 整合Claude Code风格的权限规则系统
+权限管理器 - 权限规则系统
 
 提供：
 - 权限模式管理（default/acceptEdits/bypass/dontAsk）
@@ -63,7 +63,7 @@ class PermissionManager:
     """
     权限管理器
     
-    整合Claude Code风格的权限规则系统，提供：
+    权限规则系统，提供：
     - 分层规则优先级：deny → ask → allow
     - 多种权限模式
     - 与现有PermissionService集成

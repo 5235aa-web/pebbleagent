@@ -561,7 +561,7 @@ def replace_agent_chat_messages(conversation_id: int, new_messages: List[Dict[st
 
 def insert_compaction_result(conversation_id: int, boundary_msg: dict, summary_msg: dict) -> bool:
     """
-    插入压缩标记和摘要消息，不删除旧消息（对齐 opencode marker 机制）
+    插入压缩标记和摘要消息，不删除旧消息（压缩标记机制）
 
     压缩语义（与 sessions.db 版本一致）：boundary 之前的全部旧消息已被压缩，
     标记 is_compacted=1（上下文构建跳过）；boundary/summary 追加到消息末尾

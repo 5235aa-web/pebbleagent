@@ -1,5 +1,5 @@
 """
-统一工具基类 - 参照Claude Code设计
+统一工具基类
 
 提供：
 - Pydantic Schema验证

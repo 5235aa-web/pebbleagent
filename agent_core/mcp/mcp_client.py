@@ -36,7 +36,7 @@ from .mcp_types import (
     McpHTTPServerConfig,
     McpWebSocketServerConfig,
     McpSdkServerConfig,
-    McpClaudeAIProxyServerConfig,
+    McpProxyServerConfig,
     McpServerConfig,
     ScopedMcpServerConfig,
     ConnectedMCPServer,
@@ -67,7 +67,7 @@ except ImportError:
 
 DEFAULT_MCP_TOOL_TIMEOUT_MS = 15_000   # 15 秒
 DEFAULT_CONNECT_TIMEOUT_MS = 60_000     # 60 秒连接超时
-DEFAULT_REQUEST_TIMEOUT_MS = 60_000     # 60 秒请求超时（Claude-Code 默认）
+DEFAULT_REQUEST_TIMEOUT_MS = 60_000     # 60 秒请求超时
 MAX_MCP_DESCRIPTION_LENGTH = 2048       # 工具描述最大长度（防止超长描述）
 
 # MCP 工具名称前缀
@@ -1090,8 +1090,6 @@ async def get_mcp_tools_commands_and_resources(
 ) -> Tuple[List[MCPServerConnection], List[SerializedMCPTool], List[Dict[str, Any]], Dict[str, List[ServerResource]]]:
     """
     批量获取 MCP 工具、命令和资源
-    
-    对应 Claude-Code 的 getMcpToolsCommandsAndResources()
     """
     clients: List[MCPServerConnection] = []
     all_tools: List[SerializedMCPTool] = []

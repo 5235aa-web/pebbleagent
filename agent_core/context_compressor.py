@@ -1475,7 +1475,7 @@ def compact_conversation(
     logger.info(f"[ContextCompressor] Compressed: {pre_compact_token_count} -> {post_compact_token_count} tokens ({saved_percent}% saved)")
     
     # 15. 写入被压缩的消息到 Transcript（压缩时保存历史）
-    # 这是 Claude Code 的关键机制：压缩前保存被压缩的消息，以便后续查阅
+    # 压缩前保存被压缩的消息，以便后续查阅
     transcript_manager = get_transcript_manager()
     
     # 将被压缩的消息转换为字典格式

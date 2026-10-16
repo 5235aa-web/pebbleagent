@@ -1,7 +1,7 @@
 """
 Agent YAML Loader - Agent定义YAML加载器
 
-支持从YAML文件加载Agent定义，参照Claude Code的Agent配置格式
+支持从YAML文件加载Agent定义
 """
 
 import yaml
@@ -52,7 +52,7 @@ class AgentDefinition:
     """
     Agent定义
     
-    参照Claude Code的Agent定义结构
+    Agent定义结构
     """
     name: str
     description: str

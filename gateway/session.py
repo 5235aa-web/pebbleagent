@@ -368,7 +368,7 @@ class SessionStore:
 
     def insert_compaction_result(self, session_id: str, boundary_msg: dict, summary_msg: dict, kept_count: int) -> bool:
         """
-        插入压缩标记和摘要消息，不删除旧消息（对齐 opencode marker 机制）
+        插入压缩标记和摘要消息，不删除旧消息（压缩标记机制）
         
         Args:
             session_id: 会话 ID

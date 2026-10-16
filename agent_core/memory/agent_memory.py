@@ -7,9 +7,9 @@ Agent Memory - Agent 级别记忆
 4. 记忆持久化
 
 作用域：
-- user: ~/.claude/agent-memory/<agent-type>/MEMORY.md （跨项目共享）
-- project: <project>/.claude/agent-memory/<agent-type>/MEMORY.md （项目内共享）
-- local: <project>/.claude/agent-memory-local/<agent-type>/MEMORY.md （本地专用）
+- user: ~/.pebble/agent-memory/<agent-type>/MEMORY.md （跨项目共享）
+- project: <project>/.pebble/agent-memory/<agent-type>/MEMORY.md （项目内共享）
+- local: <project>/.pebble/agent-memory-local/<agent-type>/MEMORY.md （本地专用）
 
 用途：
 - 为特定类型的 Agent（如 code_agent, explore）提供持久化的专业知识存储
@@ -361,9 +361,9 @@ class AgentMemoryManager:
         if scope == AgentMemoryScope.USER:
             return f"User ({self.get_memory_dir('...', AgentMemoryScope.USER)})"
         elif scope == AgentMemoryScope.PROJECT:
-            return "Project (.claude/agent-memory/)"
+            return "Project (.pebble/agent-memory/)"
         elif scope == AgentMemoryScope.LOCAL:
-            return "Local (.claude/agent-memory-local/)"
+            return "Local (.pebble/agent-memory-local/)"
         else:
             return "None"
     

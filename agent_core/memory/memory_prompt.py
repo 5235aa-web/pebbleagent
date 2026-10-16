@@ -172,7 +172,7 @@ def build_memory_prompt(params: Dict[str, Any]) -> str:
     """
     构建完整的记忆提示词（包含 MEMORY.md 内容）
     
-    用于 agent memory（没有 getClaudeMds() 等效功能）
+    用于 agent memory（不依赖项目文档扫描）
     
     Args:
         params: {
@@ -336,7 +336,7 @@ def build_agent_memory_prompt(
     }
     
     # Cowork 额外指导
-    cowork_extra = os.environ.get('CLAUDE_COWORK_MEMORY_EXTRA_GUIDELINES', '')
+    cowork_extra = os.environ.get('PEBBLE_MEMORY_EXTRA_GUIDELINES', '')
     
     all_extra = []
     if scope_notes.get(scope):

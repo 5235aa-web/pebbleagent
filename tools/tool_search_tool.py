@@ -1,7 +1,7 @@
 """
 ToolSearch工具 - 工具搜索
 
-参照Claude Code的ToolSearchTool实现，提供工具搜索和发现功能
+提供工具搜索和发现功能
 """
 from .base_tool import BaseTool, ToolResult, ToolStatus
 from typing import Dict, Any, Optional, List

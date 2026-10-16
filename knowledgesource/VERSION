@@ -1,3 +1,9 @@
+2026-10-16: De-branding pass (third-party naming removed)
+- Memory/transcript subsystem: ~/.claude → ~/.pebble; env vars CLAUDE_* → PEBBLE_* (CONFIG_DIR / MEMORY_PATH_OVERRIDE / REMOTE_MEMORY_DIR / SKIP_PROMPT_HISTORY / MAX_TOOL_CONCURRENCY / MEMORY_EXTRA_GUIDELINES); memory prompt texts rewritten in original wording (Chinese); third-party attribution phrases in ~17 docstrings neutralized; MCP type class renamed (McpProxyServerConfig); external config values (claudeai / claudeai-proxy) kept for interoperability
+- Data migration: ~/.claude/projects/* copied to ~/.pebble/projects/* (22 transcript files; memory dirs were empty)
+- Intentional remaining mentions: model name 'claude' in the context-limit table (functional); README/THIRD_PARTY_NOTICES attribution lines; third-party skills untouched
+- Verification: 31 files compile; full-tree scan clean; graphs synced
+
 2026-10-16: Security hardening (WS auth + permission chain + preview sandbox + MCP integrity)
 - WS: token auth (gateway.token; ?token=/X-Pebble-Token; close 4401), Origin whitelist (close 4403), connection cap 8, payload limits (128MiB max_size; text ≤2M chars; ≤20 attachments, ≤14MB each, ≤100MB total → prompt.rejected); token delivery via vite inject (dev) / get_gateway_token Tauri command
 - file.* RPC project-boundary guard; permission chain fixes (allow-rule return, sync fail-closed check, (session,permission_type) trust, realpath/commonpath paths, MCP_TOOL/UNKNOWN_TOOL policy, acceptEdits scope, inline-code allow guard: python -c / node -e / powershell -Command / bash -c → ask, fail-closed on import/manager errors, project dir validation); preview iframe sandbox=allow-scripts + injected meta CSP + postMessage bridge, DOMPurify for SVG, Mermaid strict, Tauri CSP + devCsp; MCP download sha256 required (absent → refused) + project .mcp.json approval; audit checksum v3 chained; powershell network guard
