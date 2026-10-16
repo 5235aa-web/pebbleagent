@@ -18,7 +18,7 @@ websockets>=16.0
 # LLM API SDK (DeepSeek and other providers; agent_chat_service_v2, etc.)
 openai>=2.43.0
 
-# HTTP client (electron_bridge.py / tool_executor_impl.py)
+# HTTP client (tool_executor_impl.py)
 httpx>=0.28.1
 
 # Agent YAML config loading (agent_loader.py)

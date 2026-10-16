@@ -32,9 +32,6 @@ from .execute_code_tool import ExecuteCodeTool, ExecutePythonTool, ExecuteShellT
 from .file_tools import ReadFileTool, WriteFileTool, EditFileTool, SearchFilesTool
 from .skill_tools import LoadSkillTool, ListSkillsTool
 
-# UIA3 工具（Windows UI Automation）
-from .uia_tools import UIAGetElementsTool, UIAFindElementTool, UIAGetWindowListTool
-
 # 新迁移的工具（从 claude-code-main）
 from .powershell_tool import PowerShellTool, PowerShellEdition
 from .notebook_edit_tool import NotebookEditTool
@@ -80,10 +77,6 @@ __all__ = [
     'SearchFilesTool',
     'LoadSkillTool',
     'ListSkillsTool',
-    # UIA3 工具
-    'UIAGetElementsTool',
-    'UIAFindElementTool',
-    'UIAGetWindowListTool',
     # 新迁移的工具（从 claude-code-main）
     'PowerShellTool',
     'PowerShellEdition',

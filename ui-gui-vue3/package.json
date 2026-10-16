@@ -10,7 +10,6 @@
   },
   "dependencies": {
     "@tauri-apps/api": "^2.11.1",
-    "@tauri-apps/plugin-fs": "^2.5.1",
     "@tauri-apps/plugin-shell": "^2.3.5",
     "diff": "^9.0.0",
     "highlight.js": "^11.11.1",

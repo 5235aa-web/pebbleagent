@@ -41,7 +41,6 @@ from .query_state_machine import (
     StreamEvent,
     ContentEvent,
     ToolExecutionEvent,
-    CompactEvent,
     ChatStartedEvent,
     ChatCompletedEvent,
     ErrorEvent,
@@ -64,34 +63,8 @@ from .tool_concurrency import (
 
 from .agent_loader import get_cached_agent, get_agent_system_prompt, filter_tools_for_agent, list_available_agents_from_yaml
 from .context_compressor import (
-    # 核心类
-    Message,
-    CompactBoundaryMessage,
-    CompactionResult,
-    CompactTrigger,
-    CompactDirection,
-    FileState,
-    SkillState,
-    AutoCompactConfig,
-    AutoCompactState,
-    ReactiveCompactState,
-    # Token 计算
-    estimate_tokens,
-    estimate_message_tokens,
-    estimate_messages_tokens,
     # 核心函数
-    compact_conversation,
-    should_auto_compact,
-    reactive_compact_on_error,
     is_prompt_too_long_error,
-    strip_images_from_messages,
-    adjust_index_to_preserve_api_invariants,
-    create_compact_boundary_message,
-    is_compact_boundary_message,
-    get_messages_after_compact_boundary,
-    PlanManager,
-    # 兼容旧 API
-    smart_compress,
 )
 # 导入 Transcript 管理器
 from .transcript_manager import (
@@ -446,29 +419,9 @@ class AgentChatServiceV2:
         # 当前对话消息计数
         self._conversation_message_count: int = 0
         
-        # 自动压缩状态（每个会话独立）
-        self._auto_compact_states: Dict[str, AutoCompactState] = {}
-        
         # 系统提示词缓存（用于提高 LLM 缓存命中率）
         self._cached_memory_prompt: str = ""
         self._cached_memory_hash: str = ""
-        # 自动压缩配置
-        self._auto_compact_config = AutoCompactConfig(
-            threshold=999999999,
-            context_window_size=200000,
-            threshold_ratio=0.75,
-            min_messages=999,
-            cooldown_turns=999
-        )
-        
-        # 响应式压缩状态
-        self._reactive_states: Dict[str, ReactiveCompactState] = {}
-        
-        # 文件状态追踪（用于压缩后恢复）
-        self._file_states: Dict[str, Dict[str, FileState]] = {}
-        
-        # Skill 状态追踪
-        self._skill_states: Dict[str, Dict[str, SkillState]] = {}
         
         # Transcript 管理器
         self._transcript_manager = get_transcript_manager()
@@ -1006,40 +959,6 @@ class AgentChatServiceV2:
             return True
         return False
     
-    def track_file_access(
-        self,
-        conversation_uuid: str,
-        file_path: str,
-        content: str
-    ) -> None:
-        """追踪文件访问（用于压缩后恢复）"""
-        if conversation_uuid not in self._file_states:
-            self._file_states[conversation_uuid] = {}
-        
-        self._file_states[conversation_uuid][file_path] = FileState(
-            path=file_path,
-            content=content,
-            timestamp=time.time()
-        )
-    
-    def track_skill_invocation(
-        self,
-        conversation_uuid: str,
-        skill_name: str,
-        skill_path: str,
-        content: str
-    ) -> None:
-        """追踪 Skill 调用（用于压缩后恢复）"""
-        if conversation_uuid not in self._skill_states:
-            self._skill_states[conversation_uuid] = {}
-        
-        self._skill_states[conversation_uuid][skill_name] = SkillState(
-            name=skill_name,
-            path=skill_path,
-            content=content,
-            invoked_at=time.time()
-        )
-    
     def get_memory_manager(self):
         """获取 Auto Memory 管理器实例"""
         return self._auto_memory_manager
@@ -1096,173 +1015,6 @@ class AgentChatServiceV2:
         
         return sanitized
     
-    def _apply_advanced_compression(
-        self,
-        context_messages: List[Dict[str, str]],
-        conversation_uuid: str,
-        llm_config: Dict[str, Any],
-        force_compact: bool = False
-    ) -> List[Dict[str, str]]:
-        """应用高级上下文压缩"""
-        if not context_messages:
-            return context_messages
-        
-        # 如果不需要压缩，直接返回（保留完整的消息结构）
-        current_tokens = estimate_messages_tokens([
-            Message(uuid=str(uuid.uuid4()), role=m.get("role", "user"), content=m.get("content", ""))
-            for m in context_messages
-        ])
-        
-        if not force_compact:
-            return context_messages  # 非强制压缩时永不压缩，由用户手动控制
-        
-        # 需要压缩时，转换为 Message 对象
-        # 保存 reasoning_content 以便压缩后恢复
-        reasoning_map = {}
-        for i, m in enumerate(context_messages):
-            if m.get("role") == "assistant" and m.get("reasoning_content"):
-                reasoning_map[i] = m["reasoning_content"]
-        
-        messages = []
-        for i, m in enumerate(context_messages):
-            messages.append(Message(
-                uuid=str(uuid.uuid4()),
-                role=m.get("role", "user"),
-                content=m.get("content", ""),
-                reasoning_content=reasoning_map.get(i),
-                tool_call_id=m.get("tool_call_id"),
-                tool_calls=m.get("tool_calls")
-            ))
-        
-        try:
-            client = OpenAI(
-                api_key=llm_config['api_key'],
-                base_url=llm_config['base_url'],
-                timeout=60.0
-            )
-        except Exception as e:
-            logger.warning(f"[AgentChatServiceV2] Failed to create LLM client for compression: {e}")
-            return smart_compress(
-                messages=context_messages,
-                max_tokens=90000,
-                strategy="smart"
-            )
-        
-        file_states = self._file_states.get(conversation_uuid, {})
-        skill_states = self._skill_states.get(conversation_uuid, {})
-        
-        result = compact_conversation(
-            messages=messages,
-            llm_client=client,
-            llm_model=llm_config.get('model', 'gpt-4'),
-            max_tokens=90000,
-            recent_messages=10,
-            trigger=CompactTrigger.AUTO if force_compact else CompactTrigger.MANUAL,
-            file_states=file_states,
-            invoked_skills=skill_states,
-            session_id=conversation_uuid,
-            project_path=self._current_project_path
-        )
-        
-        if not result.success:
-            logger.warning(f"[AgentChatServiceV2] Compression failed: {result.error}")
-            return context_messages
-        
-        logger.info(
-            f"[AgentChatServiceV2] Compression success: "
-            f"{result.pre_compact_token_count} -> {result.post_compact_token_count} tokens "
-            f"({result.saved_percent}% saved)"
-        )
-        
-        compressed_messages = []
-        
-        if result.boundary_marker:
-            compressed_messages.append(result.boundary_marker.to_dict())
-        
-        for msg in result.summary_messages:
-            compressed_messages.append(msg.to_dict())
-        
-        for msg in result.messages_to_keep:
-            msg_dict = msg.to_dict()
-            # 恢复 reasoning_content（如果原始消息有）
-            # 注意：压缩后消息顺序可能变化，需要通过 role 和 content 匹配
-            for orig_idx, reasoning_content in reasoning_map.items():
-                orig_msg = context_messages[orig_idx]
-                if (msg_dict.get("role") == "assistant" and 
-                    msg_dict.get("content") == orig_msg.get("content")):
-                    msg_dict["reasoning_content"] = reasoning_content
-                    break
-            compressed_messages.append(msg_dict)
-        
-        return compressed_messages
-    
-    def _handle_reactive_compact(
-        self,
-        messages: List[Dict[str, str]],
-        error: Exception,
-        conversation_uuid: str,
-        llm_config: Dict[str, Any]
-    ) -> Optional[List[Dict[str, str]]]:
-        """处理响应式压缩（当 API 返回 prompt_too_long 错误时）"""
-        is_ptl, token_gap, context_limit = is_prompt_too_long_error(error)
-        
-        if not is_ptl:
-            return None
-        
-        logger.info(f"[AgentChatServiceV2] Reactive compact triggered, token gap: {token_gap}, limit: {context_limit}")
-        
-        if conversation_uuid not in self._reactive_states:
-            self._reactive_states[conversation_uuid] = ReactiveCompactState()
-        reactive_state = self._reactive_states[conversation_uuid]
-        
-        if reactive_state.retry_count >= 3:
-            logger.warning("[AgentChatServiceV2] Reactive compact max retries exceeded")
-            return None
-        
-        reactive_state.retry_count += 1
-        reactive_state.last_error = str(error)
-        
-        msg_objects = []
-        for m in messages:
-            msg_objects.append(Message(
-                uuid=str(uuid.uuid4()),
-                role=m.get("role", "user"),
-                content=m.get("content", ""),
-                tool_call_id=m.get("tool_call_id"),
-                tool_calls=m.get("tool_calls")
-            ))
-        
-        try:
-            client = OpenAI(
-                api_key=llm_config['api_key'],
-                base_url=llm_config['base_url'],
-                timeout=60.0
-            )
-        except Exception:
-            return None
-        
-        success, result = reactive_compact_on_error(
-            messages=msg_objects,
-            error=error,
-            llm_client=client,
-            llm_model=llm_config.get('model', 'gpt-4')
-        )
-        
-        if not success or not result:
-            return None
-        
-        compressed = []
-        if result.boundary_marker:
-            compressed.append(result.boundary_marker.to_dict())
-        for msg in result.summary_messages:
-            compressed.append(msg.to_dict())
-        for msg in result.messages_to_keep:
-            compressed.append(msg.to_dict())
-        
-        reactive_state.retry_count = 0
-        
-        return compressed
-    
     async def _extract_memories_async(
         self,
         conversation_uuid: str,
@@ -1287,7 +1039,7 @@ class AgentChatServiceV2:
         logger.info(f"[AgentChatServiceV2] Starting memory extraction for {conversation_uuid}")
         
         try:
-            client = OpenAI(
+            client = AsyncOpenAI(
                 api_key=llm_config['api_key'],
                 base_url=llm_config['base_url'],
                 timeout=60.0
@@ -1466,40 +1218,7 @@ class AgentChatServiceV2:
         print(f"[AgentChatServiceV2] Provider配置: base_url={llm_config['base_url']}")
         print(f"[AgentChatServiceV2] 思考模式: thinking_enabled={final_thinking_enabled}" + (f", reasoning_effort={final_reasoning_effort}" if final_thinking_enabled else ""))
         
-        # 5.6 获取或创建自动压缩状态
-        if conversation_uuid not in self._auto_compact_states:
-            self._auto_compact_states[conversation_uuid] = AutoCompactState()
-        auto_compact_state = self._auto_compact_states[conversation_uuid]
-        
-        # 5.7 增加轮数
-        auto_compact_state.increment_turn()
-        
-        # 6. 检查是否需要自动压缩
-        should_compact, compact_reason = should_auto_compact(
-            messages=[
-                Message(uuid=str(i), role=m.get("role", "user"), content=m.get("content", ""))
-                for i, m in enumerate(context_messages[:-1])
-            ],
-            state=auto_compact_state,
-            config=self._auto_compact_config
-        )
-        
-        # 6.5 应用上下文压缩
-        compressed_context = self._apply_advanced_compression(
-            context_messages=context_messages[:-1],
-            conversation_uuid=conversation_uuid,
-            llm_config=llm_config,
-            force_compact=should_compact
-        )
-        
-        if should_compact:
-            logger.info(f"[AgentChatServiceV2] Auto-compact triggered: {compact_reason}")
-            auto_compact_state.record_compact()
-            yield {
-                "type": "compact_triggered",
-                "reason": compact_reason,
-                "trigger": "auto"
-            }
+        # 6. 上下文压缩：已移除自动压缩；压缩由用户手动触发（session.compress RPC）
         
         # 7. 获取系统提示词
         system_prompt = get_agent_system_prompt(agent_def)
@@ -1573,7 +1292,7 @@ class AgentChatServiceV2:
         
         # 8. 构建消息列表
         messages = [{"role": "system", "content": system_prompt}]
-        for msg in compressed_context:
+        for msg in context_messages[:-1]:
             messages.append(msg)
         # 图片用多模态 content 数组；纯文本保持字符串兼容
         if llm_images:
@@ -1748,47 +1467,25 @@ class AgentChatServiceV2:
 
                         is_ptl, token_gap, context_limit = is_prompt_too_long_error(api_error)
                         
-                        if is_ptl and api_retry_count < max_api_retries:
-                            logger.warning(f"[AgentChatServiceV2] API returned prompt_too_long, attempting reactive compact (attempt {api_retry_count})")
-                            
-                            yield {
-                                "type": "compact_triggered",
-                                "reason": f"prompt_too_long (gap: {token_gap}, limit: {context_limit})",
-                                "trigger": "reactive"
-                            }
-                            
-                            compressed_messages = self._handle_reactive_compact(
-                                messages=messages,
-                                error=api_error,
-                                conversation_uuid=conversation_uuid,
-                                llm_config=llm_config
+                        # 上下文超长：自动压缩已移除，引导用户手动压缩后重试
+                        if is_ptl:
+                            detail = f"（gap={token_gap}, limit={context_limit}）" if token_gap is not None else ""
+                            logger.warning(f"[AgentChatServiceV2] API returned prompt_too_long{detail}; manual compaction required")
+                            raise RuntimeError(
+                                f"上下文长度超出模型窗口{detail}，本次生成已停止。"
+                                f"请手动压缩会话后重试。"
                             )
-                            
-                            if compressed_messages:
-                                messages = self._sanitize_messages(compressed_messages)
-                                stream_params["messages"] = messages
-                                logger.info(f"[AgentChatServiceV2] Reactive compact successful, retrying API call")
-                                # 中断检查：压缩过程中可能已触发取消
-                                if cancel_event.is_set():
-                                    logger.info("[AgentChatServiceV2] Cancelled after compact, aborting retry")
-                                    was_interrupted = True
-                                    yield {"type": "cancelled", "message": "Generation cancelled after compact"}
-                                    break
-                                continue
-                            else:
-                                logger.error("[AgentChatServiceV2] Reactive compact failed, cannot recover")
-                                raise api_error
-                        else:
-                            # 2026-10-16 兜底：可疑重试轮的请求被 API 拒绝（如 400 Invalid assistant
-                            # message——重试构造的历史消息非法）时，不再硬终止，接受当前状态为完成
-                            if in_suspicious_retry and "invalid assistant message" in api_error_text:
-                                logger.warning(
-                                    f"[AgentChatServiceV2] Suspicious-retry request rejected by API "
-                                    f"({api_error}); accepting turn as complete"
-                                )
-                                graceful_abort = True
-                                break
-                            raise api_error
+                        
+                        # 2026-10-16 兜底：可疑重试轮的请求被 API 拒绝（如 400 Invalid assistant
+                        # message——重试构造的历史消息非法）时，不再硬终止，接受当前状态为完成
+                        if in_suspicious_retry and "invalid assistant message" in api_error_text:
+                            logger.warning(
+                                f"[AgentChatServiceV2] Suspicious-retry request rejected by API "
+                                f"({api_error}); accepting turn as complete"
+                            )
+                            graceful_abort = True
+                            break
+                        raise api_error
                 
                 if stream is None:
                     if graceful_abort:

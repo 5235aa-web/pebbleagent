@@ -28,7 +28,7 @@ from ..safe_json import safe_json_loads
 from typing import List, Dict, Any, Optional, Tuple
 from dataclasses import dataclass, field
 from datetime import datetime
-from openai import OpenAI
+from openai import AsyncOpenAI
 
 from .auto_memory_types import MemoryType, MemoryEntry
 from .auto_memory import AutoMemoryManager, get_auto_memory_manager
@@ -171,7 +171,7 @@ class AutoMemoryExtractor:
     
     def __init__(
         self,
-        llm_client: OpenAI,
+        llm_client: AsyncOpenAI,
         llm_model: str,
         memory_manager: Optional[AutoMemoryManager] = None,
         config: ExtractMemoryConfig = None
@@ -277,7 +277,7 @@ class AutoMemoryExtractor:
             )
             
             # 调用 LLM
-            response = self.llm_client.chat.completions.create(
+            response = await self.llm_client.chat.completions.create(
                 model=self.llm_model,
                 messages=[
                     {"role": "system", "content": EXTRACT_MEMORY_SYSTEM_PROMPT},
@@ -461,7 +461,7 @@ def create_extractor(
     Returns:
         AutoMemoryExtractor 实例
     """
-    client = OpenAI(
+    client = AsyncOpenAI(
         api_key=llm_config.get('api_key', os.environ.get('OPENAI_API_KEY', '')),
         base_url=llm_config.get('base_url', os.environ.get('OPENAI_BASE_URL', '')),
         timeout=60.0

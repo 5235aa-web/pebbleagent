@@ -279,7 +279,7 @@ Multiline matching: By default patterns match within single lines only. For cros
                     "mode": output_mode,
                     "numFiles": 0,
                     "filenames": [],
-                    "error": stderr or ("Search interrupted" if interrupted else "Unknown error"),
+                    "error": stderr or ("Search interrupted" if (ret_code is not None and ret_code < 0) else "Unknown error"),
                     "message": f"Search failed: {stderr}" if stderr else "Search interrupted"
                 }
             

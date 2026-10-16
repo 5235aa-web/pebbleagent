@@ -13,7 +13,7 @@
 
 </div>
 
-> **Platform support:** Windows 10/11 (64-bit) only, for now. The app and its backend rely on Windows APIs (process management, UI automation, packaging), so Linux and macOS are not supported yet.
+> **Platform support:** Windows 10/11 (64-bit) only, for now. The app and its backend rely on Windows APIs (process management, PowerShell integration, packaging), so Linux and macOS are not supported yet.
 
 ## Features
 
@@ -23,7 +23,7 @@
 - **On-demand skills.** 100+ bundled skill folders covering design, debugging, TDD, Office documents, 3D workflows, and more, loaded only when a task needs them.
 - **Code Knowledge Base (CKB).** The agent indexes your repository into a chaptered knowledge base, verifies it against the source, and keeps it in sync as the project evolves.
 - **Cross-session memory.** Persistent agent memory and user notes are injected into context, so preferences and project facts survive between sessions.
-- **Context compaction.** Automatic and manual compaction summarize long conversations without losing the thread, and folded history stays inspectable.
+- **Context compaction.** On-demand compaction summarizes long conversations without losing the thread, and folded history stays inspectable.
 - **Real-time cost tracking.** Per-model pricing with peak/off-peak tiers and cache-hit accounting, updated live per conversation.
 - **Permission controls.** Allow / deny / ask rule sets, a path whitelist, and an audit log for every sensitive operation.
 - **Full UI theming.** Pick any color and the whole palette adapts instantly across the entire interface.

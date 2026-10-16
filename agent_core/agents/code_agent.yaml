@@ -23,10 +23,6 @@ tools:
     - edit_file
     # Network
     - web_search
-    # UI automation
-    - uia_get_elements
-    - uia_find_element
-    - uia_get_window_list
     # Skills
     - load_skill
     - list_skills

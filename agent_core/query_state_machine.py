@@ -20,9 +20,12 @@ import uuid
 import time
 import asyncio
 import json
+import logging
 from abc import ABC, abstractmethod
 
 from .safe_json import safe_json_loads
+
+logger = logging.getLogger(__name__)
 
 
 # ==================== 消息类型定义 ====================
@@ -290,10 +293,6 @@ class QueryState:
     
     # 恢复状态
     max_output_tokens_recovery_count: int = 0
-    has_attempted_reactive_compact: bool = False
-    
-    # 压缩追踪
-    auto_compact_tracking: Optional[Dict[str, Any]] = None
     
     # 当前迭代的工具调用
     pending_tool_calls: List[ToolUseBlock] = field(default_factory=list)
@@ -323,8 +322,6 @@ class QueryState:
             query_chain_id=self.query_chain_id,
             query_depth=self.query_depth,
             max_output_tokens_recovery_count=self.max_output_tokens_recovery_count,
-            has_attempted_reactive_compact=self.has_attempted_reactive_compact,
-            auto_compact_tracking=self.auto_compact_tracking.copy() if self.auto_compact_tracking else None,
             pending_tool_calls=self.pending_tool_calls.copy(),
             current_response_text=self.current_response_text,
             accumulated_response_text=self.accumulated_response_text,
@@ -374,9 +371,6 @@ class QueryConfig:
     max_output_tokens_recovery_limit: int = 3
     max_tool_concurrency: int = 10
     enable_streaming_tool_execution: bool = True
-    enable_auto_compact: bool = True
-    auto_compact_threshold: int = 150000
-    context_window_size: int = 200000
 
 
 # ==================== 工具执行上下文 ====================

@@ -70,12 +70,11 @@ async function downloadPng(){
     const url=await toPng(el,{pixelRatio:2,backgroundColor:'#000'})
     const fname=(effectiveFilePath.value||'poster').replace('.html','')+'.png'
     if(isTauri){
+      // 桌面版：经后端 RPC 写入项目目录（复用 WS 通道；路径由后端基于当前项目解析）
       const base64=url.split(',')[1]
-      const bytes=Uint8Array.from(atob(base64),c=>c.charCodeAt(0))
-      const outDir=cfg.projectPath.replace(/\\/g,'/').replace(/\/+$/,'')
-      const {writeFile}=await import('@tauri-apps/plugin-fs')
-      await writeFile(outDir+'/'+fname,bytes)
-      psMsg.value='saved to '+outDir+'/'+fname
+      const r=await gs.request<{ok:boolean;path?:string;error?:string}>('file.write_base64',{path:fname,data_base64:base64})
+      if(!r?.ok){throw new Error(r?.error||'write failed')}
+      psMsg.value='saved to '+(r.path||fname)
     }else{
       const a=document.createElement('a');a.href=url;a.download=fname;a.click()
       psMsg.value='downloaded'

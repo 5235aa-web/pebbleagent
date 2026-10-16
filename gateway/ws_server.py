@@ -181,8 +181,8 @@ async def handle_ws(ws: websockets.WebSocketServerProtocol):
                 continue
 
             # All other methods
-            if method == "mcp.install_server":
-                # 长阻塞操作（下载安装，可能数十秒）→ 线程池执行，避免阻塞 WS 事件循环
+            if method in ("mcp.install_server", "session.compress"):
+                # 长阻塞操作（下载安装 / 上下文压缩调 LLM，可能数十秒）→ 线程池执行，避免阻塞 WS 事件循环
                 result = await asyncio.to_thread(handle_request, method, params, rid or "")
             else:
                 result = handle_request(method, params, rid or "")

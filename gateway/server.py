@@ -1575,21 +1575,20 @@ def handle_request(method: str, params: dict, rid: str) -> Optional[dict]:
 
     if method == "file.search":
         """搜索项目目录中的文件（自动补全用）"""
-        import os as _os
         q = params.get("q", "").strip().lower()
         path = params.get("path", str(_PROJECT_ROOT))
         limit = params.get("limit", 20)
         results = []
         try:
-            if _os.path.isdir(path):
-                for entry in _os.listdir(path):
+            if os.path.isdir(path):
+                for entry in os.listdir(path):
                     if q and q not in entry.lower():
                         continue
-                    full = _os.path.join(path, entry)
+                    full = os.path.join(path, entry)
                     results.append({
                     "name": entry,
                     "path": full,
-                    "type": "directory" if _os.path.isdir(full) else "file",
+                    "type": "directory" if os.path.isdir(full) else "file",
                     })
                     if len(results) >= limit:
                         break
@@ -1629,14 +1628,14 @@ def handle_request(method: str, params: dict, rid: str) -> Optional[dict]:
         import base64 as _b64
         path = params.get("path", "")
         try:
-            if not _os.path.exists(path):
+            if not os.path.exists(path):
                 # 尝试用项目根目录解析相对路径
                 attempts = []
-                if not _os.path.isabs(path):
+                if not os.path.isabs(path):
                     attempts.append(str(_PROJECT_ROOT / path))
                 found = None
                 for alt in attempts:
-                    if _os.path.exists(alt):
+                    if os.path.exists(alt):
                         found = alt
                         break
                 if found:
@@ -1655,18 +1654,55 @@ def handle_request(method: str, params: dict, rid: str) -> Optional[dict]:
         except Exception as e:
             return {"id": rid, "result": {"ok": False, "error": str(e)}}
 
+    if method == "file.write_base64":
+        """写入 base64 数据到文件（PNG 保存等场景），路径解析规则与 file.read_text 一致"""
+        import base64 as _b64
+        path = params.get("path", "")
+        data_b64 = params.get("data_base64", "")
+        if not path:
+            return {"id": rid, "result": {"ok": False, "error": "path required"}}
+        if not data_b64:
+            return {"id": rid, "result": {"ok": False, "error": "data_base64 required"}}
+        try:
+            # 项目根目录（与 session.export_save 一致）
+            project_root = os.path.normpath(
+                getattr(_ensure_service(), '_current_project_path', None) or str(_PROJECT_ROOT)
+            )
+            # 相对路径基于项目根解析；绝对路径原样使用
+            if not os.path.isabs(path):
+                path = os.path.join(project_root, path)
+            path = os.path.normpath(path)
+            # 安全校验：写入目标必须位于当前项目目录内
+            if os.path.normcase(path) != os.path.normcase(project_root) and \
+               not os.path.normcase(path).startswith(os.path.normcase(project_root) + os.sep):
+                return {"id": rid, "result": {"ok": False, "error": "path is outside the project directory"}}
+            # 确保父目录存在
+            parent = os.path.dirname(path)
+            if parent:
+                os.makedirs(parent, exist_ok=True)
+            raw = _b64.b64decode(data_b64)
+            # 原子写：先写临时文件再替换，避免写一半损坏
+            tmp_path = path + ".tmp"
+            with open(tmp_path, "wb") as f:
+                f.write(raw)
+            os.replace(tmp_path, path)
+            logger.info(f"[Server] file.write_base64: wrote {len(raw)} bytes to {path}")
+            return {"id": rid, "result": {"ok": True, "path": path, "size": len(raw)}}
+        except Exception as e:
+            logger.warning(f"[Server] file.write_base64 failed: {e}")
+            return {"id": rid, "result": {"ok": False, "error": str(e)}}
+
     if method == "file.open":
         """用系统默认程序打开文件或 URL"""
-        import os as _os
         import subprocess
         import sys
         path = params.get("path", "")
         try:
             is_url = path.startswith(("http://", "https://", "ftp://"))
-            if not is_url and not _os.path.exists(path):
+            if not is_url and not os.path.exists(path):
                 return {"id": rid, "result": {"ok": False, "error": "文件或 URL 不存在"}}
             if sys.platform == "win32":
-                _os.startfile(path)
+                os.startfile(path)
             elif sys.platform == "darwin":
                 subprocess.Popen(["open", path])
             else:

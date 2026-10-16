@@ -233,7 +233,6 @@ def auto_register_tools():
         "tools.skill_tools",
         "tools.todo_tool",
         "tools.tool_search_tool",
-        "tools.uia_tools",
         "tools.web_fetch_tool",
     ]
     for module_path in _STATIC_TOOL_MODULES:

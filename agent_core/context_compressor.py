@@ -3,11 +3,8 @@ Context Compressor - 完整的上下文压缩器
 1. 结构化摘要提示词 - 9部分结构化输出
 2. 图片/文档剥离 - stripImagesFromMessages
 3. Tool pair 完整性保护 - adjustIndexToPreserveAPIInvariants
-4. PTL 重试机制 - truncateHeadForPTLRetry
-5. 压缩边界标记 - SystemCompactBoundaryMessage
-6. Plan 文件保留 - createPlanAttachmentIfNeeded
-7. 自动压缩触发 - shouldAutoCompact
-8. 响应式压缩 - reactiveCompact
+4. 压缩边界标记 - SystemCompactBoundaryMessage
+5. Plan 文件保留 - createPlanAttachmentIfNeeded
 
 使用 tiktoken 进行精确的 Token 计数
 """
@@ -40,12 +37,6 @@ logger = logging.getLogger(__name__)
 # 默认配置
 DEFAULT_MAX_TOKENS = 90000
 DEFAULT_RECENT_MESSAGES = 10
-DEFAULT_AUTO_COMPACT_THRESHOLD = 150000  # 自动压缩触发阈值
-DEFAULT_CONTEXT_WINDOW_SIZE = 200000  # 默认上下文窗口大小
-
-# PTL 重试配置
-MAX_PTL_RETRIES = 3
-PTL_RETRY_MARKER = '[earlier conversation truncated for compaction retry]'
 
 # 压缩后恢复配置
 POST_COMPACT_MAX_FILES_TO_RESTORE = 5
@@ -1009,178 +1000,6 @@ def group_messages_by_api_round(messages: List[Message]) -> List[List[Message]]:
     
     return groups
 
-
-def truncate_head_for_ptl_retry(
-    messages: List[Message],
-    token_gap: Optional[int] = None,
-    context_limit: Optional[int] = None,
-) -> Optional[List[Message]]:
-    """
-    从消息头部丢弃最旧的消息，直到剩余消息能放入模型上下文窗口。
-    
-    三层策略（递减质量）：
-    1. 按 API round 分组丢弃（保持工具调用完整性）
-    2. 逐条丢弃（更激进）
-    3. 保留 system + 最近 N 条对话消息（最后逃生舱）
-    
-    Args:
-        messages: 消息列表
-        token_gap: 需要减少的 token 数（有则用，无则从 context_limit 推算）
-        context_limit: 模型的上下文窗口限制（用于计算目标）
-    
-    Returns:
-        截断后的消息列表，失败时返回 None
-    """
-    # ---- 1. 移除重试标记 ----
-    input_messages = messages
-    if (messages and 
-        messages[0].role == "user" and 
-        messages[0].is_meta and
-        isinstance(messages[0].content, str) and
-        messages[0].content == PTL_RETRY_MARKER):
-        input_messages = messages[1:]
-    
-    if not input_messages:
-        return None
-    
-    # ---- 2. 计算目标 token 数 ----
-    total = estimate_messages_tokens(input_messages)
-    
-    # 优先级: token_gap -> context_limit -> 保守比例
-    if token_gap is not None:
-        target = max(total - token_gap, 10000)
-    elif context_limit is not None:
-        # 留 15% 安全余量，至少 5000 tokens
-        target = max(int(context_limit * 0.85), 10000)
-    else:
-        # 完全未知时保留 25%（保守），至少 10000
-        target = max(int(total * 0.25), 10000)
-    
-    # 确保目标不小于总量的 5%（防止极端情况下的死循环）
-    target = max(target, int(total * 0.05))
-    
-    if total <= target:
-        return input_messages
-    
-    # ---- 3. O(n) 预计算每条消息的 token 数 ----
-    msg_tokens = [estimate_message_tokens(m) for m in input_messages]
-    # 累积 token 和（用于 O(1) 范围查询）
-    cum_tokens = []
-    s = 0
-    for t in msg_tokens:
-        s += t
-        cum_tokens.append(s)
-    
-    def _msg_range_tokens(start: int, end: int) -> int:
-        """O(1) 获取 [start, end) 范围的 token 总数"""
-        if start >= end:
-            return 0
-        after_end = cum_tokens[end - 1] if end > 0 else 0
-        before_start = cum_tokens[start - 1] if start > 0 else 0
-        return after_end - before_start
-    
-    def _build_result(msg_indices: List[int]) -> Optional[List[Message]]:
-        """从原始 input_messages 的索引列表构建结果，修正首条角色"""
-        if not msg_indices:
-            return None
-        result = [input_messages[i] for i in msg_indices]
-        if result and result[0].role == "assistant":
-            synthetic = Message(
-                uuid=str(uuid.uuid4()),
-                role="user",
-                content=PTL_RETRY_MARKER,
-                is_meta=True
-            )
-            result = [synthetic] + result
-        return result
-    
-    need_to_free = total - target
-    
-    # ==============================================
-    # 策略 1: 按 API round 分组丢弃
-    # ==============================================
-    groups = group_messages_by_api_round(input_messages)
-    if len(groups) >= 2:
-        # 预计算每组 token 数
-        group_tokens = []
-        msg_idx = 0
-        for g in groups:
-            g_tok = _msg_range_tokens(msg_idx, msg_idx + len(g))
-            group_tokens.append(g_tok)
-            msg_idx += len(g)
-        
-        # 二分查找最少需要丢弃多少组才能达到 need_to_free
-        lo, hi = 1, len(groups) - 1
-        best_drop = -1
-        while lo <= hi:
-            mid = (lo + hi) // 2
-            freed = sum(group_tokens[:mid])
-            if freed >= need_to_free:
-                best_drop = mid
-                hi = mid - 1
-            else:
-                lo = mid + 1
-        
-        # 即使不能完全满足 need_to_free，丢弃所有组除了最后一组
-        if best_drop < 1:
-            best_drop = len(groups) - 1
-        
-        # 计算丢弃组之后的 token 数是否在 target 内
-        dropped_tokens = sum(group_tokens[:best_drop])
-        remaining = total - dropped_tokens
-        
-        if remaining <= target:
-            # 计算起始消息索引
-            start_idx = sum(len(g) for g in groups[:best_drop])
-            all_indices = list(range(start_idx, len(input_messages)))
-            return _build_result(all_indices)
-    
-    # ==============================================
-    # 策略 2: 逐条丢弃（从头部开始，保留 system 消息）
-    # ==============================================
-    system_ranges = []
-    dialog_ranges = []
-    for idx, m in enumerate(input_messages):
-        if m.role == "system":
-            system_ranges.append(idx)
-        else:
-            dialog_ranges.append(idx)
-    
-    if dialog_ranges:
-        # 二分查找从 dialog 头部丢弃多少条能达标
-        lo, hi = 1, max(1, len(dialog_ranges) - 1)
-        best_drop = -1
-        while lo <= hi:
-            mid = (lo + hi) // 2
-            freed = sum(msg_tokens[dialog_ranges[i]] for i in range(mid))
-            if freed >= need_to_free:
-                best_drop = mid
-                hi = mid - 1
-            else:
-                lo = mid + 1
-        
-        if best_drop >= 1:
-            remaining_tokens = total - sum(msg_tokens[dialog_ranges[i]] for i in range(best_drop))
-            if remaining_tokens <= target:
-                kept_indices = system_ranges + dialog_ranges[best_drop:]
-                return _build_result(kept_indices)
-    
-    # ==============================================
-    # 策略 3: 保留 system + 最近 N 条对话消息（最后逃生舱）
-    # ==============================================
-    keep_count = max(1, min(10, len(dialog_ranges)))
-    kept_indices = system_ranges + dialog_ranges[-keep_count:]
-    candidate = _build_result(kept_indices)
-    if candidate:
-        return candidate
-    
-    # 完全失败时至少保留 system 消息
-    if system_ranges:
-        return _build_result(system_ranges)
-    
-    return None
-
-
 # ============================================================================
 # 5. 压缩边界标记
 # ============================================================================
@@ -1386,119 +1205,8 @@ def truncate_to_tokens(content: str, max_tokens: int) -> str:
 
 
 # ============================================================================
-# 7. 自动压缩触发
+# 8. PTL 错误检测
 # ============================================================================
-
-class AutoCompactConfig:
-    """自动压缩配置"""
-    
-    def __init__(
-        self,
-        threshold: int = DEFAULT_AUTO_COMPACT_THRESHOLD,
-        context_window_size: int = DEFAULT_CONTEXT_WINDOW_SIZE,
-        threshold_ratio: float = 0.75,  # 在达到上下文窗口 75% 时触发
-        min_messages: int = 5,  # 最少消息数才触发
-        cooldown_turns: int = 3,  # 压缩后冷却轮数
-    ):
-        self.threshold = threshold
-        self.context_window_size = context_window_size
-        self.threshold_ratio = threshold_ratio
-        self.min_messages = min_messages
-        self.cooldown_turns = cooldown_turns
-
-
-class AutoCompactState:
-    """自动压缩状态追踪"""
-    
-    def __init__(self):
-        self.last_compact_turn: int = 0
-        self.current_turn: int = 0
-        self.compact_count: int = 0
-        self.last_token_count: int = 0
-    
-    def increment_turn(self) -> None:
-        """增加当前轮数"""
-        self.current_turn += 1
-    
-    def record_compact(self) -> None:
-        """记录压缩发生"""
-        self.last_compact_turn = self.current_turn
-        self.compact_count += 1
-    
-    def turns_since_last_compact(self) -> int:
-        """获取距离上次压缩的轮数"""
-        return self.current_turn - self.last_compact_turn
-    
-    def is_in_cooldown(self, cooldown_turns: int) -> bool:
-        """检查是否在冷却期"""
-        return self.turns_since_last_compact() < cooldown_turns
-
-
-def should_auto_compact(
-    messages: List[Message],
-    state: AutoCompactState,
-    config: AutoCompactConfig,
-    current_usage: Optional[Dict[str, int]] = None
-) -> Tuple[bool, str]:
-    """
-    判断是否应该触发自动压缩
-    
-    Args:
-        messages: 当前消息列表
-        state: 自动压缩状态
-        config: 自动压缩配置
-        current_usage: 当前 API 使用情况（可选）
-    
-    Returns:
-        (是否触发, 原因)
-    """
-    # 检查消息数量
-    if len(messages) < config.min_messages:
-        return False, f"消息数量不足 ({len(messages)} < {config.min_messages})"
-    
-    # 检查冷却期
-    if state.is_in_cooldown(config.cooldown_turns):
-        return False, f"冷却期中 (距上次压缩 {state.turns_since_last_compact()} 轮)"
-    
-    # 计算 token 数量
-    token_count = estimate_messages_tokens(messages)
-    state.last_token_count = token_count
-    
-    # 使用 API 返回的使用情况（如果有）
-    if current_usage:
-        api_token_count = (
-            current_usage.get("input_tokens", 0) +
-            current_usage.get("cache_creation_input_tokens", 0) +
-            current_usage.get("cache_read_input_tokens", 0) +
-            current_usage.get("output_tokens", 0)
-        )
-        if api_token_count > 0:
-            token_count = max(token_count, api_token_count)
-    
-    # 检查是否超过阈值
-    threshold = min(
-        config.threshold,
-        int(config.context_window_size * config.threshold_ratio)
-    )
-    
-    if token_count >= threshold:
-        return True, f"Token 数量超过阈值 ({token_count} >= {threshold})"
-    
-    return False, f"Token 数量未达阈值 ({token_count} < {threshold})"
-
-
-# ============================================================================
-# 8. 响应式压缩
-# ============================================================================
-
-class ReactiveCompactState:
-    """响应式压缩状态"""
-    
-    def __init__(self):
-        self.is_reactive_mode: bool = False
-        self.pending_compact: bool = False
-        self.last_error: Optional[str] = None
-        self.retry_count: int = 0
 
 
 def is_prompt_too_long_error(error: Any) -> Tuple[bool, Optional[int], Optional[int]]:
@@ -1559,88 +1267,6 @@ def is_prompt_too_long_error(error: Any) -> Tuple[bool, Optional[int], Optional[
         return True, None, limit
     else:
         return True, None, None
-
-
-def reactive_compact_on_error(
-    messages: List[Message],
-    error: Any,
-    llm_client: Any,
-    llm_model: str,
-    max_retries: int = MAX_PTL_RETRIES
-) -> Tuple[bool, Optional[CompactionResult]]:
-    """
-    当 API 返回 prompt_too_long 错误时执行响应式压缩
-    
-    Args:
-        messages: 当前消息列表
-        error: API 错误
-        llm_client: LLM 客户端
-        llm_model: 模型名称
-        max_retries: 最大重试次数
-    
-    Returns:
-        (是否成功处理, 压缩结果)
-    """
-    is_ptl, token_gap, context_limit = is_prompt_too_long_error(error)
-    
-    if not is_ptl:
-        return False, None
-    
-    logger.info(f"[ReactiveCompact] Detected prompt_too_long error, gap: {token_gap}, limit: {context_limit}")
-    
-    # 尝试截断头部（最多重试 3 次，逐步激进）
-    remaining = list(messages)  # 每次迭代逐步截断
-    current_gap = token_gap
-    current_limit = context_limit
-    
-    for retry in range(max_retries):
-        truncated = truncate_head_for_ptl_retry(remaining, current_gap, current_limit)
-        
-        if not truncated:
-            logger.warning(f"[ReactiveCompact] Cannot truncate further (retry {retry + 1})")
-            # 最后一次尝试：只保留系统消息 + 最近 3 条
-            if retry == max_retries - 1:
-                system_msgs = [m for m in remaining if m.role == "system"]
-                dialog_msgs = [m for m in remaining if m.role != "system"]
-                if dialog_msgs:
-                    keep = dialog_msgs[-3:]
-                    result = system_msgs + keep
-                    if result and result[0].role == "assistant":
-                        result = [Message(uuid=str(uuid.uuid4()), role="user", content=PTL_RETRY_MARKER, is_meta=True)] + result
-                    truncated = result or None
-                elif system_msgs:
-                    truncated = system_msgs
-                else:
-                    return False, None
-            else:
-                return False, None
-        
-        if not truncated:
-            return False, None
-        
-        remaining = truncated
-        
-        # 执行压缩
-        result = compact_conversation(
-            messages=truncated,
-            llm_client=llm_client,
-            llm_model=llm_model,
-            trigger=CompactTrigger.REACTIVE,
-        )
-        
-        if result.success:
-            return True, result
-        
-        # 压缩失败，尝试更激进的截断
-        logger.warning(f"[ReactiveCompact] Compact failed (retry {retry + 1}), trying more aggressive truncation")
-        if current_limit is not None:
-            current_limit = int(current_limit * 0.7)
-        elif current_gap is not None:
-            current_gap = int(current_gap * 1.3)
-        # 两个都是 None → 最后一轮走最后逃生舱
-    
-    logger.error("[ReactiveCompact] All retries exhausted")
-    return False, None
 
 
 # ============================================================================
@@ -2543,11 +2169,6 @@ __all__ = [
     'SkillState',
     'PlanFile',
     
-    # 配置类
-    'AutoCompactConfig',
-    'AutoCompactState',
-    'ReactiveCompactState',
-    
     # Token 计算
     'estimate_tokens',
     'estimate_message_tokens',
@@ -2568,9 +2189,8 @@ __all__ = [
     'get_tool_result_ids',
     'has_tool_use_with_ids',
     
-    # PTL 重试
+    # 消息分组 / PTL 检测
     'group_messages_by_api_round',
-    'truncate_head_for_ptl_retry',
     'is_prompt_too_long_error',
     
     # 压缩边界
@@ -2584,12 +2204,6 @@ __all__ = [
     'create_plan_attachment_if_needed',
     'create_skill_attachment_if_needed',
     'truncate_to_tokens',
-    
-    # 自动压缩
-    'should_auto_compact',
-    
-    # 响应式压缩
-    'reactive_compact_on_error',
     
     # 核心压缩函数
     'compact_conversation',

@@ -23,7 +23,6 @@ from .tool_orchestrator import ToolExecutor
 from .mcp.mcp_integration import is_mcp_tool, McpToolExecutorFactory
 from .agent_loader import check_agent_tool_policy
 from .permission_enforcer import PermissionEnforcer, PermissionCheckError, PathBoundaryError
-from .electron_bridge import get_bridge, ElectronBridgeError, is_bridge_available
 import httpx
 from .truncation_manager import truncate_output
 from .code_network_guardV2 import (
@@ -2117,47 +2116,6 @@ class AgentToolExecutorImpl(ToolExecutor):
         except Exception as e:
             return f"Error: Failed to fetch URL: {e}"
         
-        # 检测是否为 JS 渲染的 SPA / 反爬页面（内容稀疏或无实质文本）
-        import re
-        text_only = re.sub(r'<[^>]+>', '', raw_text).strip()
-        html_size = len(raw_text)
-        text_size = len(text_only)
-        # 覆盖：SPA、Cloudflare 验证页、年龄验证墙、动态加载页面等
-        is_sparse = text_size < 500 and html_size > 20000
-        # 特定已知反爬模式（快速命中，不依赖启发判断）
-        anti_bot = bool(re.search(
-            r'(challenge-running|captcha|cf-browser-verification|'
-            r'age-verify|age_gate|__NEXT_DATA__|window\.__NUXT__)',
-            raw_text, re.IGNORECASE
-        ))
-        
-        if (is_sparse or anti_bot) and is_bridge_available():
-            # 降级到浏览器：JS 渲染的 SPA，httpx 拿不到实质内容
-            logger.info(f"[ToolExecutor] fetch_url detected SPA page, falling back to browser: {url}")
-            bridge = get_bridge()
-            try:
-                tab = await bridge.create_tab(url)
-                tab_id = tab.get("tab", {}).get("id")
-                if tab_id:
-                    await bridge.navigate(tab_id, url, timeout=min(timeout, 30))
-                    content = await bridge.get_page_content(tab_id)
-                    await bridge.close_tab(tab_id)
-                    if content and content.get("text"):
-                        full_text = content["text"]
-                        truncated, was_truncated = truncate_output(full_text)
-                        output_parts = [
-                            f"## {content.get('title', '')}",
-                            f"URL: {url}",
-                            f"",
-                            f"### Page Content (rendered by browser):",
-                            truncated
-                        ]
-                        return "\n".join(output_parts)
-            except Exception as e:
-                logger.warning(f"[ToolExecutor] Browser fallback for fetch_url failed: {e}")
-            
-            return truncate_output(raw_text)[0]
-        
         return truncate_output(raw_text)[0]
     
     async def _tool_get_env_var(self, name: str) -> str:
@@ -2614,13 +2572,7 @@ class AgentToolExecutorImpl(ToolExecutor):
     
     async def _tool_web_search(self, query: str) -> str:
         """
-        使用 Electron 内置浏览器搜索网络
-        
-        通过 Electron HTTP 桥接直接控制浏览器：
-        1. 创建临时标签页
-        2. 导航到搜索引擎（Bing）
-        3. 提取搜索结果
-        4. 关闭临时标签页
+        搜索网络（通过 httpx 抓取 Bing 搜索页并解析结构化结果）
         
         受 code_network_guardV2 的速率限制保护。
         """
@@ -2633,49 +2585,40 @@ class AgentToolExecutorImpl(ToolExecutor):
         if not allowed:
             return f"Error: {msg}"
         
-        # 检查桥接可用性
-        bridge = get_bridge()
-        bridge_ok = is_bridge_available()
-        
         try:
-            if bridge_ok:
-                # 首选：通过 Electron 浏览器搜索（可获得完整 JS 渲染结果）
-                result = await bridge.search(query, engine="bing", timeout=15)
-            else:
-                # 降级：直接通过 httpx 抓取 Bing 搜索页（Electron 未启动时的后备方案）
-                logger.info(f"[ToolExecutor] Bridge unavailable, falling back to httpx search for: {query}")
-                from urllib.parse import quote
-                search_url = f"https://cn.bing.com/search?q={quote(query)}&count=8"
-                async with httpx.AsyncClient(timeout=15.0, follow_redirects=True) as client:
-                    resp = await client.get(
-                        search_url,
-                        headers={"User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36"}
-                    )
-                # 解析 Bing 搜索结果 HTML，提取结构化结果
-                parsed_results = _parse_bing_search_results(resp.text)
-                result = {
-                    "content": {
-                        "text": resp.text,
-                        "url": str(resp.url),
-                        "title": "",
-                        "links": [
-                            {"href": r["url"], "text": r["title"]}
-                            for r in parsed_results
-                        ],
-                        "_parsed_results": parsed_results,
-                    }
+            # 通过 httpx 抓取 Bing 搜索页
+            from urllib.parse import quote
+            search_url = f"https://cn.bing.com/search?q={quote(query)}&count=8"
+            async with httpx.AsyncClient(timeout=15.0, follow_redirects=True) as client:
+                resp = await client.get(
+                    search_url,
+                    headers={"User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36"}
+                )
+            # 解析 Bing 搜索结果 HTML，提取结构化结果
+            parsed_results = _parse_bing_search_results(resp.text)
+            result = {
+                "content": {
+                    "text": resp.text,
+                    "url": str(resp.url),
+                    "title": "",
+                    "links": [
+                        {"href": r["url"], "text": r["title"]}
+                        for r in parsed_results
+                    ],
+                    "_parsed_results": parsed_results,
                 }
+            }
             
             content = result.get("content")
             if not content:
-                return f"Web search for: {query}\nNo results returned from browser."
+                return f"Web search for: {query}\nNo results returned from search."
             
             # 提取搜索结果文本
             text = content.get("text", "")
             links = content.get("links", [])
             url = content.get("url", "")
             
-            # 优先使用已解析的结构化结果（httpx 路径有 _parsed_results，桥接路径从 links 提取）
+            # 优先使用已解析的结构化结果（httpx 路径有 _parsed_results；否则从 links 提取）
             parsed_results = content.get("_parsed_results", [])
             if not parsed_results and links:
                 for link in links:
@@ -2712,11 +2655,8 @@ class AgentToolExecutorImpl(ToolExecutor):
             
         except asyncio.CancelledError:
             raise
-        except ElectronBridgeError as e:
-            logger.error(f"[ToolExecutor] Electron bridge search error: {e}")
-            return f"Error: Browser search failed - {str(e)}"
         except Exception as e:
-            logger.error(f"[ToolExecutor] Unexpected search error: {e}")
+            logger.error(f"[ToolExecutor] Search error: {e}")
             return f"Error: Search failed - {str(e)}"
     
     async def _tool_browser_navigate(self, url: str, extract_links: bool = False) -> str:
@@ -2743,99 +2683,37 @@ class AgentToolExecutorImpl(ToolExecutor):
         if not allowed:
             return f"Error: {msg}"
         
-        bridge = get_bridge()
-        bridge_ok = is_bridge_available()
-        
-        if not bridge_ok:
-            # 降级：直接用 httpx 获取页面内容
-            logger.info(f"[ToolExecutor] Bridge unavailable, falling back to httpx for navigate: {url}")
-            try:
-                async with httpx.AsyncClient(timeout=30.0, follow_redirects=True) as client:
-                    resp = await client.get(
-                        url,
-                        headers={"User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36"}
-                    )
-                raw = resp.text
-                import re
-                text_only = re.sub(r'<[^>]+>', '\n', raw)
-                lines = [l.strip() for l in text_only.split('\n') if l.strip()]
-                clean_text = '\n'.join(lines[:500])
-                truncated, _ = truncate_output(clean_text)
-                output_parts = [
-                    f"## URL: {url}",
-                    f"(Fetched via httpx — Electron bridge not available)",
-                    f"",
-                    f"### Page Content:",
-                    truncated
-                ]
-                return "\n".join(output_parts)
-            except Exception as e:
-                return f"Error: Failed to fetch URL via httpx: {e}"
-        
         try:
-            # 创建新标签页
-            tab_result = await bridge.create_tab(url)
-            if not tab_result.get("tab"):
-                return "Error: Failed to create browser tab"
-            
-            tab_id = tab_result["tab"]["id"]
-            
-            # 导航到 URL（等待加载）
-            await bridge.navigate(tab_id, url, timeout=30)
-            
-            # 获取页面内容
-            content = await bridge.get_page_content(tab_id)
-            
-            # 关闭标签页
-            await bridge.close_tab(tab_id)
-            
-            if not content:
-                return f"Navigated to {url} but could not extract content."
-            
-            text = content.get("text", "")
-            title = content.get("title", "")
-            metadata = content.get("metadata", {})
-            
+            async with httpx.AsyncClient(timeout=30.0, follow_redirects=True) as client:
+                resp = await client.get(
+                    url,
+                    headers={"User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36"}
+                )
+            raw = resp.text
+            import re
+            text_only = re.sub(r'<[^>]+>', '\n', raw)
+            lines = [l.strip() for l in text_only.split('\n') if l.strip()]
+            clean_text = '\n'.join(lines[:500])
+            truncated, _ = truncate_output(clean_text)
             output_parts = [
-                f"## Page: {title}",
-                f"URL: {url}",
-                f"Description: {metadata.get('description', 'N/A')}",
-                f""
+                f"## URL: {url}",
+                f"(Fetched via httpx)",
+                f"",
+                f"### Page Content:",
+                truncated
             ]
-            
-            if extract_links:
-                links = content.get("links", [])
-                if links:
-                    output_parts.append(f"### Links ({len(links)} total, showing first 20):")
-                    for i, link in enumerate(links[:20], 1):
-                        link_text = link.get("text", "").strip()
-                        link_href = link.get("href", "")
-                        if link_text:
-                            output_parts.append(f"{i}. [{link_text}]({link_href})")
-                        else:
-                            output_parts.append(f"{i}. {link_href}")
-                    output_parts.append("")
-            
-            if text:
-                truncated, _ = truncate_output(text)
-                output_parts.append(f"### Page Content:\n{truncated}")
-            
             return "\n".join(output_parts)
-            
         except asyncio.CancelledError:
             raise
-        except ElectronBridgeError as e:
-            logger.error(f"[ToolExecutor] Browser navigate error: {e}")
-            return f"Error: Navigation failed - {str(e)}"
         except Exception as e:
-            logger.error(f"[ToolExecutor] Unexpected navigate error: {e}")
-            return f"Error: Navigation failed - {str(e)}"
+            logger.error(f"[ToolExecutor] Navigate error: {e}")
+            return f"Error: Failed to fetch URL: {e}"
     
     async def _tool_browser_download(self, url: str, filename: str = "") -> str:
         """
-        通过浏览器下载文件
+        通过 httpx 下载文件
         
-        文件直接保存到 agent 工作区文件夹，跳过浏览器保存对话框。
+        文件直接保存到 agent 工作区文件夹。
         受 download_guard 限制器保护（每轮文件数 + 文件类型 + 大小）。
         """
         if not url:
@@ -2847,9 +2725,6 @@ class AgentToolExecutorImpl(ToolExecutor):
         if not allowed:
             return f"Error: {msg}"
         
-        bridge = get_bridge()
-        bridge_ok = is_bridge_available()
-        
         # 解析保存路径：工作区文件夹
         from urllib.parse import urlparse, unquote
         if not filename:
@@ -2859,71 +2734,43 @@ class AgentToolExecutorImpl(ToolExecutor):
         
         save_path = os.path.join(self._current_project_path, filename)
         
-        if not bridge_ok:
-            # 降级：直接用 httpx 下载文件
-            logger.info(f"[ToolExecutor] Bridge unavailable, falling back to httpx download: {url}")
-            try:
-                async with httpx.AsyncClient(timeout=60.0, follow_redirects=True) as client:
-                    resp = await client.get(url)
-                # 根据 Content-Type 推断扩展名
-                content_type = resp.headers.get("content-type", "")
-                ext_map = {
-                    "image/jpeg": ".jpg", "image/png": ".png", "image/gif": ".gif",
-                    "image/webp": ".webp", "image/svg+xml": ".svg",
-                    "application/pdf": ".pdf", "application/zip": ".zip",
-                    "text/html": ".html", "text/plain": ".txt",
-                    "application/json": ".json",
-                }
-                if not os.path.splitext(filename)[1]:
-                    for mime, ext in ext_map.items():
-                        if mime in content_type:
-                            filename += ext
-                            break
-                    else:
-                        filename += ".bin"
-                    save_path = os.path.join(self._current_project_path, filename)
-                os.makedirs(os.path.dirname(os.path.abspath(save_path)), exist_ok=True)
-                with open(save_path, 'wb') as f:
-                    f.write(resp.content)
-                file_size = len(resp.content)
-                return (
-                    f"Download completed (via httpx — Electron bridge not available).\n"
-                    f"File: {filename}\n"
-                    f"URL: {url}\n"
-                    f"Save path: {save_path}\n"
-                    f"Size: {file_size} bytes\n"
-                    f"Status: completed"
-                )
-            except Exception as e:
-                return f"Error: Download failed via httpx: {e}"
-        
         try:
-            result = await bridge.trigger_download(
-                url, 
-                filename=filename,
-                save_path=save_path
+            async with httpx.AsyncClient(timeout=60.0, follow_redirects=True) as client:
+                resp = await client.get(url)
+            # 根据 Content-Type 推断扩展名
+            content_type = resp.headers.get("content-type", "")
+            ext_map = {
+                "image/jpeg": ".jpg", "image/png": ".png", "image/gif": ".gif",
+                "image/webp": ".webp", "image/svg+xml": ".svg",
+                "application/pdf": ".pdf", "application/zip": ".zip",
+                "text/html": ".html", "text/plain": ".txt",
+                "application/json": ".json",
+            }
+            if not os.path.splitext(filename)[1]:
+                for mime, ext in ext_map.items():
+                    if mime in content_type:
+                        filename += ext
+                        break
+                else:
+                    filename += ".bin"
+                save_path = os.path.join(self._current_project_path, filename)
+            os.makedirs(os.path.dirname(os.path.abspath(save_path)), exist_ok=True)
+            with open(save_path, 'wb') as f:
+                f.write(resp.content)
+            file_size = len(resp.content)
+            return (
+                f"Download completed.\n"
+                f"File: {filename}\n"
+                f"URL: {url}\n"
+                f"Save path: {save_path}\n"
+                f"Size: {file_size} bytes\n"
+                f"Status: completed"
             )
-            
-            if result.get("success"):
-                return (
-                    f"Download started successfully.\n"
-                    f"File: {filename}\n"
-                    f"URL: {url}\n"
-                    f"Save path: {save_path}\n"
-                    f"Status: downloading\n"
-                    f"\nFile is being saved to your workspace folder."
-                )
-            else:
-                return f"Error: Failed to start download - {result.get('error', 'Unknown error')}"
-                
         except asyncio.CancelledError:
             raise
-        except ElectronBridgeError as e:
-            logger.error(f"[ToolExecutor] Browser download error: {e}")
-            return f"Error: Download failed - {str(e)}"
         except Exception as e:
-            logger.error(f"[ToolExecutor] Unexpected download error: {e}")
-            return f"Error: Download failed - {str(e)}"
+            logger.error(f"[ToolExecutor] Download error: {e}")
+            return f"Error: Download failed: {e}"
     
     # ==================== 进程管理工具 ====================
     
