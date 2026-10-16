@@ -29,6 +29,6 @@ included in the directory.
 
 ## Design acknowledgements
 
-The agent architecture, developer experience, and parts of the interface design
-of PebbleAgent were inspired by Claude Code (Anthropic) and opencode
+The agent architecture and developer experience of PebbleAgent were inspired
+by Claude Code (Anthropic) and opencode
 (MIT License, https://github.com/sst/opencode).

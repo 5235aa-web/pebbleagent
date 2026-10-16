@@ -137,8 +137,8 @@ Three billing/holiday regression scripts (`peb_check_*.py`) sit at the repo root
 
 ## Acknowledgements
 
-PebbleAgent's agent architecture, developer experience, and parts of its
-interface design were inspired by Claude Code (Anthropic) and opencode.
+PebbleAgent's agent architecture and developer experience were inspired by
+Claude Code (Anthropic) and opencode.
 Bundled third-party skills and materials are listed in
 [THIRD_PARTY_NOTICES.md](THIRD_PARTY_NOTICES.md).
 
