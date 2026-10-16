@@ -326,10 +326,10 @@ class AgentToolExecutorImpl(ToolExecutor):
         if not path:
             return path
         if os.path.isabs(path):
-            print(f"[ToolExecutor] _resolve_path: {path} is absolute, returning as-is")
+            logger.debug(f"[ToolExecutor] _resolve_path: {path} is absolute, returning as-is")
             return path
         resolved = os.path.join(self._current_project_path, path)
-        print(f"[ToolExecutor] _resolve_path: {path} -> {resolved} (project_path={self._current_project_path})")
+        logger.debug(f"[ToolExecutor] _resolve_path: {path} -> {resolved} (project_path={self._current_project_path})")
         return resolved
     
     async def execute(
@@ -1170,7 +1170,7 @@ class AgentToolExecutorImpl(ToolExecutor):
             return "Error: No file path provided"
         
         resolved_path = self._resolve_path(file_path)
-        print(f"[ToolExecutor] write_file: input_path={file_path}, resolved_path={resolved_path}, project_path={self._current_project_path}")
+        logger.debug(f"[ToolExecutor] write_file: input_path={file_path}, resolved_path={resolved_path}, project_path={self._current_project_path}")
         
         # 敏感文件检查
         is_sensitive, sensitive_reason = self._enforcer.check_sensitive_file(resolved_path)
@@ -1193,27 +1193,27 @@ class AgentToolExecutorImpl(ToolExecutor):
         try:
             # 确保目录存在
             dir_path = os.path.dirname(resolved_path)
-            print(f"[ToolExecutor] write_file: creating directory={dir_path}")
+            logger.debug(f"[ToolExecutor] write_file: creating directory={dir_path}")
             os.makedirs(dir_path, exist_ok=True)
             
             write_mode = 'a' if mode == "append" else 'w'
-            print(f"[ToolExecutor] write_file: opening file with mode={write_mode}")
+            logger.debug(f"[ToolExecutor] write_file: opening file with mode={write_mode}")
             with open(resolved_path, write_mode, encoding='utf-8') as f:
                 f.write(content)
             
             # 验证文件是否真的写入成功
             if os.path.exists(resolved_path):
                 file_size = os.path.getsize(resolved_path)
-                print(f"[ToolExecutor] write_file: SUCCESS - file exists, size={file_size} bytes, path={resolved_path}")
+                logger.debug(f"[ToolExecutor] write_file: SUCCESS - file exists, size={file_size} bytes, path={resolved_path}")
             else:
-                print(f"[ToolExecutor] write_file: FAILED - file does not exist after write! path={resolved_path}")
+                logger.debug(f"[ToolExecutor] write_file: FAILED - file does not exist after write! path={resolved_path}")
                 return f"Error: File was not created at {resolved_path}"
             
             result = f"Success: Written to {resolved_path}"
             lsp_report = await self._lsp_diagnostics_after_write(resolved_path)
             return result + lsp_report
         except Exception as e:
-            print(f"[ToolExecutor] write_file: Exception - {str(e)}")
+            logger.debug(f"[ToolExecutor] write_file: Exception - {str(e)}")
             return f"Error: {str(e)}"
     
     async def _tool_edit_file(self, file_path: str, operation: str = "", line_number: int = None,
@@ -1246,7 +1246,7 @@ class AgentToolExecutorImpl(ToolExecutor):
             return "Error: No file path provided"
         
         resolved_path = self._resolve_path(file_path)
-        print(f"[ToolExecutor] edit_file: input_path={file_path}, resolved_path={resolved_path}")
+        logger.debug(f"[ToolExecutor] edit_file: input_path={file_path}, resolved_path={resolved_path}")
         
         # 检查文件是否存在
         if not os.path.exists(resolved_path):

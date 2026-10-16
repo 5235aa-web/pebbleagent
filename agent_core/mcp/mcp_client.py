@@ -149,6 +149,12 @@ class StdioTransport:
     
     async def connect(self) -> None:
         """启动子进程并建立连接"""
+        # 占位符路径检测（2026-10-16）：未配置的 server 直接报明确错误，不尝试启动
+        if self.command and "REPLACE_WITH" in self.command:
+            raise RuntimeError(
+                f"MCP server command is a placeholder ('{self.command}'); "
+                f"configure a real executable path to enable this server"
+            )
         # 清理上一次连接的残留状态
         self._running = False
         self._pending_requests.clear()
@@ -217,7 +223,7 @@ class StdioTransport:
                     except Exception:
                         pass
         except Exception as e:
-            print(f"[MCP Stdio Reader] {e}")
+            logger.debug(f"[MCP Stdio Reader] {e}")
         finally:
             self._loop.call_soon_threadsafe(
                 self._stdout_queue.put_nowait, None  # Sentinel
@@ -232,9 +238,9 @@ class StdioTransport:
                     break
                 text = line.decode('utf-8', errors='replace').strip()
                 if text:
-                    print(f"[MCP Stderr] {text}")
+                    logger.debug(f"[MCP Stderr] {text}")
         except Exception as e:
-            print(f"[MCP Stderr Error] {e}")
+            logger.debug(f"[MCP Stderr Error] {e}")
     
     async def _dispatch_messages(self):
         """主 asyncio 循环：从队列取出消息并分发"""
@@ -770,7 +776,7 @@ class McpClient:
     async def list_tools(self) -> List[SerializedMCPTool]:
         """获取工具列表"""
         if not self._transport:
-            print(f"[MCP] list_tools skipped: no transport")
+            logger.debug(f"[MCP] list_tools skipped: no transport")
             return []
         # 只要服务器连接成功，就尝试获取工具（不完全依赖 capabilities 声明）
         # 因为有些 MCP 服务器声明 "tools": {} 但实际有工具

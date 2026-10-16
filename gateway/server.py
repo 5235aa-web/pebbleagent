@@ -1228,13 +1228,6 @@ def handle_request(method: str, params: dict, rid: str) -> Optional[dict]:
         os.environ["HERMES_CWD"] = resolved
         return {"id": rid, "result": {"ok": True, "path": resolved}}
 
-    if method == "agent.switch":
-        name = params.get("name", "")
-        if name:
-            _current_agent = name
-            logger.info(f"[Server] Switched to agent: {name}")
-        return {"id": rid, "result": {"ok": True, "agent": _current_agent}}
-
     if method == "mcp.list":
         mcp_path = _DATA_DIR / ".mcp.json"
         bundled_mcp = _PROJECT_ROOT / ".mcp.json"

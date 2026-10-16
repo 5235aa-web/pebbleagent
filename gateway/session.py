@@ -295,7 +295,7 @@ class SessionStore:
         except Exception:
             conn.rollback()  # 失败回滚：释放写锁，避免连锁 "database is locked"
             raise
-        print(f"[DEBUG-INTERRUPT] Session DB add_assistant_message: msg_id={cur.lastrowid} content_len={len(content or '')} reasoning_len={len(reasoning or '')} interrupted={interrupted}")
+        logger.debug(f"[DEBUG-INTERRUPT] Session DB add_assistant_message: msg_id={cur.lastrowid} content_len={len(content or '')} reasoning_len={len(reasoning or '')} interrupted={interrupted}")
         return (cur.lastrowid, msg_uuid)
 
     def delete_message(self, session_id: str, message_id: int) -> dict:

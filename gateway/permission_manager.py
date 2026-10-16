@@ -494,9 +494,9 @@ class PermissionManager:
             PermissionMode.BYPASS: "绕过所有检查模式",
             PermissionMode.DONT_ASK: "不询问自动拒绝模式",
         }
-        print(f"\n{'='*60}")
-        print(f"[PermissionManager] 🔐 权限模式已切换: {mode_desc.get(mode, mode.value)}")
-        print(f"{'='*60}\n")
+        logger.debug(f"\n{'='*60}")
+        logger.debug(f"[PermissionManager] 🔐 权限模式已切换: {mode_desc.get(mode, mode.value)}")
+        logger.debug(f"{'='*60}\n")
     
     def get_mode(self) -> PermissionMode:
         """获取当前权限模式"""

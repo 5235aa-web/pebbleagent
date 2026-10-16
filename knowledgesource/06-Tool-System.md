@@ -28,7 +28,7 @@
 | File | Function | Key symbols | Tag |
 |------|------|---------|------|
 | mcp_manager.py | MCP connection management | McpManager | 🔴Core |
-| mcp_client.py | MCP stdio client | StdioTransport | 🔴Core |
+| mcp_client.py | MCP stdio client (**placeholder commands (REPLACE_WITH_...) rejected with a clear error, 2026-10-16**) | StdioTransport | 🔴Core |
 | mcp_config.py | MCP config management | McpConfigManager | 🟡Aux |
 | mcp_integration.py | MCP tool registration | register_mcp_tools() | 🔴Core |
 | mcp_types.py | MCP type definitions | - | 🧪Types |

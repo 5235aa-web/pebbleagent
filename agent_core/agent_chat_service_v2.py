@@ -979,11 +979,11 @@ class AgentChatServiceV2:
             if role == "tool":
                 tcid = msg.get("tool_call_id")
                 if tcid and tcid not in valid_tool_call_ids:
-                    print(f"[SANITIZE] Removing orphan tool message[{i}]: tool_call_id={tcid} has no matching assistant tool_calls")
+                    logger.debug(f"[SANITIZE] Removing orphan tool message[{i}]: tool_call_id={tcid} has no matching assistant tool_calls")
                     removed_count += 1
                     continue
                 if not tcid:
-                    print(f"[SANITIZE] Removing tool message[{i}]: missing tool_call_id")
+                    logger.debug(f"[SANITIZE] Removing tool message[{i}]: missing tool_call_id")
                     removed_count += 1
                     continue
             
@@ -992,12 +992,12 @@ class AgentChatServiceV2:
                 for j, tc in enumerate(msg["tool_calls"]):
                     if not tc.get("id"):
                         tc["id"] = f"fallback_tc_{i}_{j}"
-                        print(f"[SANITIZE] messages[{i}] tool_calls[{j}] missing id, generated: {tc['id']}")
+                        logger.debug(f"[SANITIZE] messages[{i}] tool_calls[{j}] missing id, generated: {tc['id']}")
             
             sanitized.append(msg)
         
         if removed_count > 0:
-            print(f"[SANITIZE] Removed {removed_count} orphan/invalid tool messages")
+            logger.debug(f"[SANITIZE] Removed {removed_count} orphan/invalid tool messages")
         
         return sanitized
     
@@ -1195,9 +1195,9 @@ class AgentChatServiceV2:
         final_reasoning_effort = reasoning_effort if reasoning_effort is not None else "high"
         
         # 调试日志：显示模型和参数
-        print(f"[AgentChatServiceV2] LLM配置: model={use_model}, temperature={final_temperature}, top_p={final_top_p}, agent={agent_name}")
-        print(f"[AgentChatServiceV2] Provider配置: base_url={llm_config['base_url']}")
-        print(f"[AgentChatServiceV2] 思考模式: thinking_enabled={final_thinking_enabled}" + (f", reasoning_effort={final_reasoning_effort}" if final_thinking_enabled else ""))
+        logger.debug(f"[AgentChatServiceV2] LLM配置: model={use_model}, temperature={final_temperature}, top_p={final_top_p}, agent={agent_name}")
+        logger.debug(f"[AgentChatServiceV2] Provider配置: base_url={llm_config['base_url']}")
+        logger.debug(f"[AgentChatServiceV2] 思考模式: thinking_enabled={final_thinking_enabled}" + (f", reasoning_effort={final_reasoning_effort}" if final_thinking_enabled else ""))
         
         # 6. 上下文压缩：已移除自动压缩；压缩由用户手动触发（session.compress RPC）
         
@@ -1429,7 +1429,7 @@ class AgentChatServiceV2:
                 # else:
                 #     print(f"[AgentChatServiceV2] WARNING: No tools added to stream_params!")
                 
-                print(f"[AgentChatServiceV2] Final stream_params keys: {list(stream_params.keys())}")
+                logger.debug(f"[AgentChatServiceV2] Final stream_params keys: {list(stream_params.keys())}")
                 
                 # 尝试 API 调用，支持响应式压缩
                 max_api_retries = 3
@@ -2124,7 +2124,7 @@ class AgentChatServiceV2:
             # 关键：包含当前迭代已生成但未累加的 response_text / reasoning_text
             partial_content = (all_response_text or "") + (response_text or "")
             partial_reasoning = (all_reasoning_text or "") + (reasoning_text or "")
-            print(f"[DEBUG-INTERRUPT] Service CancelledError: all_response={len(all_response_text or '')} response={len(response_text or '')}  partial_content={len(partial_content or '')} partial_reasoning={len(partial_reasoning or '')} all_reasoning={len(all_reasoning_text or '')} reasoning={len(reasoning_text or '')}")
+            logger.debug(f"[DEBUG-INTERRUPT] Service CancelledError: all_response={len(all_response_text or '')} response={len(response_text or '')}  partial_content={len(partial_content or '')} partial_reasoning={len(partial_reasoning or '')} all_reasoning={len(all_reasoning_text or '')} reasoning={len(reasoning_text or '')}")
             if execution_order or partial_content or partial_reasoning or final_response:
                 try:
                     history.add_agent_chat_message(
@@ -2141,7 +2141,7 @@ class AgentChatServiceV2:
                 except Exception as e:
                     logger.error(f"[AgentChatServiceV2] Failed to save partial data after CancelledError: {e}")
             # 发射 chat_completed 事件，携带 interrupted=true，让前端能收到中断标记
-            print(f"[DEBUG-INTERRUPT] Service yielding chat_completed: content_len={len(partial_content or '')} reasoning_len={len(partial_reasoning or '')} interrupted=True")
+            logger.debug(f"[DEBUG-INTERRUPT] Service yielding chat_completed: content_len={len(partial_content or '')} reasoning_len={len(partial_reasoning or '')} interrupted=True")
             yield {
                 "type": "chat_completed",
                 "content": partial_content,

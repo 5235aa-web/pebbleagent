@@ -1,3 +1,10 @@
+2026-10-16: Cleanup pass (debug prints / dead code / redundant deps / MCP placeholder)
+- 27 debug prints in production paths (session / permission_manager / chat service / mcp client / tool executor) converted to logger.debug; test scripts keep their prints
+- duplicate agent.switch handler removed (the second, unvalidated copy was unreachable)
+- unused frontend deps removed (katex / marked — rendering is in-house; mermaid keeps its own copies)
+- MCP placeholder command (REPLACE_WITH_...) now rejected with a clear error instead of a spawn attempt
+- Verification: full suites 8/8 + 7/7; verify scripts 36/36 + 30/30
+
 2026-10-16: De-branding pass (third-party naming removed)
 - Memory/transcript subsystem: ~/.claude → ~/.pebble; env vars CLAUDE_* → PEBBLE_* (CONFIG_DIR / MEMORY_PATH_OVERRIDE / REMOTE_MEMORY_DIR / SKIP_PROMPT_HISTORY / MAX_TOOL_CONCURRENCY / MEMORY_EXTRA_GUIDELINES); memory prompt texts rewritten in original wording (Chinese); third-party attribution phrases in ~17 docstrings neutralized; MCP type class renamed (McpProxyServerConfig); external config values (claudeai / claudeai-proxy) kept for interoperability
 - Data migration: ~/.claude/projects/* copied to ~/.pebble/projects/* (22 transcript files; memory dirs were empty)
