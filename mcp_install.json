@@ -45,7 +45,7 @@
       "exe_name": "codebase-memory-mcp.exe",
       "asset_pattern": "codebase-memory-mcp-windows-{arch}\\.zip$",
       "requires": [],
-      "description": "Codebase memory management (after download, write the exe path into .mcp.json)"
+      "description": "Codebase memory management (after download, write the exe path into .mcp.json). Note: automatic download requires a sha256 field (release hash) here; without it the download is refused and you can install manually via the 'path' option."
     },
     "blender": {
       "type": "uvx",

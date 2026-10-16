@@ -229,9 +229,10 @@ class PermissionEnforcer:
                 return True, "Tool does not require permission check", audit_info
 
         except ImportError as e:
-            logger.warning(f"[PermissionEnforcer] tool_permission not available: {e}")
+            # fail-closed（2026-10-16）：权限模块不可用时拒绝执行，而非默认放行
+            logger.error(f"[PermissionEnforcer] tool_permission not available, denying (fail-closed): {e}")
             audit_info["decision_source"] = "module_unavailable"
-            return True, "Permission module unavailable", audit_info
+            return False, "Permission module unavailable (fail-closed)", audit_info
         
         # 2. 路径边界检查（如果需要）
         if needs_path_boundary_check(tool_name):
@@ -265,8 +266,9 @@ class PermissionEnforcer:
         # 3. 权限管理器检查
         permission_manager = self._get_permission_manager()
         if permission_manager is None:
+            # fail-closed（2026-10-16）
             audit_info["decision_source"] = "manager_unavailable"
-            return True, "Permission manager unavailable", audit_info
+            return False, "Permission manager unavailable (fail-closed)", audit_info
 
         from .tool_permission import get_tool_permission
         perm_result = get_tool_permission(tool_name, args)

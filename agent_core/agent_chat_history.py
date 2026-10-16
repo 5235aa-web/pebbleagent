@@ -659,11 +659,6 @@ def _recover_tool_id(tool_info: Dict[str, Any], idx: int,
         f"at index {idx} — this indicates corrupted execution_order data"
     )
     return f"recovered_tool_{idx}_{tool_name}"
-    """剥离旧版嵌入 content 的工具执行块，避免再次污染上下文"""
-    if not content or "【工具执行】" not in content:
-        return content
-    stripped = re.sub(r"【工具执行】.*?(?=(\n\s*\n【工具执行】|\Z))", "", content, flags=re.S)
-    return stripped.strip()
 
 
 def _strip_legacy_tool_blocks(content: str) -> str:
@@ -991,7 +986,7 @@ def get_conversation_cost_summary(conversation_id: int) -> dict:
     cursor.execute("""
         SELECT 
             COALESCE(SUM(total_cost), 0.0) as total_cost,
-            COALESCE(SUM(input_tokens), 0) as total_input_tokens,
+            COALESCE(SUM(input_tokens + cache_hit_tokens), 0) as total_input_tokens,
             COALESCE(SUM(cache_hit_tokens), 0) as total_cache_hit_tokens,
             COALESCE(SUM(output_tokens), 0) as total_output_tokens,
             COUNT(*) as api_calls,

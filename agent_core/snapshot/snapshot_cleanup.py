@@ -61,7 +61,7 @@ async def _enforce_count_limit(manager: SnapshotManager):
     sorted_ids = sorted(snapshot_groups.keys(),
                          key=lambda sid: min(r.created_at for r in snapshot_groups[sid]))
 
-    to_remove_count = total_snapshot_points - manager.MIN_RETAIN
+    to_remove_count = total_snapshot_points - manager.MAX_SNAPSHOTS
     removed = 0
 
     for sid in sorted_ids:
@@ -115,9 +115,9 @@ async def _cleanup_orphans(manager: SnapshotManager):
     if not os.path.exists(manager._files_dir):
         return
 
-    # 获取所有有效的 snapshot_id
+    # 获取所有有效的 snapshot_id（active + reverted：reverted 备份仍被 UndoEngine 依赖）
     valid_ids = set()
-    all_records = manager.query_all_active()
+    all_records = manager.query_all_retained()
     for r in all_records:
         valid_ids.add(r.snapshot_id)
 

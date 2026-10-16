@@ -17,6 +17,7 @@ import sqlite3
 import json
 import logging
 import os
+import threading
 from datetime import datetime
 from typing import Optional, List, Dict, Any
 from pathlib import Path
@@ -106,6 +107,7 @@ class PermissionAuditLogger:
     
     def __init__(self, db_path: str = None):
         self.db_path = db_path or str(AUDIT_DB_PATH)
+        self._write_lock = threading.Lock()
         self._init_db()
     
     def _init_db(self):
@@ -186,12 +188,20 @@ class PermissionAuditLogger:
         except (TypeError, ValueError):
             return "1" if value else "0"
 
-    def _compute_checksum(self, event: AuditEvent) -> str:
-        """计算事件校验和（覆盖全部安全字段，v2 格式，防篡改）"""
-        payload = {f: getattr(event, f, "") for f in self._CHECKSUM_FIELDS}
+    def _checksum_payload(self, mapping: dict) -> str:
+        """规范化校验字段负载（v2/v3 共用）"""
+        payload = {f: mapping.get(f, "") for f in self._CHECKSUM_FIELDS}
         payload["allowed"] = self._normalize_bool_str(payload["allowed"])
-        data = json.dumps(payload, ensure_ascii=False, sort_keys=True, default=str)
-        return "v2:" + hashlib.sha256(data.encode("utf-8")).hexdigest()[:32]
+        return json.dumps(payload, ensure_ascii=False, sort_keys=True, default=str)
+
+    def _compute_checksum(self, event: AuditEvent, prev_checksum: str = "") -> str:
+        """
+        计算事件校验和（v3 链式，2026-10-16）：
+        checksum = sha256(prev_checksum | payload)。链上任一记录被修改（含去前缀降级）
+        都会导致后续重算失配，无法通过单点重算掩盖。
+        """
+        data = self._checksum_payload({f: getattr(event, f, "") for f in self._CHECKSUM_FIELDS})
+        return "v3:" + hashlib.sha256(f"{prev_checksum}|{data}".encode("utf-8")).hexdigest()[:32]
     
     def log_event(self, event: AuditEvent) -> int:
         """
@@ -206,31 +216,36 @@ class PermissionAuditLogger:
         if not event.timestamp:
             event.timestamp = datetime.utcnow().isoformat()
         
-        # 计算校验和
-        event.checksum = self._compute_checksum(event)
-        
-        conn = sqlite3.connect(self.db_path)
-        cursor = conn.cursor()
-        
-        cursor.execute("""
-            INSERT INTO permission_audit_log (
-                timestamp, event_type, session_id, conversation_uuid, agent_name,
-                tool_name, tool_args, permission_type, permission_level,
-                target, content, project_path, resolved_path,
-                decision_source, allowed, rule_matched, user_response_time_ms,
-                reason, error_message, extra, checksum
-            ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
-        """, (
-            event.timestamp, event.event_type, event.session_id, event.conversation_uuid, event.agent_name,
-            event.tool_name, event.tool_args, event.permission_type, event.permission_level,
-            event.target, event.content, event.project_path, event.resolved_path,
-            event.decision_source, int(event.allowed), event.rule_matched, event.user_response_time_ms,
-            event.reason, event.error_message, event.extra, event.checksum
-        ))
-        
-        event_id = cursor.lastrowid
-        conn.commit()
-        conn.close()
+        with self._write_lock:
+            conn = sqlite3.connect(self.db_path)
+            try:
+                cursor = conn.cursor()
+                # v3 链式校验和：取链上最后一条的 checksum 作为前缀（写锁保证链连续）
+                cursor.execute("SELECT checksum FROM permission_audit_log ORDER BY id DESC LIMIT 1")
+                row = cursor.fetchone()
+                prev_checksum = (row[0] if row and row[0] else "GENESIS")
+                event.checksum = self._compute_checksum(event, prev_checksum)
+
+                cursor.execute("""
+                    INSERT INTO permission_audit_log (
+                        timestamp, event_type, session_id, conversation_uuid, agent_name,
+                        tool_name, tool_args, permission_type, permission_level,
+                        target, content, project_path, resolved_path,
+                        decision_source, allowed, rule_matched, user_response_time_ms,
+                        reason, error_message, extra, checksum
+                    ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+                """, (
+                    event.timestamp, event.event_type, event.session_id, event.conversation_uuid, event.agent_name,
+                    event.tool_name, event.tool_args, event.permission_type, event.permission_level,
+                    event.target, event.content, event.project_path, event.resolved_path,
+                    event.decision_source, int(event.allowed), event.rule_matched, event.user_response_time_ms,
+                    event.reason, event.error_message, event.extra, event.checksum
+                ))
+                
+                event_id = cursor.lastrowid
+                conn.commit()
+            finally:
+                conn.close()
         
         logger.debug(f"[PermissionAudit] Logged event {event_id}: {event.event_type} - {event.tool_name}")
         return event_id
@@ -497,16 +512,18 @@ class PermissionAuditLogger:
     
     def verify_integrity(self, event_id: int = None) -> bool:
         """
-        验证日志完整性
+        验证日志完整性（2026-10-16 链式校验）
 
-        v2 记录（checksum 前缀 "v2:"）按全部安全字段重新计算校验；无前缀的
-        旧记录（早期版本 checksum 存在 bool/int 不一致缺陷）跳过校验并计入 legacy。
+        - v3 记录：链式重算 sha256(prev_checksum|payload)；链上任一环被修改
+          或去前缀降级都会失配
+        - v2 记录（历史）：按 v2 规则（无链）重算校验
+        - 无版本前缀的 legacy 记录：跳过并计数
 
         Args:
             event_id: 特定事件ID，None则验证所有
 
         Returns:
-            是否通过验证（仅统计 v2 记录；legacy 记录不导致失败）
+            是否通过验证（legacy 记录不导致失败）
         """
         conn = sqlite3.connect(self.db_path)
         cursor = conn.cursor()
@@ -518,26 +535,40 @@ class PermissionAuditLogger:
         
         rows = cursor.fetchall()
         columns = [desc[0] for desc in cursor.description]
+        # 全表链（按 id 升序）——v3 校验需要每条记录前一条的 checksum
+        cursor.execute("SELECT id, checksum FROM permission_audit_log ORDER BY id")
+        chain = [(rid, cs or "") for rid, cs in cursor.fetchall()]
         conn.close()
+        pos = {rid: i for i, (rid, _cs) in enumerate(chain)}
 
-        checked = 0
+        checked_v3 = 0
+        checked_v2 = 0
         legacy = 0
         for row in rows:
             event_dict = dict(zip(columns, row))
-            stored_checksum = event_dict.get("checksum", "") or ""
-            if not stored_checksum.startswith("v2:"):
+            stored = event_dict.get("checksum", "") or ""
+            eid = event_dict.get("id")
+            data = self._checksum_payload(event_dict)
+            if stored.startswith("v3:"):
+                idx = pos.get(eid)
+                prev = chain[idx - 1][1] if idx is not None and idx > 0 else "GENESIS"
+                computed = "v3:" + hashlib.sha256(f"{prev}|{data}".encode("utf-8")).hexdigest()[:32]
+                if stored != computed:
+                    logger.error(f"[PermissionAudit] Integrity check failed (v3 chain) for event {eid}")
+                    return False
+                checked_v3 += 1
+            elif stored.startswith("v2:"):
+                computed = "v2:" + hashlib.sha256(data.encode("utf-8")).hexdigest()[:32]
+                if stored != computed:
+                    logger.error(f"[PermissionAudit] Integrity check failed (v2) for event {eid}")
+                    return False
+                checked_v2 += 1
+            else:
                 legacy += 1
-                continue
-            payload = {f: event_dict.get(f, "") for f in self._CHECKSUM_FIELDS}
-            payload["allowed"] = self._normalize_bool_str(payload["allowed"])
-            data = json.dumps(payload, ensure_ascii=False, sort_keys=True, default=str)
-            computed_checksum = "v2:" + hashlib.sha256(data.encode("utf-8")).hexdigest()[:32]
-            if stored_checksum != computed_checksum:
-                logger.error(f"[PermissionAudit] Integrity check failed for event {event_dict.get('id')}")
-                return False
-            checked += 1
 
-        logger.info(f"[PermissionAudit] Integrity check passed for {checked} events (legacy skipped: {legacy})")
+        logger.info(
+            f"[PermissionAudit] Integrity check passed (v3 chain: {checked_v3}, v2: {checked_v2}, legacy skipped: {legacy})"
+        )
         return True
 
 

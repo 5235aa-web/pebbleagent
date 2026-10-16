@@ -70,7 +70,8 @@ READ_ONLY_TOOLS: Set[str] = {
     "git_log",
     "git_diff",
     
-    # 网络获取 — fetch_url 可能走浏览器回退（有副作用），移除只读并行
+    # 网络获取 — 2026-10-16: 浏览器回退已移除（纯 httpx），fetch_url 恢复只读并行
+    "fetch_url",
     
     # 系统信息
     "get_env_var",
@@ -132,25 +133,16 @@ WRITE_TOOLS: Set[str] = {
     # Todo 写入
     "todo_write",
     
-    # 用户询问（需要等待响应）
-    "ask_user_question",
-    
-    # Plan 模式
-    "enter_plan_mode",
-    "exit_plan_mode",
+    # Plan 模式（进入/退出为会话状态变更，归 SIDE_EFFECT_TOOLS；2026-10-16 对齐）
     "create_plan",
     
     # Brief 消息
     "brief",
     
-    # 网络搜索（通过 Electron 桥接，必须串行）
-    "search_web",
+    # 网络搜索（外部 API 礼貌串行）
     "web_search",
     "browser_navigate",
     "browser_download",
-    
-    # 网页获取（可能回退到浏览器创建标签页）
-    "fetch_url",
 }
 
 # 有副作用的工具 - 必须串行执行

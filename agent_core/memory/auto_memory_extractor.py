@@ -345,9 +345,15 @@ class AutoMemoryExtractor:
             # 只检查 tool_calls 中是否有实际写入记忆文件的操作
             # 不检查 text content，因为 agent 提到 "MEMORY.md" 不等于写了记忆
             tool_calls = msg.get('tool_calls', [])
+            if not isinstance(tool_calls, list):
+                continue
             for tc in tool_calls:
+                if not isinstance(tc, dict):
+                    continue
                 if tc.get('name') in ['write_file', 'edit_file']:
-                    args = tc.get('args', {})
+                    args = tc.get('args') or {}
+                    if not isinstance(args, dict):
+                        continue
                     file_path = args.get('file_path', '')
                     if is_auto_memory_path(file_path, project_path):
                         return True

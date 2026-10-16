@@ -362,12 +362,16 @@ class BashValidator:
         扫描命令中的路径，检查是否越界
 
         使用正则提取所有类路径字符串，对每个路径进行边界检查。
+        2026-10-16 安全加固：引号内路径（open('/etc/shadow')）与变量前缀路径
+        （$HOME/.ssh/id_rsa、${HOME}/...）此前不被提取，现补充二次扫描。
         特殊处理：/dev/null、/tmp/、/proc/、/sys/ 等系统路径。
         """
         # 提取类路径字符串
         path_patterns = [
             r'(?:^|\s)(/[^\s;|&<>`\'"]+)',     # 绝对路径 /xxx
             r'(?:^|\s)(~[^\s;|&<>`\'"]*)',     # ~/xxx
+            r'(?:^|\s)(\$[A-Za-z_][A-Za-z0-9_]*/[^\s;|&<>`\'"]*)',      # $HOME/xxx
+            r'(?:^|\s)(\$\{[A-Za-z_][A-Za-z0-9_]*\}/[^\s;|&<>`\'"]*)',  # ${HOME}/xxx
             r'(?:^|\s)([A-Za-z]:\\[^\s;|&<>`\'"]+)',  # Windows 绝对路径 C:\...
             r'(?:^|\s)(\.{1,2}/[^\s;|&<>`\'"]+)',     # 相对路径 ./../
         ]
@@ -377,6 +381,23 @@ class BashValidator:
                 p = m.group(1).strip()
                 if p:
                     paths.append(p)
+
+        # 引号内二次扫描：引号内容整体再提取"类路径片段"
+        # （lookbehind 排除 URL 中的 "://" 误报；Windows 下 /xxx 与 $VAR/xxx 均覆盖）
+        inner_patterns = [
+            r'(?<![:/\w])/[A-Za-z0-9_][A-Za-z0-9_./\\-]*',          # /etc/shadow 形态
+            r'(?<![\w$])~[A-Za-z0-9_./\\-]*',                        # ~/... 形态
+            r'(?<![\w$])\$[A-Za-z_][A-Za-z0-9_]*/[A-Za-z0-9_./\\-]*',   # $HOME/... 形态
+            r'(?<![\w$])\$\{[A-Za-z_][A-Za-z0-9_]*\}/[A-Za-z0-9_./\\-]*',  # ${HOME}/...
+            r'(?<![A-Za-z0-9_])[A-Za-z]:\\[A-Za-z0-9_./\\ -]*',      # C:\... 形态
+        ]
+        for qm in re.finditer(r"'([^']*)'|\"([^\"]*)\"", command):
+            inner = qm.group(1) if qm.group(1) is not None else (qm.group(2) or "")
+            for pat in inner_patterns:
+                for m in re.finditer(pat, inner):
+                    p = m.group(0).strip()
+                    if p:
+                        paths.append(p)
 
         report.target_paths = list(set(paths))
 
@@ -395,23 +416,33 @@ class BashValidator:
                     report.block_reason = f"命令访问了项目目录外的路径: {p}"
 
     def _is_path_allowed(self, path: str) -> bool:
-        """检查路径是否在项目目录内，或是否在白名单中"""
+        """检查路径是否在项目目录内，或是否在白名单中（commonpath 组件级比较，防前缀穿越）"""
         try:
             expanded = os.path.expanduser(os.path.expandvars(path))
-            abs_path = os.path.abspath(expanded)
-            abs_project = os.path.abspath(self._project_path)
+            abs_path = os.path.realpath(os.path.abspath(expanded))
+            abs_project = os.path.realpath(os.path.abspath(self._project_path))
 
             # 项目目录内
-            if abs_path.lower().startswith(abs_project.lower()):
+            if self._is_subpath(abs_path, abs_project):
                 return True
 
             # 白名单路径
             for wp in self._path_whitelist:
-                if abs_path.lower().startswith(wp.lower()):
+                wpe = os.path.realpath(os.path.abspath(os.path.expanduser(os.path.expandvars(wp))))
+                if self._is_subpath(abs_path, wpe):
                     return True
 
             return False
         except Exception:
+            return False
+
+    @staticmethod
+    def _is_subpath(child: str, parent: str) -> bool:
+        """组件级包含判断（commonpath），避免 C:\\proj 匹配 C:\\proj-backup 的前缀穿越"""
+        try:
+            common = os.path.commonpath([os.path.normcase(child), os.path.normcase(parent)])
+            return common == os.path.normcase(parent)
+        except ValueError:
             return False
 
     # ==================== 6. 语义检查 ====================

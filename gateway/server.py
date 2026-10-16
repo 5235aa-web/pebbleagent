@@ -250,9 +250,11 @@ def _install_download_server(server_name: str, entry: dict) -> str:
                 )
             logger.info(f"[Server] MCP '{server_name}' sha256 verified ({actual[:16]}...)")
         else:
-            logger.warning(
-                f"[Server] MCP '{server_name}': no sha256 configured in mcp_install.json; "
-                f"integrity check skipped (consider adding the release hash)"
+            # 未配置校验和 → 拒绝自动下载（2026-10-16 安全加固：网络下载的二进制必须校验；
+            # 手动 path 模式不受影响，或向 mcp_install.json 补充 release hash 后启用）
+            raise RuntimeError(
+                f"'{server_name}' has no sha256 configured in mcp_install.json; automatic download refused. "
+                f"Add the release hash to mcp_install.json, or install manually via the 'path' option."
             )
         # zip → 解压找 exe；否则视为裸 exe 直接落位
         try:
@@ -360,6 +362,23 @@ def _write_providers(data: dict):
 
 def _norm_project_path(path: str) -> str:
     return os.path.normpath(os.path.abspath(path))
+
+
+def _validate_project_dir(path: str) -> tuple:
+    """
+    校验项目目录（2026-10-16 安全加固）：
+    必须存在、是目录、且非盘根（盘根会使所有路径边界检查失效）。
+    Returns: (ok, error, resolved_path)
+    """
+    if not path:
+        return False, "path required", ""
+    resolved = os.path.realpath(os.path.expandvars(os.path.expanduser(path)))
+    if not os.path.isdir(resolved):
+        return False, f"not a directory: {path}", ""
+    _drive, tail = os.path.splitdrive(resolved)
+    if not tail or tail in ("\\", "/"):
+        return False, "drive root is not a valid project path", ""
+    return True, "", resolved
 
 
 def _read_projects() -> dict:
@@ -478,6 +497,10 @@ def handle_request(method: str, params: dict, rid: str) -> Optional[dict]:
         path = _norm_project_path(params.get("path", ""))
         if not path:
             return {"id": rid, "error": {"code": -32000, "message": "path required"}}
+        ok, err, resolved = _validate_project_dir(path)
+        if not ok:
+            return {"id": rid, "error": {"code": -32000, "message": err}}
+        path = resolved
         data = _read_projects()
         if path not in data["projects"]:
             data["projects"].append(path)
@@ -500,13 +523,17 @@ def handle_request(method: str, params: dict, rid: str) -> Optional[dict]:
         path = _norm_project_path(params.get("path", ""))
         data = _read_projects()
         if path in data["projects"]:
-            data["active"] = path
+            # 校验（2026-10-16）：历史列表可能含盘根/失效路径，切换时复核
+            ok, err, resolved = _validate_project_dir(path)
+            if not ok:
+                return {"id": rid, "error": {"code": -32000, "message": err}}
+            data["active"] = resolved
             _write_projects(data)
             try:
-                _ensure_service().set_project_path(path)
+                _ensure_service().set_project_path(resolved)
             except Exception as e:
                 logger.warning(f"[Server] project.set_active service sync failed: {e}")
-            return {"id": rid, "result": {"ok": True, "active": path}}
+            return {"id": rid, "result": {"ok": True, "active": resolved}}
         return {"id": rid, "error": {"code": -32000, "message": "project not in list"}}
 
     if method == "session.unassigned_count":
@@ -1190,12 +1217,16 @@ def handle_request(method: str, params: dict, rid: str) -> Optional[dict]:
         path = params.get("path", "")
         if not path:
             return {"id": rid, "result": {"ok": False, "error": "path is required"}}
+        # 校验（2026-10-16 安全加固）：必须为存在的目录，且拒绝盘根（否则全部路径边界检查失效）
+        ok, err, resolved = _validate_project_dir(path)
+        if not ok:
+            return {"id": rid, "result": {"ok": False, "error": err}}
         service = _ensure_service()
-        service.set_project_path(path)
-        logger.info(f"[Server] Project path changed to: {path}")
-        os.environ["PEBBLE_CWD"] = path
-        os.environ["HERMES_CWD"] = path
-        return {"id": rid, "result": {"ok": True, "path": path}}
+        service.set_project_path(resolved)
+        logger.info(f"[Server] Project path changed to: {resolved}")
+        os.environ["PEBBLE_CWD"] = resolved
+        os.environ["HERMES_CWD"] = resolved
+        return {"id": rid, "result": {"ok": True, "path": resolved}}
 
     if method == "agent.switch":
         name = params.get("name", "")

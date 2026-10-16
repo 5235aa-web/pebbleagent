@@ -59,10 +59,8 @@ _encoder = None
 # ============================================================================
 
 class CompactTrigger(Enum):
-    """压缩触发类型"""
+    """压缩触发类型（2026-10-16：自动/响应式触发已移除，仅保留手动触发）"""
     MANUAL = "manual"
-    AUTO = "auto"
-    REACTIVE = "reactive"  # API 返回 prompt_too_long 时触发
 
 
 class CompactDirection(Enum):
@@ -1435,7 +1433,7 @@ def compact_conversation(
         role="user",
         content=get_compact_user_summary_message(
             summary=summary,
-            suppress_follow_up_questions=(trigger == CompactTrigger.AUTO),
+            suppress_follow_up_questions=False,
             recent_messages_preserved=bool(messages_to_keep)
         ),
         is_compact_summary=True

@@ -5,7 +5,6 @@
     "LS",
     "Grep",
     "Bash(ls:*)",
-    "Bash(cat:*)",
     "Bash(git:*)",
     "Bash(npm:*)",
     "Bash(node:*)",

@@ -4,7 +4,7 @@
 
 | File | Function | Tag |
 |------|------|------|
-| base_tool.py | Unified tool base class + ToolRegistry | 🔴Core |
+| base_tool.py | Unified tool base class + ToolRegistry (**2026-10-16: permission-manager ImportError now denies — fail-closed**) | 🔴Core |
 | tool_registry.py | Tool registry (singleton) | 🔴Core |
 | file_tools.py | File operation tool set | 🔴Core |
 | todo_tool.py | Todo list management | 🔴Core |

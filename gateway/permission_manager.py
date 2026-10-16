@@ -11,6 +11,7 @@ import json
 import os
 import asyncio
 import logging
+import re
 from dataclasses import dataclass, field
 from enum import Enum
 from typing import Dict, List, Optional, Set, Any, Callable
@@ -218,6 +219,30 @@ class PermissionManager:
         else:
             # 精确匹配
             return content == rule_content
+
+    def _is_inline_code_exec(self, tool_name: str, content: Optional[str]) -> bool:
+        """
+        检测命令是否为"内联代码执行"（2026-10-16 安全加固）。
+
+        python -c / node -e / perl -e / powershell -Command / bash -c 这类形态，
+        前缀 allow 规则（如 Bash(python:*)）不得放行，需升级为用户询问。
+        """
+        if not content:
+            return False
+        normalized = self.TOOL_ALIASES.get(tool_name, tool_name)
+        if normalized != "Bash":
+            return False
+        cmd = content.strip()
+        # 解释器 + 内联标志（紧跟解释器名，如 python -c "..."/ node -e "..."）
+        if re.search(r'\b(python[23]?|node|perl|ruby|php|deno|bun|ts-node)\s+(-\w*c\b|--eval\b|-\w*e\b|-r\b)', cmd, re.IGNORECASE):
+            return True
+        # powershell -Command / -EncodedCommand / -c
+        if re.search(r'\b(powershell|pwsh)(\.exe)?\b[^|;&]*\s-(c|command|encodedcommand|enc|e)\b', cmd, re.IGNORECASE):
+            return True
+        # shell -c（bash/sh/zsh/dash）与 cmd /c
+        if re.search(r'\b(bash|sh|zsh|dash|cmd)(\.exe)?\b[^|;&]*\s(/c|-c)\b', cmd, re.IGNORECASE):
+            return True
+        return False
     
     async def check_permission(
         self,
@@ -270,6 +295,10 @@ class PermissionManager:
         # 5. 检查Allow规则
         for rule in self.context.allow_rules:
             if self._match_rule(rule, tool_name, content):
+                # 内联代码执行不走前缀 allow 规则（防 "Bash(python:*)" 放行任意代码执行）
+                if self._is_inline_code_exec(tool_name, content):
+                    logger.info(f"[PermissionManager] Allow rule skipped for inline-code command: {rule.tool_name}")
+                    continue
                 logger.info(f"[PermissionManager] Permission allowed by rule: {rule.tool_name}({rule.rule_content})")
                 return True, f"Permission allowed by rule: {rule.tool_name}"
         
@@ -326,6 +355,8 @@ class PermissionManager:
                 return False, "Requires user confirmation (ask rule)"
         for rule in self.context.allow_rules:
             if self._match_rule(rule, tool_name, content):
+                if self._is_inline_code_exec(tool_name, content):
+                    continue
                 return True, f"Permission allowed by rule: {rule.tool_name}"
         if self.context.mode == PermissionMode.DONT_ASK:
             return False, "Auto-denied (dontAsk mode)"

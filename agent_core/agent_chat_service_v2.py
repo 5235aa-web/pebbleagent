@@ -34,19 +34,8 @@ from typing import List, Dict, Any, Optional, AsyncGenerator
 from openai import AsyncOpenAI
 
 from .query_state_machine import (
-    QueryState,
-    QueryConfig,
-    ChatMessage,
     ToolUseBlock,
-    StreamEvent,
-    ContentEvent,
-    ToolExecutionEvent,
-    ChatStartedEvent,
-    ChatCompletedEvent,
-    ErrorEvent,
-    CancelledEvent,
     ToolExecutionContext,
-    parse_tool_calls_from_response,
 )
 from .tool_orchestrator import (
     ToolOrchestrator,
@@ -108,7 +97,7 @@ def get_model_context_limit(model_name: str) -> int:
     for key, limit in MODEL_CONTEXT_LIMITS.items():
         if key in name:
             return limit
-    return 1_000_000  # default fallback
+    return 128_000  # default fallback（2026-10-16: 由 1M 收紧为保守窗口，避免未知模型高估）
 
 # ==================== Token 计数辅助 ====================
 
@@ -426,8 +415,7 @@ class AgentChatServiceV2:
         # Transcript 管理器
         self._transcript_manager = get_transcript_manager()
         
-        # 待回答的问题（用于 ask_user_question 工具）
-        self._pending_question: Optional[Dict[str, Any]] = None
+        # （2026-10-16 清理）原 _pending_question 死状态已移除（无赋值点；问题流转走 QuestionManager）
         
         # Auto Memory 管理器
         self._auto_memory_manager = get_auto_memory_manager()
@@ -435,11 +423,8 @@ class AgentChatServiceV2:
         # Agent Memory 管理器
         self._agent_memory_manager = get_agent_memory_manager()
         
-        # 记忆提取器（延迟初始化）
+        # 记忆提取器（延迟初始化；提取节流状态由 AutoMemoryExtractor 内部维护，2026-10-16 接线）
         self._memory_extractor: Optional[AutoMemoryExtractor] = None
-        
-        # 记忆提取状态
-        self._memory_extract_states: Dict[str, Dict[str, Any]] = {}
         
         # 工具执行器
         self._tool_executor = AgentToolExecutorImpl(self._current_project_path)
@@ -576,7 +561,8 @@ class AgentChatServiceV2:
         
         session = self._session_usage[conversation_uuid]
         session["total_cost"] += cost_info["total_cost"]
-        session["total_input_tokens"] += cost_info["input_tokens"]
+        # total_input_tokens = 总输入（含缓存命中；2026-10-16 语义修正，此前只累计非缓存输入）
+        session["total_input_tokens"] += cost_info["input_tokens"] + cost_info["cache_hit_tokens"]
         session["total_cache_hit_tokens"] += cost_info["cache_hit_tokens"]
         session["total_output_tokens"] += cost_info["output_tokens"]
         session["api_calls"] += 1
@@ -758,7 +744,7 @@ class AgentChatServiceV2:
                 "model": use_model,
                 "messages": [{"role": "user", "content": title_prompt}],
                 "temperature": 0.3,
-                "max_tokens": 100000,
+                "max_tokens": 200,  # 标题 ≤20 字（原 100000 为复制粘贴错误，2026-10-16 修正）
                 "stream": True,
             }
             
@@ -1021,23 +1007,12 @@ class AgentChatServiceV2:
         messages: List[Dict[str, Any]],
         llm_config: Dict[str, Any]
     ) -> None:
-        """异步提取记忆（后台执行，不阻塞响应）"""
-        extract_state = self._memory_extract_states.get(conversation_uuid, {
-            "turn_count": 0,
-            "last_extract_turn": 0
-        })
-        
-        extract_state["turn_count"] += 1
-        
-        if extract_state["turn_count"] - extract_state["last_extract_turn"] < 3:
-            self._memory_extract_states[conversation_uuid] = extract_state
-            return
-        
-        if len(messages) < 4:
-            return
-        
-        logger.info(f"[AgentChatServiceV2] Starting memory extraction for {conversation_uuid}")
-        
+        """异步提取记忆（后台执行，不阻塞响应）
+
+        节流判断统一走 AutoMemoryExtractor.should_extract（2026-10-16 接线）：
+        消息数 / 轮数间隔 / token 间隔三个配置化阈值（ExtractMemoryConfig），
+        替代此前服务层的硬编码判断。
+        """
         try:
             client = AsyncOpenAI(
                 api_key=llm_config['api_key'],
@@ -1054,17 +1029,23 @@ class AgentChatServiceV2:
                 # 每次用当前 llm_config 更新，避免使用过期配置
                 self._memory_extractor.llm_client = client
                 self._memory_extractor.llm_model = llm_config.get('model', 'gpt-4')
-            
+
+            token_count = sum(len(m.get("content", "")) // 3 for m in messages)
+            should, why = self._memory_extractor.should_extract(messages, conversation_uuid, token_count)
+            if not should:
+                logger.debug(f"[AgentChatServiceV2] Memory extraction skipped: {why}")
+                return
+
+            logger.info(f"[AgentChatServiceV2] Starting memory extraction for {conversation_uuid}")
+
             result = await self._memory_extractor.extract(
                 messages=messages,
                 session_id=conversation_uuid,
-                current_token_count=sum(len(m.get("content", "")) // 3 for m in messages)
+                current_token_count=token_count
             )
             
             if result:
                 logger.info(f"[AgentChatServiceV2] Extracted {len(result)} memories")
-                extract_state["last_extract_turn"] = extract_state["turn_count"]
-                self._memory_extract_states[conversation_uuid] = extract_state
             else:
                 logger.debug(f"[AgentChatServiceV2] No new memories extracted")
                 
@@ -1390,6 +1371,13 @@ class AgentChatServiceV2:
                 finish_reason = None  # B: 本轮流的结束方式（stop/length/tool_calls/None=异常缺失）
                 tool_calls_chunks = {}
                 iteration_start_order_index = len(execution_order)
+
+                # 统一上下文口径（2026-10-16）：历史轮的 tool 输出与 DB 重载路径一致地
+                # 截断到 MAX_TOOL_OUTPUT_CONTEXT_CHARS；当前轮结果在 append 时保持全文
+                for _m in messages:
+                    if _m.get("role") == "tool" and isinstance(_m.get("content"), str):
+                        _m["content"] = history._truncate_context_text(
+                            _m["content"], history.MAX_TOOL_OUTPUT_CONTEXT_CHARS)
                 
                 # 流式输出时的状态追踪：实时检测内容类型切换
                 current_chunk_type = None  # 'reasoning' 或 'content'
@@ -1806,11 +1794,6 @@ class AgentChatServiceV2:
                     agent_name=agent_name,
                     project_path=self._current_project_path,
                     cancel_event=cancel_event,
-                    state=QueryState(
-                        messages=[],
-                        system_prompt="",
-                        user_context={}
-                    ),
                     # 快照系统上下文字段
                     snapshot_session_uuid=conversation_uuid,
                     snapshot_message_id=user_message_id,
@@ -1918,15 +1901,8 @@ class AgentChatServiceV2:
                                 "todos": todos_data
                             }
                         
-                        # 检查待发送的 ask_question 事件
-                        if self._pending_question:
-                            question_data = self._pending_question
-                            self._pending_question = None
-                            yield {
-                                "type": "ask_question",
-                                "question_id": question_data.get("id"),
-                                "questions": question_data.get("questions", [])
-                            }
+                        # （2026-10-16 清理）此处原 _pending_question 死分支已移除：
+                        # ask_question 事件由 tool 处理路径直接 yield（QuestionManager.set_pending_questions）
 
                         if cancel_event.is_set():
                             logger.info("[AgentChatServiceV2] Cancellation detected during tool execution")
@@ -2084,11 +2060,40 @@ class AgentChatServiceV2:
                 try:
                     extract_messages = []
                     for i, m in enumerate(context_messages):
-                        extract_messages.append({
+                        em: Dict[str, Any] = {
                             "uuid": str(i),
                             "role": m.get("role", "user"),
                             "content": m.get("content", "")
-                        })
+                        }
+                        # 携带工具调用信息（供提取器 _has_memory_writes 去重判断；
+                        # 2026-10-16 修复：此前 extract_messages 不含 tool_calls 导致去重恒失效）
+                        tcs = m.get("tool_calls")
+                        if not tcs and m.get("execution_order") is not None:
+                            eo = m.get("execution_order")
+                            if isinstance(eo, str):
+                                try:
+                                    eo = json.loads(eo)
+                                except Exception:
+                                    eo = None
+                            if isinstance(eo, list):
+                                tcs = []
+                                for item in eo:
+                                    if isinstance(item, dict) and item.get("type") == "tool":
+                                        ti = item.get("tool_info") or item.get("toolInfo") or {}
+                                        name = ti.get("name") or ti.get("toolName") or ""
+                                        args = ti.get("args") or ti.get("arguments") or ti.get("input") or {}
+                                        if isinstance(args, str):
+                                            try:
+                                                args = json.loads(args)
+                                            except Exception:
+                                                args = {}
+                                        tcs.append({"name": name, "args": args if isinstance(args, dict) else {}})
+                        if tcs:
+                            em["tool_calls"] = [
+                                {"name": t.get("name", ""), "args": t.get("args", {})}
+                                for t in tcs if isinstance(t, dict)
+                            ]
+                        extract_messages.append(em)
                     
                     extract_messages.append({
                         "uuid": str(len(extract_messages)),
@@ -2197,12 +2202,7 @@ class AgentChatServiceV2:
             conversation_uuid="",
             agent_name="",
             project_path=self._current_project_path,
-            cancel_event=asyncio.Event(),
-            state=QueryState(
-                messages=[],
-                system_prompt="",
-                user_context={}
-            )
+            cancel_event=asyncio.Event()
         )
         
         # 权限检查由 tool_executor.execute() 内部统一处理

@@ -583,6 +583,20 @@ class SnapshotManager:
         )
         return [FileSnapshotRecord.from_db_row(r) for r in rows]
 
+    def query_all_retained(self) -> List[FileSnapshotRecord]:
+        """查询所有需保留的快照记录（active + reverted，2026-10-16）
+
+        reverted 快照的备份文件仍被 UndoEngine（撤销回退）依赖，
+        孤儿清理必须把它们视为有效，否则撤销回退会因备份缺失而失败。
+        """
+        rows = self._db_query(
+            """SELECT * FROM file_snapshots
+               WHERE session_uuid = ? AND revert_status IN ('active', 'reverted')
+               ORDER BY created_at DESC""",
+            (self.session_uuid,)
+        )
+        return [FileSnapshotRecord.from_db_row(r) for r in rows]
+
     def count_by_session(self) -> int:
         """统计活跃快照记录数"""
         rows = self._db_query(

@@ -28,7 +28,7 @@ def main() -> int:
             print(f"[FAIL] {name} {detail}")
 
     from agent_core.tool_executor_impl import AgentToolExecutorImpl
-    from agent_core.query_state_machine import ToolExecutionContext, QueryState
+    from agent_core.query_state_machine import ToolExecutionContext
 
     # --- Test environment setup: keep the permission chain non-interactive ---
     # In default mode, permission_manager waits up to 120s for user approval
@@ -47,7 +47,6 @@ def main() -> int:
             agent_name="chat_agent",
             project_path=ROOT,
             cancel_event=asyncio.Event(),
-            state=QueryState(messages=[], system_prompt="", user_context={}),
         )
 
         # 1. web_search must be denied at entry (never reaches network)

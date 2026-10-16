@@ -574,7 +574,7 @@ class SessionStore:
         # 汇总
         row = conn.execute(
             """SELECT COUNT(*) as calls,
-                      COALESCE(SUM(input_tokens), 0) as in_tok,
+                      COALESCE(SUM(input_tokens + cache_hit_tokens), 0) as in_tok,
                       COALESCE(SUM(output_tokens), 0) as out_tok,
                       COALESCE(SUM(cache_hit_tokens), 0) as cache_tok,
                       COALESCE(SUM(cost_cny), 0) as total_cost
@@ -586,7 +586,7 @@ class SessionStore:
         model_rows = conn.execute(
             """SELECT model,
                       COUNT(*) as calls,
-                      COALESCE(SUM(input_tokens), 0) as in_tok,
+                      COALESCE(SUM(input_tokens + cache_hit_tokens), 0) as in_tok,
                       COALESCE(SUM(output_tokens), 0) as out_tok,
                       COALESCE(SUM(cache_hit_tokens), 0) as cache_tok,
                       COALESCE(SUM(cost_cny), 0) as cost

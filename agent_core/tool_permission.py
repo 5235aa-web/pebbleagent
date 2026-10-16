@@ -418,8 +418,9 @@ def get_tool_permission(tool_name: str, args: Dict[str, Any]) -> Optional[Tuple[
     
     perm_type = perm_type_map.get(perm_type_str)
     if perm_type is None:
-        logger.warning(f"[ToolPermission] Unknown permission type: {perm_type_str}")
-        return None
+        # 未知权限类型（配置错误）：升级为询问，而非默认放行（2026-10-16 fail-closed 对齐）
+        logger.warning(f"[ToolPermission] Unknown permission type: {perm_type_str}, escalating to ask")
+        return (PermissionType.UNKNOWN_TOOL, "")
     
     # 提取内容
     try:

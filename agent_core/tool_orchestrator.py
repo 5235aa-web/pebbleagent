@@ -27,9 +27,7 @@ import logging
 
 from .query_state_machine import (
     ToolUseBlock,
-    StreamEvent,
     ToolExecutionEvent,
-    QueryState,
     ToolExecutionContext,
 )
 from .tool_concurrency import (
@@ -215,12 +213,17 @@ class ToolOrchestrator:
         # 创建输出队列
         output_queue: asyncio.Queue[ToolExecutionUpdate] = asyncio.Queue()
         
-        # 创建所有工具的执行任务
+        # 创建所有工具的执行任务（受 max_concurrency 信号量约束；2026-10-16 修复
+        # 此前 max_concurrency 仅被赋值未生效、只读工具批内无界并发的问题）
+        sem = asyncio.Semaphore(max(1, int(self.max_concurrency or 10)))
+
+        async def _guarded_execute(tc):
+            async with sem:
+                return await self._execute_tool_with_queue(tc, context, output_queue)
+
         tasks = []
         for tool_call in tool_calls:
-            task = asyncio.create_task(
-                self._execute_tool_with_queue(tool_call, context, output_queue)
-            )
+            task = asyncio.create_task(_guarded_execute(tool_call))
             tasks.append(task)
         
         # 收集结果的协程

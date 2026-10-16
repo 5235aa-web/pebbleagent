@@ -4,14 +4,14 @@ import type { LLMProvider, AgentInfo, ReasoningEffort } from '../types/agentChat
 import { getGateway } from '../services/gatewayClient'
 
 const DEFAULT_PROVIDERS: LLMProvider[] = [
-  { id:'default',provider:'deepseek',apiKey:'sk-xxxx',baseUrl:'https://api.deepseek.com/v1/',models:['deepseek-v4-flash','deepseek-v4-pro','deepseek-v4-flash-vision-exp'],temperature:0.9,maxTokens:4096,topP:1.0,reasoningEffort:'max',thinkingEnabled:true },
-  { id:'1774763858220kcj1dmnpb',provider:'xiaomimimo',apiKey:'sk-xxxx',baseUrl:'https://api.xiaomimimo.com/v1',models:['mimo-v2-pro','mimo-v2-omni','mimo-v2-flash','mimo-v2.5','mimo-v2.5-pro'],temperature:0.3,maxTokens:4096,topP:1,thinkingEnabled:true },
+  { id:'default',provider:'deepseek',apiKey:'sk-xxxx',baseUrl:'https://api.deepseek.com/v1/',models:['deepseek-flash','deepseek-pro'],temperature:0.9,maxTokens:4096,topP:1.0,reasoningEffort:'max',thinkingEnabled:true },
+  { id:'1774763858220kcj1dmnpb',provider:'xiaomimimo',apiKey:'sk-xxxx',baseUrl:'https://api.xiaomimimo.com/v1',models:['mimo-v2.6-flash','mimo-v2.6-pro'],temperature:0.3,maxTokens:4096,topP:1,thinkingEnabled:true },
 ]
 const DEFAULT_AGENTS: AgentInfo[] = [
-  { name:'code_agent',displayName:'Code Agent',description:'Code expert for programming & debugging',modelSource:'deepseek-v4-flash' },
-  { name:'analysis_agent',displayName:'Analysis Agent',description:'Analysis expert for data analysis & research',modelSource:'mimo-v2-flash' },
-  { name:'article_agent',displayName:'Article Agent',description:'Writing expert for articles & copy',modelSource:'deepseek-v4-flash' },
-  { name:'chat_agent',displayName:'Chat Agent',description:'Everyday chat assistant for casual talk & Q&A',modelSource:'deepseek-v4-flash' },
+  { name:'code_agent',displayName:'Code Agent',description:'Code expert for programming & debugging',modelSource:'deepseek-flash' },
+  { name:'analysis_agent',displayName:'Analysis Agent',description:'Analysis expert for data analysis & research',modelSource:'mimo-v2.6-flash' },
+  { name:'article_agent',displayName:'Article Agent',description:'Writing expert for articles & copy',modelSource:'deepseek-flash' },
+  { name:'chat_agent',displayName:'Chat Agent',description:'Everyday chat assistant for casual talk & Q&A',modelSource:'deepseek-flash' },
 ]
 const LS_PROJECT_PATH='pebble:projectPath';const DEFAULT_PROJECT_PATH='E:\\workspace'
 function loadProjectPath():string{try{return localStorage.getItem(LS_PROJECT_PATH)||DEFAULT_PROJECT_PATH}catch{return DEFAULT_PROJECT_PATH}}

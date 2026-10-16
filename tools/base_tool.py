@@ -196,9 +196,9 @@ class BaseTool(ABC, Generic[InputT, OutputT]):
                 ask_user=not allowed and "rule" not in message.lower()
             )
         except ImportError:
-            # 权限管理器不可用，默认允许
-            logger.debug(f"[{self.name}] Permission manager not available, allowing by default")
-            return PermissionResult(allowed=True, reason="Permission manager not available")
+            # 权限管理器不可用：fail-closed 拒绝（2026-10-16 安全加固）
+            logger.error(f"[{self.name}] Permission manager not available, denying (fail-closed)")
+            return PermissionResult(allowed=False, reason="Permission manager not available (fail-closed)")
         except Exception as e:
             logger.warning(f"[{self.name}] Permission check failed: {e}")
             # 权限检查失败时，为了安全起见，默认拒绝
