@@ -1,0 +1,66 @@
+# Tests
+
+Standalone verification tests for PebbleAgent. No test framework required: every
+`test_*.py` / `test_*.mjs` file runs on its own and exits `0` on pass, non-zero on fail.
+
+## Running
+
+```bash
+# All Python tests (each in its own process)
+python tests/run_all.py
+
+# All JS tests
+node tests/run_all.mjs
+
+# A single test
+python tests/test_agent_tool_policy.py
+node tests/test_fold_algo.mjs
+```
+
+The repository also has three billing/holiday regression scripts at the project root
+(`peb_check_*.py`) which follow the same exit-code convention.
+
+## Test index
+
+### Tool policy (chat_agent 4-tool allowlist)
+| Test | Covers |
+| --- | --- |
+| `test_agent_tool_policy.py` | YAML load, allowlist filter, policy check |
+| `test_agent_tool_policy_executor.py` | executor entry-point interception (denies before any execution) |
+| `test_agent_tool_policy_schema.py` | `_get_tools_definition` applies the filter end-to-end |
+
+### Compaction & billing
+| Test | Covers |
+| --- | --- |
+| `test_context_compaction_keep.py` | dynamic keep-count, tool-pair protection, boundary/summary structure |
+| `test_pricing_save.py` | `pricing.save` validation, atomic write, hot reload, unknown-field preservation |
+| `test_pricing_labels.mjs` | pricing panel column labels (source checks) |
+
+### Frontend rendering / UI
+| Test | Covers |
+| --- | --- |
+| `test_render_perf.mjs` | stream flush throttle, v-memo revert guard, line render cache |
+| `test_ws_recovery.mjs` | WS disconnect recovery (source checks + logic simulation) |
+| `test_jump_collapse.mjs` | jump-to-compacted-message lands on fold divider |
+| `test_fold_algo.mjs` | fold algorithm **executed from real `VirtualMessageList.vue` source** |
+| `test_input_resize.mjs` | input-box drag clamp formulas + source consistency |
+| `test_time_groups.mjs` | conversation time bucketing **executed from real `Sidebar.vue` source** |
+
+### Core mechanisms
+| Test | Covers |
+| --- | --- |
+| `test_thinking_params.py` | thinking toggle/effort (`build_thinking_params`, `_bool`, server expressions) |
+| `test_clarify_dual.py` | `ask_user_question` dual-channel answers + guards |
+| `test_log_persistence.py` | log setup idempotency + suspicious stream-end detection |
+
+## Design conventions
+
+- **Exit codes, not frameworks.** Each test collects `[PASS]/[FAIL]` lines and exits non-zero
+  if anything failed. CI only needs the exit code.
+- **Real source, not copies.** Where possible, tests extract the actual function bodies
+  (`new Function` / AST) from the shipped source files, so algorithm drift in the app
+  fails the test loudly instead of silently passing a stale copy.
+- **Isolation.** Tests that touch storage set a temporary `PEBBLE_HOME`; tests that go
+  through the permission chain set `bypassPermissions` **in memory only** (never persisted).
+  No production data is touched.
+- **No network.** All tests run offline.

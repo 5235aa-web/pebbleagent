@@ -4,6 +4,7 @@
 
 **An open-source, extensible desktop AI agent with tools, skills, MCP servers, and a self-maintained code knowledge base.**
 
+[![checks](https://img.shields.io/github/actions/workflow/status/5235aa-web/pebbleagent/checks.yml?style=flat-square&label=checks&labelColor=1f1f1f&color=00E676)](https://github.com/5235aa-web/pebbleagent/actions/workflows/checks.yml)
 [![License: AGPL-3.0](https://img.shields.io/badge/License-AGPL--3.0-CE93D8?style=flat-square&labelColor=1f1f1f)](LICENSE)
 [![Python 3.10+](https://img.shields.io/badge/Python-3.10%2B-44AAFF?style=flat-square&labelColor=1f1f1f)](https://www.python.org/)
 [![Vue 3](https://img.shields.io/badge/Vue-3-00E676?style=flat-square&labelColor=1f1f1f)](https://vuejs.org/)
@@ -120,7 +121,19 @@ tools/            Built-in tools
 skills/           Bundled skills
 knowledgesource/  Code knowledge base (chaptered)
 ui-gui-vue3/      Vue 3 frontend + Tauri 2 desktop shell
+tests/            Standalone verification tests (python tests/run_all.py)
 ```
+
+## Tests
+
+Standalone verification tests live in `tests/` and need no framework — each file runs on its own and exits non-zero on failure:
+
+```bash
+python tests/run_all.py    # Python tests (tool policy, compaction, billing, ...)
+node tests/run_all.mjs     # JS tests (fold algorithm, WS recovery, UI formulas, ...)
+```
+
+Three billing/holiday regression scripts (`peb_check_*.py`) sit at the repo root and follow the same exit-code convention. All of the above, plus a full `compileall` syntax check and a `vue-tsc` type check, run in CI on every push (`.github/workflows/checks.yml`).
 
 ## License
 

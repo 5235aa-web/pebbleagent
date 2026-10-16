@@ -1,0 +1,54 @@
+name: checks
+
+on:
+  push:
+  pull_request:
+
+jobs:
+  checks:
+    runs-on: windows-latest
+    timeout-minutes: 15
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Set up Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: '3.14'
+          cache: pip
+
+      # Minimal dependency set only — the full requirements.txt pulls in OCR/ML
+      # extras (easyocr -> torch) that are lazy-imported and not needed for tests.
+      - name: Install Python dependencies
+        run: pip install "openai>=2.43.0" "httpx>=0.28.1" "PyYAML>=6.0.3" "tiktoken>=0.13.0" "aiohttp>=3.14.1"
+
+      - name: Syntax check (compileall)
+        run: python -m compileall -q agent_core gateway tools tests run_backend.py skills_loader.py peb_check_holiday.py peb_check_holiday_env.py peb_check_pricing_scope.py
+
+      - name: Billing & holiday regression checks
+        run: |
+          python peb_check_holiday.py
+          python peb_check_pricing_scope.py
+          python peb_check_holiday_env.py
+
+      - name: Python test suite
+        run: python tests/run_all.py
+
+      - name: Set up Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: '22'
+          cache: npm
+          cache-dependency-path: ui-gui-vue3/package-lock.json
+
+      - name: Install frontend dependencies
+        working-directory: ui-gui-vue3
+        run: npm ci
+
+      - name: Type check (vue-tsc)
+        working-directory: ui-gui-vue3
+        run: npx vue-tsc --noEmit
+
+      - name: JS test suite
+        run: node tests/run_all.mjs
