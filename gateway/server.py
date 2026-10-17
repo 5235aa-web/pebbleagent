@@ -497,6 +497,44 @@ def _serialize_experience(entry):
 
 # ==================== 用户便签 (usernote) ====================
 _USERRNOTE_PATH = _DATA_DIR / "usernote.json"
+_THEME_PATH = _DATA_DIR / "theme.json"
+
+
+def _load_theme() -> dict:
+    """读取主题配置；缺失或损坏时返回默认结构。"""
+    try:
+        if _THEME_PATH.exists():
+            with open(_THEME_PATH, "r", encoding="utf-8") as f:
+                data = json.load(f)
+            if isinstance(data, dict):
+                return {
+                    "current": data.get("current") or "amber",
+                    "custom": data.get("custom") if isinstance(data.get("custom"), list) else [],
+                    "colors": data.get("colors") if isinstance(data.get("colors"), dict) else {},
+                }
+    except Exception as e:
+        logger.warning(f"[Server] load theme failed: {e}")
+    return {"current": "amber", "custom": [], "colors": {}}
+
+
+def _save_theme(data: dict) -> bool:
+    """原子写入主题配置；缺失字段沿用当前值。"""
+    try:
+        current = _load_theme()
+        merged = {
+            "current": data.get("current") or current.get("current") or "amber",
+            "custom": data.get("custom") if isinstance(data.get("custom"), list) else current.get("custom", []),
+            "colors": data.get("colors") if isinstance(data.get("colors"), dict) else current.get("colors", {}),
+        }
+        _DATA_DIR.mkdir(parents=True, exist_ok=True)
+        tmp = str(_THEME_PATH) + ".tmp"
+        with open(tmp, "w", encoding="utf-8") as f:
+            json.dump(merged, f, ensure_ascii=False, indent=2)
+        os.replace(tmp, _THEME_PATH)
+        return True
+    except Exception as e:
+        logger.warning(f"[Server] save theme failed: {e}")
+        return False
 
 _BUNDLED_USERRNOTE_PATH = _PROJECT_ROOT / "usernote.json"
 

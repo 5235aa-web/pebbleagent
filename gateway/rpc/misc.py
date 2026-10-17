@@ -10,6 +10,17 @@ def handle(ctx, method):
     params = ctx.params
     rid = ctx.rid
 
+    if method == "theme.get":
+        theme = srv._load_theme()
+        return {"id": rid, "result": {"success": True, "theme": theme}}
+
+    if method == "theme.save":
+        data = params.get("theme") or {}
+        if not isinstance(data, dict):
+            return {"id": rid, "error": {"code": -32000, "message": "theme object required"}}
+        ok = srv._save_theme(data)
+        return {"id": rid, "result": {"success": ok}}
+
     if method == "message.delete":
         """删除单条消息（同步删除 sessions.db 和 agent_chat.db）"""
         sid = params.get("session_id", "")

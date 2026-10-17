@@ -56,7 +56,7 @@
 | ConfirmDialog.vue | Generic confirm dialog | 🟡Aux |
 | Tooltip.vue | Generic Tooltip | 🟡Aux |
 | TreeNodes.vue | Project file-tree node (recursive component; click file → file.open in the system default app; expand directory → file.search limit 100 lazy load; per-extension icon/color mapping) | 🟡Aux |
-| ThemeSwitcher.vue | Theme switcher (five built-in themes + custom colors; custom entries and per-theme color sets live in localStorage; malformed custom lists reset to an empty array; save failures stay in the picker with an inline error; a custom theme whose color data is missing falls back to amber and clears the stored theme key) | 🟡Aux |
+| ThemeSwitcher.vue | Theme switcher (five built-in themes + custom colors; custom themes and colors load from and save to theme.json through theme.get / theme.save; saving applies the color immediately and reports a save failure inline without undoing the applied theme) | 🟡Aux |
 | FileAttach.vue | File attachment entry | 🟡Aux |
 | PathWhitelist.vue | Path whitelist management (editing path is saved on outside click) | 🟡Aux |
 | QuickNotes.vue | Quick notes (backend-persisted; instant save on blur+debounce; **load timing: onStatus (after WS connect) + toggle open**; pending new note is committed on outside click) | 🟡Aux |
@@ -78,6 +78,7 @@
 | File | Function | Tag |
 |------|------|------|
 | utils/contentParser.ts | Markdown parser (incl. @pebble-file detection → html-file type) | 🔴Core |
+| utils/themeColors.ts | Theme color derivation (one primary hex → primary / accent / muted / borderGold / glowStart / glowEnd; shared by ThemeSwitcher and App) | 🟡Aux |
 | utils/incrementalHighlight.ts | Streaming-highlight incremental rendering engine (language-state scanner + tail-window recompute: prefix cache + window O(W)/chunk, forged prefix reproduces the cut-point state; python/js/ts/json/bash/plaintext whitelist, css excluded (fully-matching string form); cross-window escape skipping + triple fallback) | 🔴Core |
 | types/agentChat.ts | TypeScript type definitions (Message, ToolCall, TodoItem, etc.) | 🧪Types |
 | api/memory.ts | Frontend memory API wrapper | 🟡Aux |

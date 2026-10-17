@@ -14,15 +14,16 @@ import TimelineBar from './components/TimelineBar.vue'
 import Backdrop from './components/Backdrop.vue'
 import PermissionDialog from './components/PermissionDialog.vue'
 import MemoryCenterPanel from './components/MemoryCenterPanel.vue'
+import { buildThemeColors, type ThemeColors } from './utils/themeColors'
 
-const THEME_KEY = 'pebble-theme'
 const gateway = useGatewayStore()
 const chatStore = useChatStore()
 const fileDrop = useFileDrop()
 const sidebarCollapsed = ref(false)
 const vlistRef = ref<InstanceType<typeof SegmentedMessageList> | null>(null)
 const msgsContainerRef = ref<HTMLDivElement | null>(null)
-const theme = ref(localStorage.getItem(THEME_KEY) || 'amber')
+const theme = ref('amber')
+const customColors = ref<Record<string, ThemeColors>>({})
 
 // expose fileDrop state to child components
 provide('fileDrop', fileDrop)
@@ -31,43 +32,46 @@ function clearThemeVars(r: HTMLElement) {
   ;['--primary', '--accent', '--muted', '--border-gold', '--glow-start', '--glow-end'].forEach(v => r.style.removeProperty(v))
 }
 
-function applyCustomTheme(r: HTMLElement, id: string): boolean {
-  const s = localStorage.getItem(`pebble-theme-colors-${id}`)
-  if (!s) return false
-  try {
-    const c = JSON.parse(s)
-    clearThemeVars(r)
-    r.setAttribute('data-theme', '')
-    ;['--primary', '--accent', '--muted'].forEach(v => r.style.setProperty(v, c[v.substring(2)]))
-    r.style.setProperty('--border-gold', c.borderGold || c['border-gold'] || '')
-    r.style.setProperty('--glow-start', c.glowStart || c['glow-start'] || '')
-    r.style.setProperty('--glow-end', c.glowEnd || c['glow-end'] || '')
-    return true
-  } catch {
-    return false
-  }
+function applyColors(r: HTMLElement, c: ThemeColors) {
+  clearThemeVars(r)
+  r.setAttribute('data-theme', '')
+  r.style.setProperty('--primary', c.primary)
+  r.style.setProperty('--accent', c.accent)
+  r.style.setProperty('--muted', c.muted)
+  r.style.setProperty('--border-gold', c.borderGold)
+  r.style.setProperty('--glow-start', c.glowStart)
+  r.style.setProperty('--glow-end', c.glowEnd)
 }
 
-function changeTheme(id: string) {
+function changeTheme(id: string, hex?: string) {
   const r = document.getElementById('app')
   if (!r) return
   r.classList.add('theme-transitioning')
-  const custom = id.startsWith('custom-')
-  const applied = custom ? applyCustomTheme(r, id) : false
-  if (!custom) {
+  if (id.startsWith('custom-')) {
+    const c = hex ? buildThemeColors(hex) : customColors.value[id]
+    if (hex && c) customColors.value[id] = c
+    if (c) {
+      applyColors(r, c)
+      theme.value = id
+    } else {
+      theme.value = id
+    }
+  } else {
     clearThemeVars(r)
     r.setAttribute('data-theme', id)
-  }
-  if (custom && !applied) {
-    clearThemeVars(r)
-    r.setAttribute('data-theme', 'amber')
-    localStorage.removeItem(THEME_KEY)
-    theme.value = 'amber'
-  } else {
-    localStorage.setItem(THEME_KEY, id)
     theme.value = id
   }
   setTimeout(() => r.classList.remove('theme-transitioning'), 350)
+}
+
+async function loadTheme() {
+  try {
+    const r = await gateway.request<{ theme: { current: string; custom: unknown[]; colors: Record<string, ThemeColors> } }>('theme.get')
+    customColors.value = r?.theme?.colors && typeof r.theme.colors === 'object' ? r.theme.colors : {}
+    changeTheme(r?.theme?.current || 'amber')
+  } catch {
+    changeTheme('amber')
+  }
 }
 
 function toggleSidebar() { sidebarCollapsed.value = !sidebarCollapsed.value }
@@ -81,12 +85,10 @@ function toMsg(e: Event) {
 
 onMounted(() => {
   window.addEventListener('gateway:scroll-to-message', toMsg)
-  if (theme.value.startsWith('custom-')) changeTheme(theme.value)
-  else document.getElementById('app')?.setAttribute('data-theme', theme.value)
   gateway.setupConnection()
 })
 onUnmounted(() => { window.removeEventListener('gateway:scroll-to-message', toMsg) })
-watch(() => gateway.connected, v => { if (v) chatStore.initConversations().catch(console.error) })
+watch(() => gateway.connected, v => { if (v) { chatStore.initConversations().catch(console.error); loadTheme() } })
 </script>
 <template>
   <Backdrop />

@@ -1,7 +1,7 @@
 <script setup lang="ts">
 import { computed } from 'vue';import { useConfigStore } from '../stores/config';import { useMemoryStore } from '../stores/memory';import Tooltip from './Tooltip.vue';import McpPanel from './McpPanel.vue';import ProjectPanel from './ProjectPanel.vue';import PricingPanel from './PricingPanel.vue';import ThemeSwitcher from './ThemeSwitcher.vue'
 import { getCurrentWindow } from '@tauri-apps/api/window'
-const p=defineProps<{theme:string;onThemeChange:(id:string)=>void}>();const config=useConfigStore();const ms=useMemoryStore()
+const p=defineProps<{theme:string;onThemeChange:(id:string,hex?:string)=>void}>();const config=useConfigStore();const ms=useMemoryStore()
 const bl=computed(()=>{const agent=config.getActiveAgent();const provider=config.getActiveProvider();const modelName=provider?(config.activeModel[provider.id]||provider.models[0]||'?'):'?';return agent?`${agent.displayName} · ${modelName}`:'select agent'})
 const isTauri = typeof window !== 'undefined' && '__TAURI_INTERNALS__' in window
 const appWindow = isTauri ? getCurrentWindow() : { minimize: ()=>{}, toggleMaximize: ()=>{}, close: ()=>{} }
