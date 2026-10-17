@@ -66,7 +66,7 @@ def _sentences(text: str) -> List[str]:
     return [s.strip() for s in _SENTENCE_SPLIT.split(text or "") if s.strip()]
 
 
-def _clean_statement(text: str, limit: int = 300) -> str:
+def _clean_statement(text: str, limit: int = 160) -> str:
     text = re.sub(r"\s+", " ", text).strip(" \t\r\n-—，,。；;：:")
     text = re.sub(r"^(?:不对|不是|错了|别|不要|喂|哎)[，,。！!、\s]*", "", text)
     if len(text) > limit:
@@ -101,7 +101,7 @@ def detect_user_signals(
 
     explicit = _match_any(text, EXPLICIT_PATTERNS)
     if explicit:
-        statement = _clean_statement(text)
+        statement = _clean_statement(sentences[0] if sentences else text)
         if statement:
             signals.append(Signal(
                 kind="preference",
@@ -165,9 +165,9 @@ def _summarize_args(args: Any) -> str:
     for key, value in args.items():
         if _SECRET_KEY.search(str(key)):
             continue
-        text = str(value).replace("\n", " ")[:60]
+        text = str(value).replace("\n", " ")[:40]
         parts.append(f"{key}={text}")
-        if len(parts) >= 3:
+        if len(parts) >= 2:
             break
     return ", ".join(parts)
 

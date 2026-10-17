@@ -1231,35 +1231,69 @@ def get_tools_definition() -> List[Dict[str, Any]]:
             "type": "function",
             "function": {
                 "name": "experience_write",
-                "description": "写入一条经验到经验账本 (experience ledger)。经验账本跨会话保存，系统会在后续对话中按相关性自动检索并注入。用于用户明确要求记住某个做法、纠正、约束或坑。",
+                "description": "Write one entry to the experience ledger. Entries persist across sessions and are retrieved by relevance in later turns. Use when the user explicitly asks you to remember a lesson, correction, constraint, or pitfall. One sentence per entry, at most 120 characters: the conclusion, not the process. No logs, step lists, file inventories, or dates.",
                 "parameters": {
                     "type": "object",
                     "properties": {
                         "statement": {
                             "type": "string",
-                            "description": "一句话经验结论"
+                            "description": "One-sentence conclusion, at most 120 characters"
                         },
                         "kind": {
                             "type": "string",
                             "enum": ["correction", "constraint", "preference", "pitfall", "recipe", "reference"],
-                            "description": "经验类型，默认 preference"
+                            "description": "Entry kind; defaults to preference"
                         },
                         "rationale": {
                             "type": "string",
-                            "description": "为什么（可选）"
+                            "description": "Optional reason, one sentence, at most 200 characters"
                         },
                         "scope": {
                             "type": "string",
                             "enum": ["project", "global"],
-                            "description": "作用域，默认 project；跨项目通用经验用 global"
+                            "description": "project (default) or global for rules that apply to every project"
                         },
                         "keywords": {
                             "type": "array",
                             "items": {"type": "string"},
-                            "description": "检索关键词（可选）"
+                            "description": "Optional retrieval keywords"
                         }
                     },
                     "required": ["statement"]
+                }
+            }
+        },
+        {
+            "type": "function",
+            "function": {
+                "name": "experience_update",
+                "description": "Update an existing experience ledger entry and return a before/after comparison. Scope and project_id are fixed and cannot be changed. Deletion is not available through tools.",
+                "parameters": {
+                    "type": "object",
+                    "properties": {
+                        "id": {
+                            "type": "string",
+                            "description": "Experience entry id"
+                        },
+                        "statement": {
+                            "type": "string",
+                            "description": "New one-sentence conclusion, at most 120 characters"
+                        },
+                        "kind": {
+                            "type": "string",
+                            "enum": ["correction", "constraint", "preference", "pitfall", "recipe", "reference"],
+                            "description": "New entry kind"
+                        },
+                        "rationale": {
+                            "type": "string",
+                            "description": "New reason, one sentence, at most 200 characters"
+                        },
+                        "confidence": {
+                            "type": "number",
+                            "description": "New confidence between 0 and 1"
+                        }
+                    },
+                    "required": ["id"]
                 }
             }
         },

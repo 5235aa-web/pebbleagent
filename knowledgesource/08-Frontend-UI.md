@@ -50,7 +50,7 @@
 | FileChangesPanel.vue | File changes panel (per-file `activeCount` badge and header version total; Revert button shows `Reverting...` while running; success notice reports `1 step · N versions left` or `reverted to session start`; failure keeps the row and shows the error inline and in the notice bar; Accept reports failures and keeps the list) | 🟡Aux |
 | McpPanel.vue | MCP status panel (**pending-approval section for untrusted project .mcp.json + Approve button (mcp.trust_project)**; unconfigured optional servers (placeholder command / missing checksum) show an Optional badge and a "Set path" hint, with install actions and raw errors collapsed behind More; Set path input blocks overlay close while non-empty) | 🟡Aux |
 | ProjectPanel.vue | Project files panel (multi-project: click path to expand the project list, switch active, add, hover delete cross + ConfirmDialog, one-click adopt of unassigned; file tree; overlay close is ignored while the add-path input is non-empty) | 🟡Aux |
-| MemoryCenterPanel.vue | Memory center panel | 🟡Aux |
+| MemoryCenterPanel.vue | Memory center panel (ledger list with a Global badge per entry; detail shows scope; agent notes scope select User / Project) | 🟡Aux |
 | PermissionDialog.vue | Permission dialog (blocking: overlay clicks do not dismiss; decisions only via Deny / Deny Current / Allow All) | 🟡Aux |
 | PermissionMode.vue | Permission mode switch (manual / auto / readonly) | 🟡Aux |
 | ConfirmDialog.vue | Generic confirm dialog | 🟡Aux |
@@ -64,7 +64,7 @@
 | SoundSelect.vue | Notification sound selection (panel copy: Notification sound) | 🟡Aux |
 | RetroClock.vue | Digital clock | 🟡Aux |
 | Backdrop.vue | Backdrop layer | 🟡Aux |
-| CreateMemoryDialog.vue | Create-memory dialog | 🟡Aux |
+| CreateMemoryDialog.vue | Create-memory dialog (kind / scope project or global / statement / rationale / tools / paths / confidence) | 🟡Aux |
 
 ### ui-gui-vue3/src/services/ (2 files)
 

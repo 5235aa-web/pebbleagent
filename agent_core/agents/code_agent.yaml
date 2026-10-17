@@ -46,6 +46,7 @@ tools:
     # User interaction
     - clarify
     - experience_write
+    - experience_update
     # Tool search and discovery
     - tool_search
     - list_tools

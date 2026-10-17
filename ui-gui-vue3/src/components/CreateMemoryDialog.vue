@@ -6,6 +6,7 @@ import type { MemoryEntry, MemoryKind } from '../api/memory'
 const emit = defineEmits<{ close: []; created: [memory: MemoryEntry] }>()
 const st = useMemoryStore()
 const kind = ref<MemoryKind>('correction')
+const scope = ref<'project' | 'global'>('project')
 const statement = ref('')
 const rationale = ref('')
 const tools = ref('')
@@ -38,6 +39,7 @@ async function submit() {
       rationale.value.trim(),
       { tools: splitList(tools.value), paths: splitList(paths.value) },
       confidence.value,
+      scope.value,
     )
     if (entry) {
       emit('created', entry)
@@ -51,6 +53,7 @@ async function submit() {
 
 function reset() {
   kind.value = 'correction'
+  scope.value = 'project'
   statement.value = ''
   rationale.value = ''
   tools.value = ''
@@ -79,6 +82,13 @@ function reset() {
           <label class="mcd-lbl">Kind</label>
           <select v-model="kind" class="mcd-select">
             <option v-for="item in KINDS" :key="item.value" :value="item.value">{{ item.label }}</option>
+          </select>
+        </div>
+        <div class="mcd-field">
+          <label class="mcd-lbl">Scope</label>
+          <select v-model="scope" class="mcd-select">
+            <option value="project">Project — 仅当前项目</option>
+            <option value="global">Global — 所有项目</option>
           </select>
         </div>
         <div class="mcd-field">

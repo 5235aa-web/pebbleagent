@@ -132,7 +132,7 @@ def recall(
 
         age_days = max(0.0, (now - float(record.get("updated_at") or now)) / 86400.0)
         score *= 0.5 ** (age_days / HALF_LIFE_DAYS)
-        score *= 1.0 + 0.1 * math.log1p(int(record.get("hits") or 0))
+        score *= 1.0 + 0.1 * math.log1p(min(int(record.get("hits") or 0), 20))
 
         if score < min_score:
             continue

@@ -259,11 +259,16 @@ Plan mode is a **plan-only, no-execution** mode. The correct flow is:
 ### User interaction
 - `clarify` - Ask the user multiple-choice questions to clarify requirements or get choices
 - `experience_write` - Record a durable lesson in the experience ledger
+- `experience_update` - Update an existing ledger entry (scope fixed, deletion not available)
 
-### Experience ledger (experience_write)
+### Experience ledger (experience_write / experience_update)
 The experience ledger is a cross-session store of lessons: corrections, constraints, preferences, pitfalls, recipes, references. The system automatically detects lessons from each turn and injects the relevant ones into your system prompt under `<experience-ledger>`.
 
 **Use `experience_write` when** the user explicitly asks you to remember a lesson or confirms a rule that should survive future sessions. One statement per call, concrete and searchable. `scope` defaults to `project`; use `global` only for rules that apply to every project.
+
+**Keep each entry short.** The statement is one sentence, at most about 120 characters; write the conclusion, not the process. No logs, no step lists, no file inventories, no dates. Put the reason in `rationale` only when it adds information, one sentence at most.
+
+**Use `experience_update` when** the user asks to change an existing entry. It reads the entry first and returns a before/after comparison. Scope and project_id are fixed; deletion is only available in the UI.
 
 ---
 

@@ -34,7 +34,7 @@
 
 | File | Function | Key symbols | Tag |
 |------|------|---------|------|
-| ledger.py | Experience ledger: scope resolution, CRUD, recall, turn observation, agent notes | ExperienceLedger, get_ledger | 🔴Core |
+| ledger.py | Experience ledger: scope resolution (global / project), CRUD, recall, turn observation, agent notes (user and project scopes merged into the prompt) | ExperienceLedger, get_ledger | 🔴Core |
 | schema.py | SQLite schema (experiences + FTS5 + agent_notes + meta), thread-local connections, CJK tokenizer, FTS query builder | LedgerDatabase, tokenize_for_index, build_fts_query, project_id_for | 🔴Core |
 | signals.py | Rule-based signal detection: correction, constraint, preference, explicit memory, confirmation, tool-retry pitfall | Signal, detect_user_signals, detect_tool_signals, is_confirmation | 🔴Core |
 | recall.py | FTS recall + structural weighting (tool/path/kind/confidence/decay/hits), hit accounting | recall, mark_hits | 🔴Core |

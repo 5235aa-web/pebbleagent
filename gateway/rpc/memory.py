@@ -47,6 +47,9 @@ def handle(ctx, method):
         rationale = params.get("rationale", "")
         applies_to = params.get("applies_to") or {}
         confidence = srv._num(params.get("confidence"))
+        scope = params.get("scope", "project")
+        if scope not in ("project", "global"):
+            scope = "project"
         if not statement:
             return {"id": rid, "error": {"code": -32000, "message": "statement required"}}
         try:
@@ -56,6 +59,7 @@ def handle(ctx, method):
                 rationale=rationale,
                 applies_to=applies_to if isinstance(applies_to, dict) else {},
                 confidence=confidence if confidence is not None else 0.8,
+                scope=scope,
             )
             if not entry:
                 return {"id": rid, "result": {"success": False, "memory": None, "error": "invalid entry"}}

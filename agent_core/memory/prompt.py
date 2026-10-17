@@ -59,6 +59,8 @@ def render_entries(entries: List[Dict[str, Any]], max_chars: int = MAX_PROMPT_CH
         statement = (entry.get("statement") or "").strip()
         if not statement:
             continue
+        if len(statement) > 240:
+            statement = statement[:240].rstrip() + "…"
         block = [f"- [{kind} · {confidence:.2f}] {statement}"]
         scope = _scope_line(applies_to)
         if scope:

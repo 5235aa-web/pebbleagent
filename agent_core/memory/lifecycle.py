@@ -21,28 +21,52 @@ def find_similar(
     statement: str,
     project_id: Optional[str],
     threshold: float = SIMILARITY_THRESHOLD,
+    scope: Optional[str] = None,
 ) -> Optional[Dict[str, Any]]:
-    """在同一作用域内查找表述高度接近的既有条目。"""
+    """在同一作用域内查找表述高度接近的既有条目。
+
+    global 只与 global 比较，project 只与同一 project_id 比较。
+    """
     target = _normalize(statement)
-    if not target:
+    if len(target) < 6:
         return None
     fts_query = build_fts_query(statement)
     if not fts_query:
         return None
+    if scope not in ("global", "project"):
+        scope = "project" if project_id else "global"
+    if scope == "project" and not project_id:
+        return None
     conn = db.connection()
     try:
-        rows = conn.execute(
-            """
-            SELECT e.*
-            FROM experiences_fts
-            JOIN experiences e ON e.rowid = experiences_fts.rowid
-            WHERE experiences_fts MATCH ?
-              AND e.status = 'active'
-              AND (e.scope = 'global' OR e.project_id = ?)
-            LIMIT 10
-            """,
-            (fts_query, project_id or ""),
-        ).fetchall()
+        if scope == "project":
+            rows = conn.execute(
+                """
+                SELECT e.*
+                FROM experiences_fts
+                JOIN experiences e ON e.rowid = experiences_fts.rowid
+                WHERE experiences_fts MATCH ?
+                  AND e.status = 'active'
+                  AND e.scope = 'project'
+                  AND e.project_id = ?
+                LIMIT 10
+                """,
+                (fts_query, project_id),
+            ).fetchall()
+        else:
+            rows = conn.execute(
+                """
+                SELECT e.*
+                FROM experiences_fts
+                JOIN experiences e ON e.rowid = experiences_fts.rowid
+                WHERE experiences_fts MATCH ?
+                  AND e.status = 'active'
+                  AND e.scope = 'global'
+                  AND e.project_id IS NULL
+                LIMIT 10
+                """,
+                (fts_query,),
+            ).fetchall()
     except Exception:
         return None
 

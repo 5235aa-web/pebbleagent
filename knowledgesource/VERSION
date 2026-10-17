@@ -13,7 +13,7 @@
 - Streaming chat loop with tool orchestration: parallel read-only batches, serial side-effect batches, concurrency semaphore, cancellation; per-round usage accounting from the stream consumer's captured usage chunk
 - Context assembly: system prompt + project path + user note + recalled experience entries + agent note + skills; token accounting via `context_compressor.estimate_tokens` (tiktoken with CN/EN ratio fallback)
 - Stream-end detection: finish_reason recording, suspicious-end auto-retry (once per turn), graceful completion
-- Experience ledger: rule-based turn observation (correction / constraint / preference / pitfall), FTS5 recall with tool, path, kind, confidence, recency and hit weighting, dedupe + supersede lifecycle, per-agent notes; SQLite at `{PEBBLE_HOME:-~/.pebble}/experience.db`; agent-facing `experience_write` tool (kind / scope / keywords)
+- Experience ledger: rule-based turn observation (correction / constraint / preference / pitfall), FTS5 recall with tool, path, kind, confidence, recency and capped hit weighting, dedupe + supersede lifecycle within the same scope (global or the current project_id), per-agent notes (user and project scopes merged into the prompt); statement capped at 160 characters and rationale at 300 on write, single entry capped at 240 characters on render; SQLite at `{PEBBLE_HOME:-~/.pebble}/experience.db`; agent-facing `experience_write` (kind / scope / keywords) and `experience_update` (id / statement / kind / rationale / confidence; scope fixed) tools
 - Compaction summary: stable five-section handoff format (任务 / 现状 / 决定 / 待办 / 线索), single-pass prompt with no tool calls, format validation with one strict retry and a wrapped fallback
 - Agent prompts: comment hygiene (no dates, no change / incident / refactor notes) and CKB document positioning (present-tense facts, no change narratives)
 - Turn building blocks: `agent_core/chat/usage.py` (pricing, per-call cost, session accumulation), `chat/prompt.py` (system prompt composition), `chat/stream_client.py` (streamed request, retries, context-window handling, chunk accumulation), `chat/tool_cycle.py` (question injection, tool execution, result write-back), `chat/turn_executor.py` (turn preparation: agent, conversation, user message, history, prompt, client, cancel signal)
@@ -27,7 +27,7 @@
 
 ## Tools
 
-- 52 built-in tools across file, shell, network, media, memory, planning, UI, and utility groups; MCP proxy tools (`mcp__*`)
+- 53 built-in tools across file, shell, network, media, memory, planning, UI, and utility groups; MCP proxy tools (`mcp__*`)
 - Interaction tools: `clarify` (structured questions: title / prompt / options label+detail / multiple), `todo_write` / `todo_read` (session checklist), `enter_plan_mode` / `exit_plan_mode` / `create_plan` / `get_plan`
 - Dispatch: one declarative registry (`agent_core/tool_impl/registry.py`) maps tool names to handlers; handlers live in per-domain modules (filesystem / execution / web / documents / system / workspace / lsp / mcp_bridge); `tool_executor_impl.py` is the execution pipeline facade (policy → permission → snapshot → dispatch → write-result backfill)
 - Shell validation: BashValidator (read-only / destructive / mode / sed / path / semantic), PowerShellValidator (destructive patterns + path boundary), code destructive scan, network behaviour guards (rate / navigation / download counters scoped per session via contextvar)

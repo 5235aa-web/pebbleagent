@@ -22,6 +22,7 @@ TOOL_HANDLERS: Dict[str, ToolHandler] = {
     "execute_shell": lambda self, args, context: self._tool_execute_shell(args.get('command', ''), args.get('timeout', 60), context),
     "exit_plan_mode": lambda self, args, context: self._tool_exit_plan_mode(args.get('plan_title'), args.get('plan_description'), args.get('steps', [])),
     "experience_write": lambda self, args, context: self._tool_experience_write(args.get('statement', ''), args.get('kind', 'preference'), args.get('rationale', ''), args.get('scope', 'project'), args.get('keywords'), context),
+    "experience_update": lambda self, args, context: self._tool_experience_update(args.get('id', ''), args.get('statement', ''), args.get('kind', ''), args.get('rationale', ''), args.get('confidence'), context),
     "fetch_url": lambda self, args, context: self._tool_fetch_url(args.get('url', ''), args.get('timeout', 30)),
     "find_files": lambda self, args, context: self._tool_find_files(args.get('directory', ''), args.get('pattern', ''), args.get('max_depth')),
     "get_env_var": lambda self, args, context: self._tool_get_env_var(args.get('name', '')),

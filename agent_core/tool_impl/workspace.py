@@ -159,6 +159,56 @@ class WorkspaceToolsMixin:
             return f"Error: {str(e)}"
 
 
+    async def _tool_experience_update(self, entry_id: str, statement: str = "", kind: str = "",
+                                      rationale: str = "", confidence=None, context=None) -> str:
+        """更新一条经验，返回修改前后对比；作用域不可修改。"""
+        try:
+            from ..memory import get_ledger
+            from ..memory.ledger import VALID_KINDS
+            if not entry_id:
+                return "Error: id is required"
+            ledger = get_ledger()
+            ledger.set_project(getattr(context, "project_path", "") or self._current_project_path)
+            before = ledger.get(entry_id)
+            if not before:
+                return f"Error: experience {entry_id} not found"
+            if before.get("scope") == "project" and before.get("project_id") != ledger.project_id:
+                return "Error: entry belongs to another project"
+            updates = {}
+            if (statement or "").strip():
+                text = statement.strip()
+                if len(text) > 120:
+                    return "Error: statement must be at most 120 characters"
+                updates["statement"] = text
+            if kind:
+                if kind not in VALID_KINDS:
+                    return f"Error: kind must be one of {', '.join(VALID_KINDS)}"
+                updates["kind"] = kind
+            if (rationale or "").strip():
+                text = rationale.strip()
+                if len(text) > 200:
+                    return "Error: rationale must be at most 200 characters"
+                updates["rationale"] = text
+            if confidence is not None:
+                value = float(confidence)
+                if value < 0.0 or value > 1.0:
+                    return "Error: confidence must be between 0 and 1"
+                updates["confidence"] = value
+            if not updates:
+                return "Error: no fields to update"
+            after = ledger.update(entry_id, **updates)
+            if not after:
+                return f"Error: experience {entry_id} not found"
+            changes = []
+            for key in ("statement", "kind", "rationale", "confidence"):
+                if key in updates:
+                    changes.append(f"{key}: {before.get(key)!r} -> {after.get(key)!r}")
+            return "Updated experience " + entry_id + "\n" + "\n".join(changes)
+        except Exception as e:
+            logger.error(f"[ToolExecutor] experience_update error: {e}")
+            return f"Error: {str(e)}"
+
+
     async def _tool_list_skills(self) -> str:
         """列出所有可用的技能"""
         try:

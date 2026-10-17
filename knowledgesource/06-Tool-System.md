@@ -12,7 +12,7 @@ The executor is a thin pipeline (policy → permission → snapshot → dispatch
 | web.py | Fetch, search, browser navigate/download, network guards | 🔴Core |
 | documents.py | PDF reading + OCR | 🟡Aux |
 | system.py | Env vars, system info, processes, git status/log/diff | 🟡Aux |
-| workspace.py | Todo, notes, questions, plans, skills, tool discovery, experience ledger writes (experience_write) | 🟡Aux |
+| workspace.py | Todo, notes, questions, plans, skills, tool discovery, experience ledger writes and updates (experience_write / experience_update) | 🟡Aux |
 | lsp.py | Language-server code intelligence (9 tools + formatters) | 🟡Aux |
 | mcp_bridge.py | MCP tool routing (executor factory + ToolExecutionContext imported; unconnected server returns an error string) | 🟡Aux |
 

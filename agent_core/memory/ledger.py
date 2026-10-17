@@ -16,7 +16,7 @@ logger = logging.getLogger(__name__)
 
 VALID_KINDS = ("correction", "constraint", "preference", "pitfall", "recipe", "reference")
 VALID_SCOPES = ("global", "project")
-AGENT_NOTE_SCOPES = ("user", "project", "local")
+AGENT_NOTE_SCOPES = ("user", "project")
 
 
 class ExperienceLedger:
@@ -57,7 +57,8 @@ class ExperienceLedger:
         agent_type: Optional[str] = None,
         source_message_id: Optional[str] = None,
     ) -> Optional[Dict[str, Any]]:
-        statement = (statement or "").strip()
+        statement = (statement or "").strip()[:160]
+        rationale = (rationale or "").strip()[:300]
         if not statement or kind not in VALID_KINDS:
             return None
         if source_message_id and self._exists_for_message(source_message_id, statement):
@@ -66,9 +67,12 @@ class ExperienceLedger:
         scope, pid = self._resolve(scope)
         applies_to = applies_to or {}
         evidence = evidence or []
+        for item in evidence:
+            if isinstance(item, dict) and isinstance(item.get("quote"), str) and len(item["quote"]) > 300:
+                item["quote"] = item["quote"][:300]
         keywords = self._keyword_blob(statement, applies_to)
 
-        similar = lifecycle.find_similar(self.db, statement, pid)
+        similar = lifecycle.find_similar(self.db, statement, pid, scope=scope)
         if similar and float(similar.get("confidence") or 0) > confidence:
             self._reinforce(similar["id"])
             return self.get(similar["id"])
@@ -268,7 +272,12 @@ class ExperienceLedger:
         if entries:
             recall_mod.mark_hits(self.db, [e["id"] for e in entries])
         text = render_entries(entries)
-        note = self.get_agent_note(agent_type) if agent_type else ""
+        notes = []
+        for note_scope in ("user", "project"):
+            content = self.get_agent_note(agent_type, note_scope)
+            if content:
+                notes.append(content)
+        note = "\n\n".join(notes)
         return text + render_agent_note(agent_type or "", note)
 
     # ---------- 对话观察 ----------
@@ -304,6 +313,7 @@ class ExperienceLedger:
                     evidence=evidence,
                     confidence=signal.confidence,
                     applies_to={"keywords": signal.keywords},
+                    scope="project" if self._project_id else "global",
                     source_message_id=message_id,
                 )
                 if entry:

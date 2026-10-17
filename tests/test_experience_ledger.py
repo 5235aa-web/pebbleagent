@@ -114,12 +114,36 @@ def main() -> int:
     ledger.set_agent_note("code_agent", "user", "全局偏好")
     check("agent note user scope", ledger.get_agent_note("code_agent", "user") == "全局偏好")
     check("agent note project isolated", ledger.get_agent_note("code_agent", "project") == "始终先读图谱")
+    merged_prompt = ledger.build_prompt("前端提示组件", agent_type="code_agent")
+    check("agent note user injected", "全局偏好" in merged_prompt)
+    check("agent note project injected", "始终先读图谱" in merged_prompt)
     check("agent note clear", ledger.clear_agent_note("code_agent", "project"))
     check("agent note cleared", ledger.get_agent_note("code_agent", "project") == "")
+    after_clear_prompt = ledger.build_prompt("前端提示组件", agent_type="code_agent")
+    check("cleared project note not injected", "始终先读图谱" not in after_clear_prompt)
+    check("user note still injected", "全局偏好" in after_clear_prompt)
 
     prompt = ledger.build_prompt("前端提示组件", tools=["write_file"], agent_type="code_agent")
     check("build_prompt renders ledger", "<experience-ledger>" in prompt)
     check("build_prompt includes statement", "Tooltip" in prompt)
+
+    scoped = ExperienceLedger(os.path.join(TMP, "scope.db"))
+    scoped.set_project(os.path.join(TMP, "project_a"))
+    shared = "作用域合并测试语句唯一内容"
+    global_entry = scoped.create(kind="constraint", statement=shared, scope="global", confidence=0.9)
+    project_entry = scoped.create(kind="constraint", statement=shared, scope="project", confidence=0.8)
+    check("global and project stay separate", global_entry["id"] != project_entry["id"])
+    check("global has no project_id", scoped.get(global_entry["id"])["project_id"] is None)
+    check("project carries project_id", scoped.get(project_entry["id"])["project_id"] is not None)
+
+    scoped.set_project(os.path.join(TMP, "project_b"))
+    other_project = scoped.create(kind="constraint", statement=shared, scope="project", confidence=0.8)
+    check("different projects stay separate",
+          other_project["id"] not in (global_entry["id"], project_entry["id"]))
+
+    short_a = scoped.create(kind="preference", statement="abc", confidence=0.5)
+    short_b = scoped.create(kind="preference", statement="abc", confidence=0.5)
+    check("short statements do not merge", short_a["id"] != short_b["id"])
 
     check("delete removes entry", ledger.delete(stronger["id"]))
     check("deleted entry gone", ledger.get(stronger["id"]) is None)
@@ -171,6 +195,25 @@ def main() -> int:
     check("tool write records entry", "Recorded experience" in tool_result, tool_result)
     tool_hits = get_ledger().recall("searchable")
     check("tool write is recallable", any("searchable" in h.get("statement", "") for h in tool_hits), len(tool_hits))
+    tool_id = tool_hits[0]["id"] if tool_hits else ""
+
+    updated = asyncio.run(executor._tool_experience_update(
+        tool_id, "Updated ledger statement text", "constraint", "", 0.9, ctx))
+    check("tool update returns comparison", "statement:" in updated and "->" in updated, updated)
+    after = get_ledger().get(tool_id)
+    check("tool update changes statement", after and after["statement"] == "Updated ledger statement text")
+    check("tool update changes kind", after and after["kind"] == "constraint")
+    check("tool update keeps scope", after and after["scope"] == "project")
+    check("tool update keeps project_id", after and after["project_id"] is not None)
+
+    other_ctx = SimpleNamespace(project_path=os.path.join(TMP, "project_other"), agent_name="code_agent")
+    cross = asyncio.run(executor._tool_experience_update(
+        tool_id, "should not apply", "", "", None, other_ctx))
+    check("tool update rejects other project", cross.startswith("Error: entry belongs to another project"), cross)
+
+    long_result = asyncio.run(executor._tool_experience_update(
+        tool_id, "x" * 121, "", "", None, ctx))
+    check("tool update rejects long statement", "120" in long_result, long_result)
 
     shutil.rmtree(TMP, ignore_errors=True)
     print()

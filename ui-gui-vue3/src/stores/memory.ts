@@ -69,8 +69,9 @@ export const useMemoryStore = defineStore('memory', () => {
     rationale: string,
     appliesTo?: { tools?: string[]; paths?: string[]; keywords?: string[] },
     confidence?: number,
+    scope?: 'project' | 'global',
   ): Promise<MemoryEntry | null> {
-    const entry = await createMemory(kind, statement, rationale, appliesTo, confidence)
+    const entry = await createMemory(kind, statement, rationale, appliesTo, confidence, scope)
     if (entry) {
       memories.value.unshift(entry)
       stats.value = await loadMemoryStats()

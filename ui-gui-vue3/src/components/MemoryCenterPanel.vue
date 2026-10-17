@@ -258,6 +258,7 @@ watch(() => st.agentMemoryScope, () => {
                     >
                       <div class="mem-item-name">{{ mem.statement }}</div>
                       <div class="mem-item-time">
+                        <span v-if="mem.scope === 'global'" class="mem-item-scope">Global</span>
                         <span class="mem-item-conf" :style="{ color: KIND_META[key].color }">{{ mem.confidence.toFixed(2) }}</span>
                         <span>{{ formatTime(mem.updated_at) }}</span>
                       </div>
@@ -322,6 +323,12 @@ watch(() => st.agentMemoryScope, () => {
                   </div>
                 </div>
                 <div class="mem-field">
+                  <label class="mem-field-lbl">Scope</label>
+                  <div class="mem-tags">
+                    <span class="mem-tag"><span class="mem-tag-dot" />{{ sm.scope === 'global' ? 'Global — 所有项目' : 'Project — 仅当前项目' }}</span>
+                  </div>
+                </div>
+                <div class="mem-field">
                   <label class="mem-field-lbl">Applies To</label>
                   <div class="mem-tags">
                     <span v-for="(tag, i) in (sm.applies_to?.tools || [])" :key="'t' + i" class="mem-tag">
@@ -369,7 +376,6 @@ watch(() => st.agentMemoryScope, () => {
                 <select v-model="st.agentMemoryScope" class="mem-scope-select">
                   <option value="user">User</option>
                   <option value="project">Project</option>
-                  <option value="local">Local</option>
                 </select>
               </div>
             </div>
@@ -418,7 +424,7 @@ watch(() => st.agentMemoryScope, () => {
               <div v-if="st.selectedAgentType" class="mem-ed-form">
                 <div class="mem-field">
                   <label class="mem-field-lbl primary">Agent Note</label>
-                  <p class="mem-field-hint">随该 Agent 的每次会话注入，适合放置稳定的工作约定。</p>
+                  <p class="mem-field-hint">User 档跨项目注入，Project 档仅当前项目注入。</p>
                 </div>
                 <div class="mem-field">
                   <div class="mem-content-box large">
@@ -506,6 +512,7 @@ watch(() => st.agentMemoryScope, () => {
 .mem-item-name{font-size:11px;color:var(--text);overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
 .mem-item-time{font-size:9px;color:var(--fg-dim);margin-top:2px;display:flex;gap:8px;align-items:center}
 .mem-item-conf{font-weight:600}
+.mem-item-scope{font-size:9px;color:var(--cyan);border:1px solid var(--border-subtle);border-radius:6px;padding:0 4px;line-height:1.5}
 .mem-empty,.mem-loading{padding:24px 16px;text-align:center;color:var(--fg-dim);font-size:11px;display:flex;flex-direction:column;align-items:center;gap:8px}
 .mem-spin{width:14px;height:14px;border:2px solid var(--fg-dim);border-top-color:var(--accent);border-radius:50%;animation:mem-spin .6s linear infinite;display:inline-block}
 @keyframes mem-spin{to{transform:rotate(360deg)}}

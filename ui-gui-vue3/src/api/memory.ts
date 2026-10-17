@@ -1,7 +1,8 @@
 import { useGatewayStore } from '../stores/gateway'
 
 export type MemoryKind = 'correction' | 'constraint' | 'preference' | 'pitfall' | 'recipe' | 'reference'
-export type AgentMemoryScope = 'user' | 'project' | 'local'
+export type AgentMemoryScope = 'user' | 'project'
+export type MemoryScope = 'project' | 'global'
 
 export interface MemoryAppliesTo {
   tools?: string[]
@@ -19,6 +20,7 @@ export interface MemoryEvidence {
 export interface MemoryEntry {
   id: string
   kind: MemoryKind
+  scope: MemoryScope
   statement: string
   rationale: string
   applies_to: MemoryAppliesTo
@@ -69,9 +71,10 @@ export async function createMemory(
   rationale: string,
   appliesTo?: MemoryAppliesTo,
   confidence?: number,
+  scope?: MemoryScope,
 ): Promise<MemoryEntry | null> {
   const r = await gw().request<any>('memory.create', {
-    kind, statement, rationale, applies_to: appliesTo || {}, confidence,
+    kind, statement, rationale, applies_to: appliesTo || {}, confidence, scope,
   })
   return r.success ? r.memory : null
 }

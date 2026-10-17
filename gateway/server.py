@@ -482,6 +482,7 @@ def _serialize_experience(entry):
     return {
         "id": entry["id"],
         "kind": entry["kind"],
+        "scope": entry.get("scope", "project"),
         "statement": entry["statement"],
         "rationale": entry["rationale"],
         "applies_to": entry["applies_to"],

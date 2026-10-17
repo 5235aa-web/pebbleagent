@@ -25,8 +25,8 @@
 | model | options / provider.set / provider.save / provider.delete / params.set / switch |
 | agent | list / switch |
 | mcp | list (incl. pending_project_servers) / reload / install_info / trust_project |
-| memory | list / get / create / update / delete / prompt |
-| agent-memory | get / set / clear |
+| memory | list / get / create (scope: project / global) / update / delete / prompt |
+| agent-memory | get / set / clear (scope: user / project) |
 | permission | mode.get / mode.set (audited) / rules.get / check (sync evaluation, fail-closed) / decide / audit.verify (chained-checksum integrity check) |
 | path_whitelist | read / save (entries validated absolute, non-empty, no drive/filesystem roots) |
 | file | search / read_text / read_base64 / write_base64 / open (project-boundary/whitelist guard ; open additionally allows http/https/ftp URLs) |
