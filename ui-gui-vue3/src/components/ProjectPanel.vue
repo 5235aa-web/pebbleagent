@@ -10,11 +10,12 @@ watch(()=>cfg.projectPath,()=>{if(o.value&&!showProjects.value)loadRoot()})
 onMounted(()=>{window.addEventListener('project-switched',loadRoot);window.addEventListener('project-adopted',()=>cfg.refreshUnassigned())})
 async function switchProject(p:string){await cfg.setActiveProject(p);showProjects.value=false}
 async function addProj(){const t=addVal.value.trim();if(!t)return;await cfg.addProject(t);addVal.value='';setTimeout(()=>addRef.value?.focus(),50)}
+function tryClose(){if(addVal.value.trim())return;o.value=false;showProjects.value=false}
 function confirmDel(){if(delTarget.value){cfg.deleteProject(delTarget.value);delTarget.value=''}}
 </script>
 <template>
 <Tooltip text="Project files" position="bottom"><button class="pp-btn" :class="{active:o}" @click="o=!o"><svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5"><path d="M22 19a2 2 0 01-2 2H4a2 2 0 01-2-2V5a2 2 0 012-2h5l2 3h9a2 2 0 012 2z"/></svg></button></Tooltip>
-<div v-if="o" class="pp-overlay" @click="o=false"><div class="pp-panel" @click.stop>
+<div v-if="o" class="pp-overlay" @click="tryClose"><div class="pp-panel" @click.stop>
 <div class="pp-hdr">
 <div class="pp-path" style="cursor:pointer" @click="showProjects=!showProjects"><svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5" style="color:var(--accent)"><path d="M22 19a2 2 0 01-2 2H4a2 2 0 01-2-2V5a2 2 0 012-2h5l2 3h9a2 2 0 012 2z"/></svg><span class="pp-path-text">{{cfg.projectPath}}</span><svg width="10" height="10" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" style="color:var(--muted);flex-shrink:0"><polyline points="6 9 12 15 18 9"/></svg></div>
 </div>

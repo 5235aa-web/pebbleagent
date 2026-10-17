@@ -67,7 +67,9 @@ function toggle() {
 function closePanel(e: MouseEvent) {
   if (!open.value) return
   const t = e.target as HTMLElement
-  if (!t.closest('.qn-panel') && !t.closest('.qn-btn')) open.value = false
+  if (t.closest('.qn-panel') || t.closest('.qn-btn')) return
+  if (adding.value && addText.value.trim()) confirmAdd()
+  open.value = false
 }
 
 onMounted(() => {

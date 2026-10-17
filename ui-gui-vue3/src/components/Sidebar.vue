@@ -59,6 +59,12 @@ async function handleRenameSubmit() {
   renameTarget.value = ''
 }
 
+function closeRename() {
+  const orig = cs.conversations.find(c => c.id === renameTarget.value)?.title || ''
+  if (renameValue.value.trim() && renameValue.value.trim() !== orig) return
+  renaming.value = false
+}
+
 function handleDelete(e: MouseEvent) {
   e.stopPropagation()
   deleteTarget.value = renameTarget.value
@@ -243,7 +249,7 @@ const timeGroups = computed(() => {
     </div>
 
     <!-- Rename overlay -->
-    <div v-if="renaming" class="cfm-overlay" @click.self="renaming=false">
+    <div v-if="renaming" class="cfm-overlay" @click.self="closeRename">
       <div class="cfm-dialog">
         <div class="cfm-hdr cfm-hdr-primary"><span class="cfm-title">Rename</span></div>
         <div class="cfm-body"><input class="sb-rename-input" style="width:100%" v-model="renameValue" @keydown.enter="handleRenameSubmit" @keydown.escape="renaming=false" autofocus/></div>

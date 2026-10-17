@@ -49,6 +49,8 @@
 - Compaction card: 任务 / 现状 / 决定 / 待办 / 线索 sections with counts
 - HTML preview: sandboxed iframe (allow-scripts only), injected meta CSP, postMessage bridge, PNG capture, interactive comment layer
 - Config panels: LLM providers/models, thinking toggle and reasoning effort, price editor with hot reload, MCP panel, permission mode
+- Permission dialog: blocking request queue (overlay clicks do not dismiss), per-request remember duration, Deny / Deny Current / Allow All
+- Overlay guards: panels keep unsaved input (pricing warns once before discarding, path whitelist saves on close, rename / add-path / Set path inputs block outside dismissal)
 - Reconnect recovery: disconnect detection, resume-based display restoration, short-poll for in-flight turns
 
 ## Configuration

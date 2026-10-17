@@ -11,7 +11,7 @@ function da(){for(const r of rs.value)sd(r.request_id,false)}
 function dc(){if(rs.value.length>0)sd(rs.value[0].request_id,false)}
 onMounted(()=>{const h=(e:Event)=>{const d=(e as CustomEvent).detail as {payload:PR}|undefined;if(!d?.payload)return;const rq=d.payload;if(rs.value.some(r=>r.request_id===rq.request_id))return;rs.value.push(rq);v.value=true;rm[rq.request_id]=false;mm[rq.request_id]=15};window.addEventListener('gateway:permission-request',h);onUnmounted(()=>window.removeEventListener('gateway:permission-request',h))})
 </script>
-<template><div v-if="v&&rs.length>0" class="pd-overlay" @click="v=false"><div class="pd-dialog" @click.stop>
+<template><div v-if="v&&rs.length>0" class="pd-overlay"><div class="pd-dialog" @click.stop>
 <div class="pd-hdr"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" class="pd-hdr-icon"><path d="M12 22s8-4 8-10V5l-8-3-8 3v7c0 6 8 10 8 10z"/></svg><span class="pd-hdr-title">Permission Request</span><span class="pd-badge">{{rs.length}}</span></div>
 <div class="pd-body"><div v-for="req in rs" :key="req.request_id" class="pd-item">
 <div class="pd-type-row"><span class="pd-type-badge" :style="{background:lc(req.level)}">{{ft(req.permission_type)}}</span><span class="pd-level">{{ll(req.level)}}</span></div>

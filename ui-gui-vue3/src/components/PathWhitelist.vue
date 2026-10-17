@@ -8,7 +8,7 @@ const editRef = ref<HTMLInputElement | null>(null)
 const gw = getGateway()
 async function load() { loading.value = true; try { const res = await gw.request<{ paths: string[] }>('path_whitelist.read', {}); paths.value = res.paths || [] } catch {} finally { loading.value = false } }
 function toggle() { open.value = !open.value; if (open.value) load(); else { editingIdx.value = null; editingVal.value = ''; newPath.value = '' } }
-function hmousedown(e: MouseEvent) { if (!open.value) return; const t = e.target as HTMLElement; if (!t.closest('.pw-panel') && !t.closest('.pw-btn')) { open.value = false; editingIdx.value = null; editingVal.value = ''; newPath.value = '' } }
+function hmousedown(e: MouseEvent) { if (!open.value) return; const t = e.target as HTMLElement; if (t.closest('.pw-panel') || t.closest('.pw-btn')) return; if (editingIdx.value !== null) { const i = editingIdx.value; void saveEdit(i).finally(() => { open.value = false }); return } open.value = false; newPath.value = '' }
 onMounted(() => { load(); document.addEventListener('mousedown', hmousedown) })
 onUnmounted(() => document.removeEventListener('mousedown', hmousedown))
 import { watch } from 'vue'

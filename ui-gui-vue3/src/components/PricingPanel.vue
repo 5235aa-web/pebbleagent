@@ -25,6 +25,8 @@ const confirmDelIdx = ref(-1)
 const adding = ref(false)
 const newName = ref('')
 const newRef = ref<HTMLInputElement | null>(null)
+const dirty = ref(false)
+const closeArmed = ref(false)
 
 function blk2row(b: PriceBlock | null | undefined): string[] | null {
   if (!b) return null
@@ -56,9 +58,20 @@ async function load() {
     }))
   } catch { errMsg.value = 'failed to load pricing' }
   loading.value = false
+  dirty.value = false
 }
 
-watch(() => o.value, v => { if (v) load() })
+watch(() => o.value, v => { if (v) { closeArmed.value = false; load() } })
+
+function tryClose() {
+  if (dirty.value && !closeArmed.value) {
+    closeArmed.value = true
+    errMsg.value = 'unsaved changes — click outside again to discard'
+    return
+  }
+  o.value = false
+  closeArmed.value = false
+}
 
 function startAdd() { adding.value = true; newName.value = ''; setTimeout(() => newRef.value?.focus(), 50) }
 function confirmAdd() {
@@ -68,15 +81,17 @@ function confirmAdd() {
   rows.value.unshift({ name: n, raw: {}, base: ['0', '0', '0'], peak: null, off: null })
   adding.value = false
   errMsg.value = ''
+  dirty.value = true
 }
 function doDelete() {
   if (confirmDelIdx.value >= 0) rows.value.splice(confirmDelIdx.value, 1)
   confirmDelIdx.value = -1
+  dirty.value = true
 }
 
 // 输入框值写入编辑态（arr 为 null 时忽略——对应 peak/off 不存在的行）
 function setVal(arr: string[] | null, i: number, e: Event) {
-  if (arr) arr[i] = (e.target as HTMLInputElement).value
+  if (arr) { arr[i] = (e.target as HTMLInputElement).value; dirty.value = true }
 }
 
 function parseBlock(vals: string[]): { ok: boolean; block?: PriceBlock; err?: string } {
@@ -129,7 +144,7 @@ async function save() {
 <Tooltip text="Model Pricing" position="bottom">
   <button ref="btnRef" class="mp-btn" :class="{active:o}" @click="toggle"><svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5"><line x1="12" y1="1" x2="12" y2="23"/><path d="M17 5H9.5a3.5 3.5 0 000 7h5a3.5 3.5 0 010 7H6"/></svg></button>
 </Tooltip>
-<div v-if="o" class="mp-overlay" @click="o=false">
+<div v-if="o" class="mp-overlay" @click="tryClose">
   <div class="mp-panel" :style="panelStyle" @click.stop>
     <div class="mp-hdr">
       <span class="mp-title">Model Pricing</span>
