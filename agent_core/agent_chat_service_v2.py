@@ -58,12 +58,8 @@ from .transcript_manager import (
 )
 from . import agent_chat_history as history
 
-# 导入记忆系统
-from .memory import (
-    get_auto_memory_manager,
-    get_agent_memory_manager,
-    AutoMemoryExtractor,
-)
+# 导入经验账本
+from .memory import get_ledger
 
 from .tool_definitions import get_tools_definition, get_tools_definition_with_mcp
 from .tool_executor_impl import AgentToolExecutorImpl
@@ -389,21 +385,11 @@ class AgentChatServiceV2:
         # 当前对话消息计数
         self._conversation_message_count: int = 0
         
-        # 系统提示词缓存（用于提高 LLM 缓存命中率）
-        self._cached_memory_prompt: str = ""
-        self._cached_memory_hash: str = ""
-        
         # Transcript 管理器
         self._transcript_manager = get_transcript_manager()
         
-        # Auto Memory 管理器
-        self._auto_memory_manager = get_auto_memory_manager()
-        
-        # Agent Memory 管理器
-        self._agent_memory_manager = get_agent_memory_manager()
-        
-        # 记忆提取器（延迟初始化；提取节流状态由 AutoMemoryExtractor 内部维护）
-        self._memory_extractor: Optional[AutoMemoryExtractor] = None
+        # 经验账本
+        self._ledger = get_ledger()
         
         # 工具执行器
         self._tool_executor = AgentToolExecutorImpl(self._current_project_path)
@@ -787,14 +773,6 @@ class AgentChatServiceV2:
             return True
         return False
     
-    def get_memory_manager(self):
-        """获取 Auto Memory 管理器实例"""
-        return self._auto_memory_manager
-    
-    def get_agent_memory_manager(self):
-        """获取 Agent Memory 管理器实例"""
-        return self._agent_memory_manager
-    
     def _sanitize_messages(self, messages: List[Dict[str, Any]]) -> List[Dict[str, Any]]:
         """
         兜底修复：确保发送给 API 的消息完全合法
@@ -913,51 +891,34 @@ class AgentChatServiceV2:
         self,
         conversation_uuid: str,
         messages: List[Dict[str, Any]],
-        llm_config: Dict[str, Any]
+        llm_config: Dict[str, Any] = None,
+        tool_events: List[Dict[str, Any]] = None,
+        message_id: str = None,
     ) -> None:
-        """异步提取记忆（后台执行，不阻塞响应）
-
-        节流判断统一走 AutoMemoryExtractor.should_extract：
-        消息数 / 轮数间隔 / token 间隔三个配置化阈值（ExtractMemoryConfig）。
-        """
+        """把本轮对话中的经验信号写入账本（规则检测，无额外模型调用）。"""
         try:
-            client = AsyncOpenAI(
-                api_key=llm_config['api_key'],
-                base_url=llm_config['base_url'],
-                timeout=60.0
+            user_message = ""
+            assistant_message = ""
+            for msg in reversed(messages):
+                role = msg.get("role")
+                if role == "user" and not user_message:
+                    user_message = msg.get("content") or ""
+                elif role == "assistant" and not assistant_message:
+                    assistant_message = msg.get("content") or ""
+                if user_message and assistant_message:
+                    break
+
+            created = self._ledger.observe_turn(
+                conversation_uuid=conversation_uuid,
+                user_message=user_message,
+                assistant_message=assistant_message,
+                tool_events=tool_events or [],
+                message_id=message_id,
             )
-            
-            if self._memory_extractor is None:
-                self._memory_extractor = AutoMemoryExtractor(
-                    llm_client=client,
-                    llm_model=llm_config.get('model', 'gpt-4')
-                )
-            else:
-                # 每次用当前 llm_config 更新，避免使用过期配置
-                self._memory_extractor.llm_client = client
-                self._memory_extractor.llm_model = llm_config.get('model', 'gpt-4')
-
-            token_count = sum(len(m.get("content", "")) // 3 for m in messages)
-            should, why = self._memory_extractor.should_extract(messages, conversation_uuid, token_count)
-            if not should:
-                logger.debug(f"[AgentChatServiceV2] Memory extraction skipped: {why}")
-                return
-
-            logger.info(f"[AgentChatServiceV2] Starting memory extraction for {conversation_uuid}")
-
-            result = await self._memory_extractor.extract(
-                messages=messages,
-                session_id=conversation_uuid,
-                current_token_count=token_count
-            )
-            
-            if result:
-                logger.info(f"[AgentChatServiceV2] Extracted {len(result)} memories")
-            else:
-                logger.debug(f"[AgentChatServiceV2] No new memories extracted")
-                
+            if created:
+                logger.info(f"[AgentChatServiceV2] Recorded {len(created)} experience entries")
         except Exception as e:
-            logger.warning(f"[AgentChatServiceV2] Memory extraction error: {e}")
+            logger.warning(f"[AgentChatServiceV2] Experience recording error: {e}")
     
     async def chat_stream(
         self,
@@ -993,10 +954,9 @@ class AgentChatServiceV2:
         # 存储项目路径
         self._current_project_path = project_path or os.getcwd()  # project_path 由前端传入，此处仅兜底
         
-        # 设置记忆系统的项目路径
+        # 设置经验账本的项目作用域
         if project_path:
-            self._auto_memory_manager.set_project(project_path)
-            self._agent_memory_manager.set_project(project_path)
+            self._ledger.set_project(project_path)
         
         # ========== MCP 初始化 ==========
         await self._ensure_mcp_initialized(project_path)
@@ -1341,64 +1301,37 @@ class AgentChatServiceV2:
                 "interrupted": was_interrupted
             }
             
-            # 非中断时才提取记忆
+            # 非中断时记录经验信号
             if not was_interrupted:
                 try:
-                    extract_messages = []
-                    for i, m in enumerate(context_messages):
-                        em: Dict[str, Any] = {
-                            "uuid": str(i),
-                            "role": m.get("role", "user"),
-                            "content": m.get("content", "")
-                        }
-                        # 携带工具调用信息（供提取器 _has_memory_writes 去重判断）
-                        tcs = m.get("tool_calls")
-                        if not tcs and m.get("execution_order") is not None:
-                            eo = m.get("execution_order")
-                            if isinstance(eo, str):
-                                try:
-                                    eo = json.loads(eo)
-                                except Exception:
-                                    eo = None
-                            if isinstance(eo, list):
-                                tcs = []
-                                for item in eo:
-                                    if isinstance(item, dict) and item.get("type") == "tool":
-                                        ti = item.get("tool_info") or item.get("toolInfo") or {}
-                                        name = ti.get("name") or ti.get("toolName") or ""
-                                        args = ti.get("args") or ti.get("arguments") or ti.get("input") or {}
-                                        if isinstance(args, str):
-                                            try:
-                                                args = json.loads(args)
-                                            except Exception:
-                                                args = {}
-                                        tcs.append({"name": name, "args": args if isinstance(args, dict) else {}})
-                        if tcs:
-                            em["tool_calls"] = [
-                                {"name": t.get("name", ""), "args": t.get("args", {})}
-                                for t in tcs if isinstance(t, dict)
-                            ]
-                        extract_messages.append(em)
-                    
-                    extract_messages.append({
-                        "uuid": str(len(extract_messages)),
-                        "role": "user",
-                        "content": full_message
-                    })
-                    if all_response_text or final_response:
-                        extract_messages.append({
-                            "uuid": str(len(extract_messages)),
-                            "role": "assistant",
-                            "content": all_response_text or final_response
+                    tool_events = []
+                    for item in execution_order or []:
+                        if not isinstance(item, dict) or item.get("type") != "tool":
+                            continue
+                        info = item.get("tool_info") or item.get("toolInfo") or {}
+                        args = info.get("input")
+                        if isinstance(args, str):
+                            try:
+                                args = json.loads(args)
+                            except Exception:
+                                args = {}
+                        tool_events.append({
+                            "name": info.get("name", ""),
+                            "status": info.get("status", ""),
+                            "args": args if isinstance(args, dict) else {},
+                            "output": info.get("output", ""),
                         })
-                    
                     await self._extract_memories_async(
                         conversation_uuid=conversation_uuid,
-                        messages=extract_messages,
-                        llm_config=llm_config
+                        messages=[
+                            {"role": "user", "content": full_message},
+                            {"role": "assistant", "content": all_response_text or final_response or ""},
+                        ],
+                        tool_events=tool_events,
+                        message_id=str(state.user_message_id) if state.user_message_id else None,
                     )
                 except Exception as e:
-                    logger.warning(f"[AgentChatServiceV2] Memory extraction failed: {e}")
+                    logger.warning(f"[AgentChatServiceV2] Experience recording failed: {e}")
         
         except asyncio.CancelledError:
             # future.cancel() 触发的 CancelledError：保存当前已累积的数据到 agent_chat.db

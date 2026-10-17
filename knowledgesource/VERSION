@@ -11,9 +11,9 @@
 ## Agent runtime
 
 - Streaming chat loop with tool orchestration: parallel read-only batches, serial side-effect batches, concurrency semaphore, cancellation
-- Context assembly: system prompt + project path + user note + agent memory + skills; token accounting via `context_compressor.estimate_tokens` (tiktoken with CN/EN ratio fallback)
+- Context assembly: system prompt + project path + user note + recalled experience entries + agent note + skills; token accounting via `context_compressor.estimate_tokens` (tiktoken with CN/EN ratio fallback)
 - Stream-end detection: finish_reason recording, suspicious-end auto-retry (once per turn), graceful completion
-- Memory: auto-memory extraction (configurable thresholds), agent memory, project memory; prompt injection with content-hash caching
+- Experience ledger: rule-based turn observation (correction / constraint / preference / pitfall), FTS5 recall with tool, path, kind, confidence, recency and hit weighting, dedupe + supersede lifecycle, per-agent notes; SQLite at `{PEBBLE_HOME}/experience.db`; legacy Markdown memories imported once
 - Turn building blocks: `agent_core/chat/usage.py` (pricing, per-call cost, session accumulation), `chat/prompt.py` (system prompt composition), `chat/stream_client.py` (streamed request, retries, context-window handling, chunk accumulation), `chat/tool_cycle.py` (question injection, tool execution, result write-back), `chat/turn_executor.py` (turn preparation: agent, conversation, user message, history, prompt, client, cancel signal)
 - Session persistence: dual-DB (sessions.db for UI state, agent_chat.db for LLM context), transcript JSONL, message-chain tracking
 
@@ -60,6 +60,6 @@
 
 ## Verification
 
-- `tests/run_all.py` — Python suites (tool policy, orchestration, permissions, audit, snapshots, compaction, pricing, skills)
+- `tests/run_all.py` — Python suites (tool policy, orchestration, permissions, audit, snapshots, compaction, pricing, skills, experience ledger)
 - `tests/run_all.mjs` — frontend logic suites (fold algorithm, WS recovery, UI formulas, time grouping)
 - CI: `.github/workflows/checks.yml` (compileall, Python suites, vue-tsc)

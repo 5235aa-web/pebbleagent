@@ -1,28 +1,175 @@
 import { defineStore } from 'pinia'
 import { ref, computed } from 'vue'
-import type { MemoryType, AgentMemoryScope, MemoryEntry, Agent } from '../api/memory'
-import { loadMemories, getMemoryByName, createMemory, updateMemory, deleteMemory, loadAgentMemory, saveAgentMemory, clearAgentMemory, loadAgents } from '../api/memory'
+import type { MemoryKind, AgentMemoryScope, MemoryEntry, Agent, MemoryStats } from '../api/memory'
+import {
+  loadMemories, loadMemoryStats, getMemoryById, createMemory, updateMemory, deleteMemory,
+  loadAgentMemory, saveAgentMemory, clearAgentMemory, loadAgents,
+} from '../api/memory'
 
-export const useMemoryStore = defineStore('memory',()=>{
-  const panelOpen=ref(false);const mode=ref<'auto'|'agent'>('auto')
-  const memories=ref<MemoryEntry[]>([]);const loadingMemories=ref(false)
-  const agents=ref<Agent[]>([]);const loadingAgents=ref(false)
-  const selectedAgentType=ref<string|null>(null);const agentMemoryScope=ref<AgentMemoryScope>('project');const agentMemoryContent=ref('');const savingAgentMemory=ref(false)
-  function togglePanel(){panelOpen.value=!panelOpen.value;if(panelOpen.value){if(mode.value==='auto')fetchMemories();else fetchAgents()}}
-  function setPanelOpen(v:boolean){panelOpen.value=v;if(v){if(mode.value==='auto')fetchMemories();else fetchAgents()}}
-  function switchMode(m:'auto'|'agent'){mode.value=m;if(m==='auto')fetchMemories();else fetchAgents()}
-  function selectAgentForMemory(name:string){selectedAgentType.value=name;fetchAgentMemoryContent()}
-  async function fetchMemories(){loadingMemories.value=true;try{const res=await loadMemories();if(res.success)memories.value=res.memories}catch(e){console.warn('Failed to load memories:',e)}finally{loadingMemories.value=false}}
-  async function fetchMemoryByName(name:string):Promise<MemoryEntry|null>{return await getMemoryByName(name)}
-  async function createNewMemory(name:string,mt:MemoryType,desc:string,content:string,tags?:string[]):Promise<MemoryEntry|null>{const entry=await createMemory(name,mt,desc,content,tags);if(entry)memories.value.push(entry);return entry}
-  async function updateMemoryByName(name:string,data:{description?:string;content?:string;tags?:string[]}):Promise<MemoryEntry|null>{const entry=await updateMemory(name,data);if(entry){const idx=memories.value.findIndex(m=>m.name===name);if(idx>=0)memories.value[idx]=entry};return entry}
-  async function deleteMemoryByName(name:string):Promise<boolean>{const ok=await deleteMemory(name);if(ok)memories.value=memories.value.filter(m=>m.name!==name);return ok}
-  async function fetchAgents(){loadingAgents.value=true;try{agents.value=await loadAgents()}catch(e){console.warn('Failed to load agents:',e)}finally{loadingAgents.value=false}}
-  async function fetchAgentMemoryContent(){if(!selectedAgentType.value)return;try{agentMemoryContent.value=await loadAgentMemory(selectedAgentType.value,agentMemoryScope.value)}catch(e){console.warn('Failed to load agent memory:',e);agentMemoryContent.value=''}}
-  async function saveAgentMemoryContent(){if(!selectedAgentType.value)return;const a=selectedAgentType.value;savingAgentMemory.value=true;try{const ok=await saveAgentMemory(a,agentMemoryContent.value,agentMemoryScope.value);alert(ok?'Agent memory saved!':'Failed to save agent memory.');return ok}catch(e){console.warn('Failed to save:',e);alert('Failed to save agent memory.');return false}finally{savingAgentMemory.value=false}}
-  async function clearAgentMemoryContent(){if(!selectedAgentType.value)return;if(!confirm('Clear this agent memory? This cannot be undone.'))return false;const a=selectedAgentType.value;try{const ok=await clearAgentMemory(a,agentMemoryScope.value);if(ok){agentMemoryContent.value='';alert('Agent memory cleared.')}else{alert('Failed to clear agent memory.')};return ok}catch(e){console.warn('Failed to clear:',e);alert('Failed to clear agent memory.');return false}}
-  const totalMemories=computed(()=>memories.value.length)
-  const memoryStats=computed(()=>{const u=memories.value.filter(m=>m.memory_type==='user').length;const f=memories.value.filter(m=>m.memory_type==='feedback').length;const p=memories.value.filter(m=>m.memory_type==='project').length;const r=memories.value.filter(m=>m.memory_type==='reference').length;const t=totalMemories.value||1;return{user:u,feedback:f,project:p,reference:r,userPercent:Math.round((u/t)*100),feedbackPercent:Math.round((f/t)*100),projectPercent:Math.round((p/t)*100),referencePercent:Math.round((r/t)*100)}})
-  const wordCount=computed(()=>agentMemoryContent.value?agentMemoryContent.value.trim().split(/\s+/).filter(w=>w.length>0).length:0)
-  return {panelOpen,mode,memories,loadingMemories,agents,loadingAgents,selectedAgentType,agentMemoryScope,agentMemoryContent,savingAgentMemory,totalMemories,memoryStats,wordCount,togglePanel,setPanelOpen,switchMode,selectAgentForMemory,fetchMemories,fetchMemoryByName,createNewMemory,updateMemoryByName,deleteMemoryByName,fetchAgents,fetchAgentMemoryContent,saveAgentMemoryContent,clearAgentMemoryContent}
+export const useMemoryStore = defineStore('memory', () => {
+  const panelOpen = ref(false)
+  const mode = ref<'ledger' | 'agent'>('ledger')
+  const memories = ref<MemoryEntry[]>([])
+  const stats = ref<MemoryStats | null>(null)
+  const loadingMemories = ref(false)
+  const agents = ref<Agent[]>([])
+  const loadingAgents = ref(false)
+  const selectedAgentType = ref<string | null>(null)
+  const agentMemoryScope = ref<AgentMemoryScope>('project')
+  const agentMemoryContent = ref('')
+  const savingAgentMemory = ref(false)
+
+  function togglePanel() {
+    panelOpen.value = !panelOpen.value
+    if (panelOpen.value) {
+      if (mode.value === 'ledger') fetchMemories()
+      else fetchAgents()
+    }
+  }
+
+  function setPanelOpen(v: boolean) {
+    panelOpen.value = v
+    if (v) {
+      if (mode.value === 'ledger') fetchMemories()
+      else fetchAgents()
+    }
+  }
+
+  function switchMode(m: 'ledger' | 'agent') {
+    mode.value = m
+    if (m === 'ledger') fetchMemories()
+    else fetchAgents()
+  }
+
+  function selectAgentForMemory(name: string) {
+    selectedAgentType.value = name
+    fetchAgentMemoryContent()
+  }
+
+  async function fetchMemories() {
+    loadingMemories.value = true
+    try {
+      const res = await loadMemories()
+      if (res.success) memories.value = res.memories
+      stats.value = await loadMemoryStats()
+    } catch (e) {
+      console.warn('Failed to load experiences:', e)
+    } finally {
+      loadingMemories.value = false
+    }
+  }
+
+  async function fetchMemoryById(id: string): Promise<MemoryEntry | null> {
+    return await getMemoryById(id)
+  }
+
+  async function createNewMemory(
+    kind: MemoryKind,
+    statement: string,
+    rationale: string,
+    appliesTo?: { tools?: string[]; paths?: string[]; keywords?: string[] },
+    confidence?: number,
+  ): Promise<MemoryEntry | null> {
+    const entry = await createMemory(kind, statement, rationale, appliesTo, confidence)
+    if (entry) {
+      memories.value.unshift(entry)
+      stats.value = await loadMemoryStats()
+    }
+    return entry
+  }
+
+  async function updateMemoryById(
+    id: string,
+    data: { statement?: string; rationale?: string; kind?: MemoryKind; applies_to?: any; confidence?: number },
+  ): Promise<MemoryEntry | null> {
+    const entry = await updateMemory(id, data)
+    if (entry) {
+      const idx = memories.value.findIndex(m => m.id === id)
+      if (idx >= 0) memories.value[idx] = entry
+    }
+    return entry
+  }
+
+  async function deleteMemoryById(id: string): Promise<boolean> {
+    const ok = await deleteMemory(id)
+    if (ok) {
+      memories.value = memories.value.filter(m => m.id !== id)
+      stats.value = await loadMemoryStats()
+    }
+    return ok
+  }
+
+  async function fetchAgents() {
+    loadingAgents.value = true
+    try {
+      agents.value = await loadAgents()
+    } catch (e) {
+      console.warn('Failed to load agents:', e)
+    } finally {
+      loadingAgents.value = false
+    }
+  }
+
+  async function fetchAgentMemoryContent() {
+    if (!selectedAgentType.value) return
+    try {
+      agentMemoryContent.value = await loadAgentMemory(selectedAgentType.value, agentMemoryScope.value)
+    } catch (e) {
+      console.warn('Failed to load agent note:', e)
+      agentMemoryContent.value = ''
+    }
+  }
+
+  async function saveAgentMemoryContent(): Promise<boolean> {
+    if (!selectedAgentType.value) return false
+    const a = selectedAgentType.value
+    savingAgentMemory.value = true
+    try {
+      return await saveAgentMemory(a, agentMemoryContent.value, agentMemoryScope.value)
+    } catch (e) {
+      console.warn('Failed to save agent note:', e)
+      return false
+    } finally {
+      savingAgentMemory.value = false
+    }
+  }
+
+  async function clearAgentMemoryContent(): Promise<boolean> {
+    if (!selectedAgentType.value) return false
+    const a = selectedAgentType.value
+    try {
+      const ok = await clearAgentMemory(a, agentMemoryScope.value)
+      if (ok) agentMemoryContent.value = ''
+      return ok
+    } catch (e) {
+      console.warn('Failed to clear agent note:', e)
+      return false
+    }
+  }
+
+  const totalMemories = computed(() => memories.value.length)
+
+  const kindCounts = computed(() => {
+    const counts: Record<string, number> = {}
+    for (const m of memories.value) counts[m.kind] = (counts[m.kind] || 0) + 1
+    return counts
+  })
+
+  const kindPercent = (kind: string) => {
+    const t = totalMemories.value || 1
+    return Math.round(((kindCounts.value[kind] || 0) / t) * 100)
+  }
+
+  const wordCount = computed(() =>
+    agentMemoryContent.value ? agentMemoryContent.value.trim().split(/\s+/).filter(w => w.length > 0).length : 0,
+  )
+
+  return {
+    panelOpen, mode, memories, stats, loadingMemories, agents, loadingAgents,
+    selectedAgentType, agentMemoryScope, agentMemoryContent, savingAgentMemory,
+    totalMemories, kindCounts, kindPercent, wordCount,
+    togglePanel, setPanelOpen, switchMode, selectAgentForMemory,
+    fetchMemories, fetchMemoryById, createNewMemory, updateMemoryById, deleteMemoryById,
+    fetchAgents, fetchAgentMemoryContent, saveAgentMemoryContent, clearAgentMemoryContent,
+  }
 })

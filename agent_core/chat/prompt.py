@@ -30,10 +30,10 @@ def render_usernote_prompt(content: str) -> str:
 你有能力通过 usernote_write 工具读取和修改 usernote 的内容。usernote 是用户用来记录重要上下文、决策、待办事项的便签，优先级高于对话历史。当用户要求你修改 usernote 时，调用 usernote_write 工具。"""
 
 
-def compose_system_prompt(base: str, memory: str, project_path: str, usernote: str) -> str:
+def compose_system_prompt(base: str, experiences: str, project_path: str, usernote: str) -> str:
     return (
         base
-        + (memory or "")
+        + (experiences or "")
         + render_project_path_instruction(project_path)
         + render_usernote_prompt(usernote)
     )

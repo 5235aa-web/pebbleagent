@@ -11,7 +11,7 @@
 6. Inside chat_stream:
    a. get_cached_agent → load YAML agent → agent_loader.py
    b. get_agent_system_prompt → load prompt md
-   c. load_memory_prompt → memory prompt (hash-cached)
+   c. ledger.build_prompt → recalled experience entries + agent note (FTS + tool/path weighting)
    d. usernote + project_path_instruction concatenation
    e. get_agent_chat_messages_for_context → agent_chat.db
    f. _sanitize_messages → repair orphan tool messages

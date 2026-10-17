@@ -1,9 +1,11 @@
 """Turn preparation for the chat loop."""
 
 import asyncio
+import json
 import logging
+import re
 from dataclasses import dataclass, field
-from typing import Any, AsyncIterator, Dict, List, Optional
+from typing import Any, AsyncIterator, Dict, List, Optional, Tuple
 
 from openai import AsyncOpenAI
 
@@ -14,6 +16,34 @@ from .prompt import compose_system_prompt
 logger = logging.getLogger(__name__)
 
 IMAGE_EXT = {'.png': 'image/png', '.jpg': 'image/jpeg', '.jpeg': 'image/jpeg', '.gif': 'image/gif', '.webp': 'image/webp', '.bmp': 'image/bmp'}
+
+_FILE_PATTERN = re.compile(
+    r"[\w./\\-]+\.(?:py|ts|tsx|js|jsx|vue|json|md|yaml|yml|toml|css|scss|html|java|go|rs|cpp|c|h|sql)\b"
+)
+
+
+def _recent_context(messages: List[dict], limit: int = 8) -> Tuple[List[str], List[str]]:
+    """收集最近消息里的工具名与文件路径，用于经验检索加权。"""
+    tools: List[str] = []
+    paths: List[str] = []
+    for msg in messages[-limit:]:
+        calls = msg.get("tool_calls") or []
+        if isinstance(calls, str):
+            try:
+                calls = json.loads(calls)
+            except (TypeError, ValueError):
+                calls = []
+        for call in calls:
+            name = (call.get("function") or {}).get("name") if isinstance(call, dict) else None
+            if name and name not in tools:
+                tools.append(name)
+        content = msg.get("content")
+        if isinstance(content, str):
+            for match in _FILE_PATTERN.finditer(content):
+                candidate = match.group(0)
+                if candidate not in paths:
+                    paths.append(candidate)
+    return tools[:10], paths[:10]
 
 
 @dataclass
@@ -148,27 +178,21 @@ async def prepare_turn(service, params: Dict[str, Any], state: TurnState) -> Asy
     state.final_reasoning_effort = reasoning_effort if reasoning_effort is not None else "high"
 
     system_prompt = get_agent_system_prompt(agent_def)
-    memory_prompt_text = ""
+    experience_prompt = ""
     try:
-        service._auto_memory_manager.set_project(project_path or service._current_project_path)
-        from ..memory import load_memory_prompt, get_memory_prompt_for_agent
-        auto_memory_prompt = load_memory_prompt()
-        agent_memory_prompt = get_memory_prompt_for_agent(
+        ledger = service._ledger
+        ledger.set_project(project_path or service._current_project_path)
+        recent_tools, recent_paths = _recent_context(state.context_messages)
+        experience_prompt = ledger.build_prompt(
+            query=full_message or message,
+            tools=recent_tools,
+            paths=recent_paths,
             agent_type=agent_name,
-            project_path=project_path or service._current_project_path,
         )
-        current_memory = (auto_memory_prompt or "") + (agent_memory_prompt or "")
-        memory_hash = str(hash(current_memory))
-        if memory_hash != service._cached_memory_hash:
-            service._cached_memory_hash = memory_hash
-            service._cached_memory_prompt = ("\n\n" + auto_memory_prompt) if auto_memory_prompt else ""
-            if agent_memory_prompt:
-                service._cached_memory_prompt += "\n\n" + agent_memory_prompt
-        memory_prompt_text = service._cached_memory_prompt
-        if memory_prompt_text:
-            logger.info(f"[Turn] Injected memory prompt ({len(memory_prompt_text)} chars)")
+        if experience_prompt:
+            logger.info(f"[Turn] Injected experience ledger ({len(experience_prompt)} chars)")
     except Exception as e:
-        logger.warning(f"[Turn] Failed to build memory prompt: {e}")
+        logger.warning(f"[Turn] Failed to build experience prompt: {e}")
 
     usernote_content = ""
     try:
@@ -179,7 +203,7 @@ async def prepare_turn(service, params: Dict[str, Any], state: TurnState) -> Asy
         pass
 
     system_prompt = compose_system_prompt(
-        system_prompt, memory_prompt_text, service._current_project_path, usernote_content
+        system_prompt, experience_prompt, service._current_project_path, usernote_content
     )
 
     messages = [{"role": "system", "content": system_prompt}]

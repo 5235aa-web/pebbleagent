@@ -9,6 +9,7 @@ import threading
 import time
 import uuid
 from asyncio import CancelledError
+from datetime import datetime
 from pathlib import Path
 from typing import Any, Dict, Optional, Union
 
@@ -1566,197 +1567,166 @@ def handle_request(method: str, params: dict, rid: str) -> Optional[dict]:
             })
         return {"id": rid, "result": {"prerequisites": prereqs, "servers": servers}}
 
-    # ==================== Memory API ====================
+    # ==================== Experience Ledger API ====================
     def _get_working_project():
         """获取当前工作项目路径"""
         service = _ensure_service()
         path = getattr(service, '_current_project_path', None)
         return path or str(_PROJECT_ROOT)
 
+    def _ledger():
+        from agent_core.memory import get_ledger
+        instance = get_ledger()
+        instance.set_project(_get_working_project())
+        return instance
+
+    def _serialize_experience(entry):
+        def iso(ts):
+            if not ts:
+                return ""
+            return datetime.fromtimestamp(float(ts)).isoformat(timespec="seconds")
+        return {
+            "id": entry["id"],
+            "kind": entry["kind"],
+            "statement": entry["statement"],
+            "rationale": entry["rationale"],
+            "applies_to": entry["applies_to"],
+            "evidence": entry["evidence"],
+            "confidence": entry["confidence"],
+            "status": entry["status"],
+            "hits": entry["hits"],
+            "created_at": iso(entry["created_at"]),
+            "updated_at": iso(entry["updated_at"]),
+        }
+
     if method == "memory.list":
-        from agent_core.memory import get_auto_memory_manager
-        memory_type = params.get("memory_type", None)
-        auto_mgr = get_auto_memory_manager()
-        auto_mgr.set_project(_get_working_project())
+        kind = params.get("kind") or params.get("memory_type") or None
+        status = params.get("status", "active")
         try:
-            mem_type_enum = None
-            if memory_type:
-                from agent_core.memory.auto_memory_types import MemoryType as Mt
-                try:
-                    mem_type_enum = Mt(memory_type)
-                except ValueError:
-                    pass
-            entries = auto_mgr.list_memories(memory_type=mem_type_enum)
-            result = []
-            for e in entries:
-                result.append({
-                "name": e.name,
-                "memory_type": e.memory_type.value,
-                "description": e.description,
-                "content": e.content or "",
-                "tags": e.tags,
-                "created_at": e.created_at,
-                "updated_at": e.updated_at,
-                "file_path": e.file_path,
-                })
+            entries = _ledger().list(kind=kind, status=status if status != "all" else None)
+            result = [_serialize_experience(e) for e in entries]
             return {"id": rid, "result": {"success": True, "memories": result, "count": len(result)}}
         except Exception as e:
             logger.error(f"[Server] memory.list failed: {e}")
             return {"id": rid, "result": {"success": False, "memories": [], "count": 0, "error": str(e)}}
 
-    if method == "memory.get":
-        from agent_core.memory import get_auto_memory_manager
-        name = params.get("name", "")
-        if not name:
-            return {"id": rid, "error": {"code": -32000, "message": "name required"}}
-        auto_mgr = get_auto_memory_manager()
-        auto_mgr.set_project(_get_working_project())
+    if method == "memory.stats":
         try:
-            entry = auto_mgr.read_memory(name)
+            return {"id": rid, "result": {"success": True, **_ledger().stats()}}
+        except Exception as e:
+            logger.error(f"[Server] memory.stats failed: {e}")
+            return {"id": rid, "result": {"success": False, "error": str(e)}}
+
+    if method == "memory.get":
+        exp_id = params.get("id", "")
+        if not exp_id:
+            return {"id": rid, "error": {"code": -32000, "message": "id required"}}
+        try:
+            entry = _ledger().get(exp_id)
             if entry:
-                return {"id": rid, "result": {"success": True, "memory": {
-                "name": entry.name, "memory_type": entry.memory_type.value,
-                "description": entry.description, "content": entry.content,
-                "tags": entry.tags, "created_at": entry.created_at,
-                "updated_at": entry.updated_at, "file_path": entry.file_path,
-                }}}
+                return {"id": rid, "result": {"success": True, "memory": _serialize_experience(entry)}}
             return {"id": rid, "result": {"success": False, "memory": None, "error": "not found"}}
         except Exception as e:
             logger.error(f"[Server] memory.get failed: {e}")
             return {"id": rid, "result": {"success": False, "memory": None, "error": str(e)}}
 
     if method == "memory.create":
-        from agent_core.memory import get_auto_memory_manager
-        from agent_core.memory.auto_memory_types import MemoryType as Mt
-        name = params.get("name", "").strip()
-        memory_type = params.get("memory_type", "user")
-        description = params.get("description", "")
-        content = params.get("content", "")
-        tags = params.get("tags", None)
-        if not name or not content:
-            return {"id": rid, "error": {"code": -32000, "message": "name and content required"}}
-        auto_mgr = get_auto_memory_manager()
-        auto_mgr.set_project(_get_working_project())
+        kind = params.get("kind", "preference")
+        statement = (params.get("statement") or "").strip()
+        rationale = params.get("rationale", "")
+        applies_to = params.get("applies_to") or {}
+        confidence = _num(params.get("confidence"))
+        if not statement:
+            return {"id": rid, "error": {"code": -32000, "message": "statement required"}}
         try:
-            mt = Mt(memory_type)
-            entry = auto_mgr.create_memory(name, mt, description, content, tags)
-            return {"id": rid, "result": {"success": True, "memory": {
-            "name": entry.name, "memory_type": entry.memory_type.value,
-            "description": entry.description, "content": entry.content,
-            "tags": entry.tags, "created_at": entry.created_at,
-            "updated_at": entry.updated_at, "file_path": entry.file_path,
-            }}}
+            entry = _ledger().create(
+                kind=kind,
+                statement=statement,
+                rationale=rationale,
+                applies_to=applies_to if isinstance(applies_to, dict) else {},
+                confidence=confidence if confidence is not None else 0.8,
+            )
+            if not entry:
+                return {"id": rid, "result": {"success": False, "memory": None, "error": "invalid entry"}}
+            return {"id": rid, "result": {"success": True, "memory": _serialize_experience(entry)}}
         except Exception as e:
             logger.error(f"[Server] memory.create failed: {e}")
             return {"id": rid, "result": {"success": False, "memory": None, "error": str(e)}}
 
     if method == "memory.update":
-        from agent_core.memory import get_auto_memory_manager
-        name = params.get("name", "")
-        description = params.get("description", None)
-        content = params.get("content", None)
-        tags = params.get("tags", None)
-        if not name:
-            return {"id": rid, "error": {"code": -32000, "message": "name required"}}
-        auto_mgr = get_auto_memory_manager()
-        auto_mgr.set_project(_get_working_project())
+        exp_id = params.get("id", "")
+        if not exp_id:
+            return {"id": rid, "error": {"code": -32000, "message": "id required"}}
+        fields = {}
+        for key in ("statement", "rationale", "kind", "applies_to", "status"):
+            if params.get(key) is not None:
+                fields[key] = params[key]
+        if params.get("confidence") is not None:
+            fields["confidence"] = _num(params.get("confidence"))
         try:
-            ok = auto_mgr.update_memory(name, description=description, content=content, tags=tags)
-            if ok:
-                entry = auto_mgr.read_memory(name)
-                return {"id": rid, "result": {"success": True, "memory": {
-                "name": entry.name, "memory_type": entry.memory_type.value,
-                "description": entry.description, "content": entry.content,
-                "tags": entry.tags, "created_at": entry.created_at,
-                "updated_at": entry.updated_at, "file_path": entry.file_path,
-                } if entry else None}}
-            return {"id": rid, "result": {"success": False, "error": "update failed"}}
+            entry = _ledger().update(exp_id, **fields)
+            if entry:
+                return {"id": rid, "result": {"success": True, "memory": _serialize_experience(entry)}}
+            return {"id": rid, "result": {"success": False, "memory": None, "error": "not found"}}
         except Exception as e:
             logger.error(f"[Server] memory.update failed: {e}")
-            return {"id": rid, "result": {"success": False, "error": str(e)}}
+            return {"id": rid, "result": {"success": False, "memory": None, "error": str(e)}}
 
     if method == "memory.delete":
-        from agent_core.memory import get_auto_memory_manager
-        name = params.get("name", "")
-        if not name:
-            return {"id": rid, "error": {"code": -32000, "message": "name required"}}
-        auto_mgr = get_auto_memory_manager()
-        auto_mgr.set_project(_get_working_project())
+        exp_id = params.get("id", "")
+        if not exp_id:
+            return {"id": rid, "error": {"code": -32000, "message": "id required"}}
         try:
-            ok = auto_mgr.delete_memory(name)
-            return {"id": rid, "result": {"success": ok}}
+            return {"id": rid, "result": {"success": _ledger().delete(exp_id)}}
         except Exception as e:
             logger.error(f"[Server] memory.delete failed: {e}")
             return {"id": rid, "result": {"success": False, "error": str(e)}}
 
     if method == "memory.prompt":
-        from agent_core.memory import load_memory_prompt, get_memory_prompt_for_agent
         agent_name = params.get("agent_name", None)
+        query = params.get("query", "")
         try:
-            auto_prompt = load_memory_prompt()
-            if agent_name:
-                agent_prompt = get_memory_prompt_for_agent(agent_name)
-            else:
-                agent_prompt = ""
-            combined = (auto_prompt or "") + "\n\n" + (agent_prompt or "")
+            prompt = _ledger().build_prompt(query=query, agent_type=agent_name)
             return {"id": rid, "result": {
             "success": True,
-            "auto_memory_prompt": auto_prompt or "",
-            "agent_memory_prompt": agent_prompt or "",
-            "combined_prompt": combined,
+            "prompt": prompt,
+            "combined_prompt": prompt,
             }}
         except Exception as e:
             logger.error(f"[Server] memory.prompt failed: {e}")
             return {"id": rid, "result": {"success": False, "error": str(e)}}
 
     if method == "agent-memory.get":
-        from agent_core.memory import get_agent_memory_manager
-        from agent_core.memory.agent_memory import AgentMemoryScope
         agent_type = params.get("agent_type", "")
         scope = params.get("scope", "project")
         if not agent_type:
             return {"id": rid, "error": {"code": -32000, "message": "agent_type required"}}
-        agent_mgr = get_agent_memory_manager()
-        agent_mgr.set_project(_get_working_project())
         try:
-            sc = AgentMemoryScope(scope)
-            content = agent_mgr.read_memory(agent_type, sc)
-            return {"id": rid, "result": {"success": True, "agent_type": agent_type, "scope": scope, "content": content or "", "exists": content is not None}}
+            content = _ledger().get_agent_note(agent_type, scope)
+            return {"id": rid, "result": {"success": True, "agent_type": agent_type, "scope": scope, "content": content, "exists": bool(content)}}
         except Exception as e:
             logger.error(f"[Server] agent-memory.get failed: {e}")
             return {"id": rid, "result": {"success": False, "error": str(e)}}
 
     if method == "agent-memory.set":
-        from agent_core.memory import get_agent_memory_manager
-        from agent_core.memory.agent_memory import AgentMemoryScope
         agent_type = params.get("agent_type", "")
         scope = params.get("scope", "project")
         content = params.get("content", "")
         if not agent_type:
             return {"id": rid, "error": {"code": -32000, "message": "agent_type required"}}
-        agent_mgr = get_agent_memory_manager()
-        agent_mgr.set_project(_get_working_project())
         try:
-            sc = AgentMemoryScope(scope)
-            ok = agent_mgr.write_memory(agent_type, sc, content)
-            return {"id": rid, "result": {"success": ok}}
+            return {"id": rid, "result": {"success": _ledger().set_agent_note(agent_type, scope, content)}}
         except Exception as e:
             logger.error(f"[Server] agent-memory.set failed: {e}")
             return {"id": rid, "result": {"success": False, "error": str(e)}}
 
     if method == "agent-memory.clear":
-        from agent_core.memory import get_agent_memory_manager
-        from agent_core.memory.agent_memory import AgentMemoryScope
         agent_type = params.get("agent_type", "")
         scope = params.get("scope", "project")
         if not agent_type:
             return {"id": rid, "error": {"code": -32000, "message": "agent_type required"}}
-        agent_mgr = get_agent_memory_manager()
-        agent_mgr.set_project(_get_working_project())
         try:
-            sc = AgentMemoryScope(scope)
-            ok = agent_mgr.clear_memory(agent_type, sc)
-            return {"id": rid, "result": {"success": ok}}
+            return {"id": rid, "result": {"success": _ledger().clear_agent_note(agent_type, scope)}}
         except Exception as e:
             logger.error(f"[Server] agent-memory.clear failed: {e}")
             return {"id": rid, "result": {"success": False, "error": str(e)}}
