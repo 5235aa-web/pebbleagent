@@ -39,7 +39,7 @@
 - WebSocket auth (token file + query parameter), Origin checks, payload limits, connection cap
 - RPC dispatch: `gateway/rpc/` domain handlers (session, mcp, file, model, memory, permission, project, config, misc) behind a prefix router; `handle_request` builds an `RpcContext` and delegates
 - `file.*` RPC family with project-boundary guard; `permission.*` family with sync evaluation; `session.*`, `project.*`, `memory.*`, `mcp.*`, `pricing.*`
-- MCP lifecycle: auto-install (sha256-verified), project-level approval, background initialization, per-server runtime state
+- MCP lifecycle: auto-install (sha256-verified), project-level approval, background initialization, per-server runtime state; unconfigured optional servers render as Optional with a Set path hint instead of a hard error
 
 ## Frontend
 

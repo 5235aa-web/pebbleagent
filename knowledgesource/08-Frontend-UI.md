@@ -48,7 +48,7 @@
 | CompactDivider.vue | Compact segment divider pill (side lines + centered pill; folded state "N messages above are compacted" + down arrow, expanded "collapse messages above" + up arrow; click to toggle; theme variables, no Tooltip) | 🟡Aux |
 | AskQuestionCard.vue | Clarify question card (title / prompt / options label+detail / multiple) | 🟡Aux |
 | FileChangesPanel.vue | File changes panel | 🟡Aux |
-| McpPanel.vue | MCP status panel (**pending-approval section for untrusted project .mcp.json + Approve button (mcp.trust_project)**) | 🟡Aux |
+| McpPanel.vue | MCP status panel (**pending-approval section for untrusted project .mcp.json + Approve button (mcp.trust_project)**; unconfigured optional servers (placeholder command / missing checksum) show an Optional badge and a "Set path" hint, with install actions and raw errors collapsed behind More) | 🟡Aux |
 | ProjectPanel.vue | Project files panel (multi-project: click path to expand the project list, switch active, add, hover delete cross + ConfirmDialog, one-click adopt of unassigned; file tree) | 🟡Aux |
 | MemoryCenterPanel.vue | Memory center panel | 🟡Aux |
 | PermissionDialog.vue | Permission dialog | 🟡Aux |

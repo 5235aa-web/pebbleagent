@@ -138,8 +138,8 @@ class StdioTransport:
         # 占位符路径检测：未配置的 server 直接报明确错误，不尝试启动
         if self.command and "REPLACE_WITH" in self.command:
             raise RuntimeError(
-                f"MCP server command is a placeholder ('{self.command}'); "
-                f"configure a real executable path to enable this server"
+                f"MCP server is not configured (command: '{self.command}'); "
+                f"select the executable path in the MCP panel"
             )
         # 清理上一次连接的残留状态
         self._running = False

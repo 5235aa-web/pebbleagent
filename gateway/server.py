@@ -251,8 +251,8 @@ def _install_download_server(server_name: str, entry: dict) -> str:
             # 未配置校验和 → 拒绝自动下载（网络下载的二进制必须校验；
             # 手动 path 模式不受影响，或向 mcp_install.json 补充 release hash 后启用）
             raise RuntimeError(
-                f"'{server_name}' has no sha256 configured in mcp_install.json; automatic download refused. "
-                f"Add the release hash to mcp_install.json, or install manually via the 'path' option."
+                f"'{server_name}' has no release checksum configured; automatic install is unavailable. "
+                f"Download the release manually and use Set path, or add its sha256 to mcp_install.json."
             )
         # zip → 解压找 exe；否则视为裸 exe 直接落位
         try:
