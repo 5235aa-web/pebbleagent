@@ -59,6 +59,7 @@
 - `requirements.txt` — Python 3.11+ (numpy>=2.4 floor; dev environment 3.14), core / optional / skills / build groups
 - `ruff.toml` — static analysis gate (rules F + E9); CI installs ruff 0.17.1 and runs it after compileall
 - `CONTRIBUTING.md` — contributor setup, pre-PR checks, test conventions, code conventions
+- Launch scripts: UTF-8 with `chcp 65001` set before any Chinese console output
 - `llm_providers.json` — providers, keys, models, reasoning effort
 - `permission_rules.json` / `path_whitelist.json` — permission policy
 - `model_pricing.json` / `cn_holidays.json` — billing table with peak/off-peak tiers and holiday data (hot reload)

@@ -1,4 +1,5 @@
 @echo off
+chcp 65001 >nul
 title PebbleAgent GUI
 cd /d "%~dp0"
 
