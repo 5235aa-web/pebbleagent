@@ -27,30 +27,46 @@ const theme = ref(localStorage.getItem(THEME_KEY) || 'amber')
 // expose fileDrop state to child components
 provide('fileDrop', fileDrop)
 
+function clearThemeVars(r: HTMLElement) {
+  ;['--primary', '--accent', '--muted', '--border-gold', '--glow-start', '--glow-end'].forEach(v => r.style.removeProperty(v))
+}
+
+function applyCustomTheme(r: HTMLElement, id: string): boolean {
+  const s = localStorage.getItem(`pebble-theme-colors-${id}`)
+  if (!s) return false
+  try {
+    const c = JSON.parse(s)
+    clearThemeVars(r)
+    r.setAttribute('data-theme', '')
+    ;['--primary', '--accent', '--muted'].forEach(v => r.style.setProperty(v, c[v.substring(2)]))
+    r.style.setProperty('--border-gold', c.borderGold || c['border-gold'] || '')
+    r.style.setProperty('--glow-start', c.glowStart || c['glow-start'] || '')
+    r.style.setProperty('--glow-end', c.glowEnd || c['glow-end'] || '')
+    return true
+  } catch {
+    return false
+  }
+}
+
 function changeTheme(id: string) {
   const r = document.getElementById('app')
   if (!r) return
   r.classList.add('theme-transitioning')
-  requestAnimationFrame(() => {
-    if (id.startsWith('custom-')) {
-      const s = localStorage.getItem(`pebble-theme-colors-${id}`)
-      if (s) {
-        try {
-          const c = JSON.parse(s)
-          r.setAttribute('data-theme', '')
-          ;['--primary','--accent','--muted'].forEach(v=>r.style.setProperty(v,c[v.substring(2)]))
-          r.style.setProperty('--border-gold',c.borderGold||c['border-gold']||'')
-          r.style.setProperty('--glow-start',c.glowStart||c['glow-start']||'')
-          r.style.setProperty('--glow-end',c.glowEnd||c['glow-end']||'')
-        } catch { /* ignore */ }
-      }
-    } else {
-      ;['--primary', '--accent', '--muted', '--border-gold', '--glow-start', '--glow-end'].forEach(v => r.style.removeProperty(v))
-      r.setAttribute('data-theme', id)
-    }
+  const custom = id.startsWith('custom-')
+  const applied = custom ? applyCustomTheme(r, id) : false
+  if (!custom) {
+    clearThemeVars(r)
+    r.setAttribute('data-theme', id)
+  }
+  if (custom && !applied) {
+    clearThemeVars(r)
+    r.setAttribute('data-theme', 'amber')
+    localStorage.removeItem(THEME_KEY)
+    theme.value = 'amber'
+  } else {
     localStorage.setItem(THEME_KEY, id)
     theme.value = id
-  })
+  }
   setTimeout(() => r.classList.remove('theme-transitioning'), 350)
 }
 

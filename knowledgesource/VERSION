@@ -46,6 +46,7 @@
 
 - Streaming render pipeline: 120ms throttled refresh, line-level cache, compacted-message folding with divider + pill (`SegmentedMessageList.vue`, segments split by compaction boundaries)
 - Styles: `styles/index.css` imports ten domain files in cascade order (base / layout / sidebar / messages / input / panels / widgets / cards / settings / overlays)
+- Theme system: five built-in palettes plus custom colors stored in localStorage; malformed custom lists reset to an empty array; save failures surface inline in the picker; a custom theme whose color data is missing falls back to amber
 - Message flow: execution-order rendering (thinking / tool / question / content), inline clarify cards (title / prompt / options label+detail / multiple), multi-question answers, image attachments with viewer
 - Compaction card: 任务 / 现状 / 决定 / 待办 / 线索 sections with counts
 - HTML preview: sandboxed iframe (allow-scripts only), injected meta CSP, postMessage bridge, PNG capture, interactive comment layer

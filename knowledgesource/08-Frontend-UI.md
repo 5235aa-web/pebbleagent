@@ -56,7 +56,7 @@
 | ConfirmDialog.vue | Generic confirm dialog | 🟡Aux |
 | Tooltip.vue | Generic Tooltip | 🟡Aux |
 | TreeNodes.vue | Project file-tree node (recursive component; click file → file.open in the system default app; expand directory → file.search limit 100 lazy load; per-extension icon/color mapping) | 🟡Aux |
-| ThemeSwitcher.vue | Theme switcher | 🟡Aux |
+| ThemeSwitcher.vue | Theme switcher (five built-in themes + custom colors; custom entries and per-theme color sets live in localStorage; malformed custom lists reset to an empty array; save failures stay in the picker with an inline error; a custom theme whose color data is missing falls back to amber and clears the stored theme key) | 🟡Aux |
 | FileAttach.vue | File attachment entry | 🟡Aux |
 | PathWhitelist.vue | Path whitelist management (editing path is saved on outside click) | 🟡Aux |
 | QuickNotes.vue | Quick notes (backend-persisted; instant save on blur+debounce; **load timing: onStatus (after WS connect) + toggle open**; pending new note is committed on outside click) | 🟡Aux |

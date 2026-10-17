@@ -66,11 +66,11 @@
 }
 
 /* ===== 主题色板系统 ===== */
-/* data-theme 属性加在 #root 上，切换主题时只改金色系 4 个变量 */
+/* data-theme 属性加在 #app 上，切换主题时只改金色系 4 个变量 */
 
 /* 主题切换过渡动画（只持续 300ms，不影响日常交互） */
-#root.theme-transitioning *,
-#root.theme-transitioning {
+#app.theme-transitioning *,
+#app.theme-transitioning {
   transition: color 0.3s ease,
               background-color 0.3s ease,
               border-color 0.3s ease !important;
