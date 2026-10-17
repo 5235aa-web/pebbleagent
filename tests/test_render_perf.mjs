@@ -45,7 +45,7 @@ console.log('2) Segment freeze (MessageBubble.vue) — must stay reverted')
 check('isFrozen function removed', !mb.includes('function isFrozen'))
 check('no v-memo attribute usage', !mb.includes('v-memo="['))
 check('v-for reverted (no index var)', mb.includes('v-for="item in message.executionOrder"'))
-check('revert note present', mb.includes('段级 v-memo 冻结已回退'))
+check('revert note present', mb.includes('不要在 v-for 内使用 v-memo'))
 check('reasoning branch intact', mb.includes("item.type==='reasoning'&&item.content"))
 check('question branch intact', mb.includes("item.type==='question'"))
 

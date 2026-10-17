@@ -25,8 +25,9 @@ class U:
 _orig = svc_mod.current_pricing_period
 
 def calc_with(period, model, usage):
-    svc_mod.current_pricing_period = lambda: period
-    return svc._calculate_cost(model, usage)
+    tracker = svc._ensure_usage()
+    tracker.period_fn = lambda: period
+    return tracker.calculate_cost(model, usage)
 
 fails = []
 def check(cond, msg):

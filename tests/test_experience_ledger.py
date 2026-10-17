@@ -16,6 +16,7 @@ if ROOT not in sys.path:
 sys.stdout.reconfigure(encoding="utf-8", errors="replace")
 
 TMP = tempfile.mkdtemp(prefix="pebble_ledger_")
+os.environ["PEBBLE_HOME"] = TMP
 os.environ["PEBBLE_CONFIG_DIR"] = TMP
 os.environ["PEBBLE_MEMORY_DB"] = os.path.join(TMP, "experience.db")
 
@@ -141,11 +142,17 @@ def main() -> int:
     with open(os.path.join(project_dir, "feedback_style.md"), "w", encoding="utf-8") as fh:
         fh.write("---\ntype: feedback\ndescription: 不要用 emoji\ntags:\n  - style\n---\n用户要求输出不使用 emoji。")
     old_home = os.environ["PEBBLE_CONFIG_DIR"]
+    old_pebble_home = os.environ.get("PEBBLE_HOME")
     os.environ["PEBBLE_CONFIG_DIR"] = legacy_root
+    os.environ["PEBBLE_HOME"] = legacy_root
     legacy_db_path = os.path.join(TMP, "legacy.db")
     legacy_ledger = ExperienceLedger(legacy_db_path)
     imported = migrate_legacy(legacy_ledger.db)
     os.environ["PEBBLE_CONFIG_DIR"] = old_home
+    if old_pebble_home is None:
+        os.environ.pop("PEBBLE_HOME", None)
+    else:
+        os.environ["PEBBLE_HOME"] = old_pebble_home
     check("migration imports records", imported == 1, f"got {imported}")
     legacy_ledger.set_project("E:\\demo")
     migrated = legacy_ledger.list()

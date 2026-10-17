@@ -2,7 +2,7 @@
 
 <img src="assets/logo.png" alt="PEBBLE-AGENT" width="720">
 
-**An open-source, extensible desktop AI agent with tools, skills, MCP servers, and a self-maintained code knowledge base.**
+**An open-source, extensible desktop AI agent with tools, skills, MCP servers, a self-maintained code knowledge base, and cross-session memory.**
 
 [![checks](https://img.shields.io/github/actions/workflow/status/5235aa-web/pebbleagent/checks.yml?style=flat-square&label=checks&labelColor=1f1f1f&color=00E676)](https://github.com/5235aa-web/pebbleagent/actions/workflows/checks.yml)
 [![License: AGPL-3.0](https://img.shields.io/badge/License-AGPL--3.0-CE93D8?style=flat-square&labelColor=1f1f1f)](LICENSE)
@@ -18,8 +18,10 @@
 ## Features
 
 - **Code Knowledge Base (CKB).** The agent indexes your repository into a chaptered knowledge base, verifies it against the source, and keeps it in sync as the project evolves.
+- **Cross-session experience ledger.** Corrections, constraints, and preferences you express during work become evidence-backed entries in a local SQLite ledger. Later turns recall the relevant ones by full-text relevance plus tool and path context, and superseded entries are retired automatically. Capture and recall run on rules, not extra model calls.
 - **Snapshot & rollback.** Every write is snapshotted before it happens; diffs are tracked per file, and you can roll back a single file or an entire change set — with an undo for the rollback itself.
-- **Permission & audit system.** Allow / deny / ask rule sets, a path whitelist, fail-closed checks, and a tamper-evident audit log (chained checksums) for every sensitive operation.
+- **Permission & audit system.** Four permission modes (manual, auto, read-only, locked), rule sets with `tool:pattern` matching, a path whitelist, fail-closed checks, and a tamper-evident audit log (chained checksums) for every sensitive operation.
+- **Skills and MCP servers.** 114 bundled skills load on demand; MCP servers over stdio, SSE, HTTP, or WebSocket are installed with sha256 verification and approved per project.
 - **Real-time cost tracking.** Per-model pricing with peak/off-peak tiers (including Chinese statutory holidays) and cache-hit accounting, updated live per conversation.
 - **HTML preview with feedback bridge.** Generated HTML pages render in a sandboxed preview; click any element to leave a comment, and the agent iterates on the page from your annotations.
 - **Streaming agent chat with full execution visibility.** Reasoning, tool calls, file changes, and results unfold as a step-by-step timeline instead of a black box.
@@ -106,14 +108,14 @@ All runtime data lives in `%USERPROFILE%\.pebble\` (override with the `PEBBLE_HO
 
 - **LLM providers** — providers, API keys, models, and reasoning effort are configured in `llm_providers.json` or from the in-app settings.
 - **MCP servers** — the MCP panel installs and manages servers; tokens and executable paths are stored in `~/.pebble/.mcp.json`.
-- **Permissions** — allow / deny / ask rules live in `permission_rules.json`; the path whitelist in `path_whitelist.json`.
+- **Permissions** — modes and `tool:pattern` rules live in `permission_rules.json`; the path whitelist in `path_whitelist.json`.
 - **Pricing** — the per-model price table (with peak/off-peak tiers) is in `model_pricing.json`; holiday data in `cn_holidays.json`.
 
 ## Project Structure
 
 ```
 gateway/          Python WebSocket gateway (JSON-RPC, sessions, permissions)
-agent_core/       Agent core (chat service, tool orchestration, memory, snapshots)
+agent_core/       Agent core (chat service, tool orchestration, experience ledger, snapshots)
 tools/            Built-in tools
 skills/           Bundled skills
 knowledgesource/  Code knowledge base (chaptered)

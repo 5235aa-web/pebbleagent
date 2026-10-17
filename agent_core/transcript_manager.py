@@ -143,7 +143,7 @@ class NoteEntry(TranscriptEntry):
 
 def get_config_home() -> str:
     """获取配置主目录"""
-    env_path = os.environ.get("PEBBLE_CONFIG_DIR")
+    env_path = os.environ.get("PEBBLE_HOME") or os.environ.get("PEBBLE_CONFIG_DIR")
     if env_path:
         return env_path
     return DEFAULT_CONFIG_HOME

@@ -24,7 +24,9 @@ _PATH_SANITIZE = re.compile(r"[\\/:]+")
 
 
 def _config_home() -> str:
-    home = os.environ.get("PEBBLE_CONFIG_DIR") or os.path.join(os.path.expanduser("~"), ".pebble")
+    home = (os.environ.get("PEBBLE_HOME")
+            or os.environ.get("PEBBLE_CONFIG_DIR")
+            or os.path.join(os.path.expanduser("~"), ".pebble"))
     return os.path.abspath(os.path.expanduser(home))
 
 

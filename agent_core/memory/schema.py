@@ -132,7 +132,9 @@ def default_db_path() -> str:
     override = os.environ.get("PEBBLE_MEMORY_DB")
     if override:
         return os.path.abspath(os.path.expanduser(override))
-    home = os.environ.get("PEBBLE_CONFIG_DIR") or os.path.join(os.path.expanduser("~"), ".pebble")
+    home = (os.environ.get("PEBBLE_HOME")
+            or os.environ.get("PEBBLE_CONFIG_DIR")
+            or os.path.join(os.path.expanduser("~"), ".pebble"))
     return os.path.join(os.path.abspath(os.path.expanduser(home)), "experience.db")
 
 
