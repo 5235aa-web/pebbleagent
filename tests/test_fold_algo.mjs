@@ -1,12 +1,12 @@
 // test_fold_algo.mjs — compact-segment fold algorithm, EXECUTED FROM REAL SOURCE.
 // The three computeds (segments / segIndex / renderItems) are extracted from
-// VirtualMessageList.vue and run directly, so any algorithm drift in the component
+// SegmentedMessageList.vue and run directly, so any algorithm drift in the component
 // fails this test loudly. Extraction is intentionally strict: if the source shape
 // changes, the extractor throws and the test must be updated.
 // Run: node tests/test_fold_algo.mjs   (exit 0 = pass)
 import { readFileSync } from 'node:fs'
 
-const vue = readFileSync(new URL('../ui-gui-vue3/src/components/VirtualMessageList.vue', import.meta.url), 'utf8')
+const vue = readFileSync(new URL('../ui-gui-vue3/src/components/SegmentedMessageList.vue', import.meta.url), 'utf8')
 
 let PASS = 0, FAIL = 0
 function check(name, cond, detail = '') {
@@ -17,7 +17,7 @@ function check(name, cond, detail = '') {
 // ==================== Source extraction ====================
 function extract(re, label) {
   const m = vue.match(re)
-  if (!m) throw new Error(`cannot extract ${label} from VirtualMessageList.vue — update the extractor`)
+  if (!m) throw new Error(`cannot extract ${label} from SegmentedMessageList.vue — update the extractor`)
   return m[1]
 }
 function convert(src, label, replacements) {

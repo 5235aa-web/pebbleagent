@@ -9,7 +9,7 @@
               agent_core/transcript_manager.py (JSONL transcript archive), gateway/permission_audit.py (audit DB)
                  ↑ read/write
 [Tools]       tools/ (BaseTool + ToolRegistry), agent_core/extensions/, agent_core/mcp/
-              Tool infrastructure: bash_validator (6-layer command validation) / code_network_guardV2 (3 network guards)
+              Tool infrastructure: bash_validator (6-layer command validation) / code_network_guardV2 (3 network guards, per-session counters)
               / lsp_client (backend of 9 LSP tools)
                  ↑ call
 [Services]    agent_core/agent_chat_service_v2.py (🔴core 117KB)
@@ -50,5 +50,5 @@
 | permission_audit.py | Data (audit permission_audit.db) | permission_enforcer, tool_executor_impl | permission_audit.db |
 | bash_validator.py | Tool infra (6-layer command validation) | tool_executor_impl, permission_enforcer, tool_concurrency | - |
 | lsp_client.py | Tool infra (LSP client) | tool_executor_impl | LSP server subprocess |
-| code_network_guardV2.py | Tool infra (network guards) | agent_chat_service_v2, tool_executor_impl | - |
+| code_network_guardV2.py | Tool infra (network guards; counters scoped per session via contextvar) | agent_chat_service_v2, tool_executor_impl | - |
 | src-tauri/lib.rs | Desktop shell (Tauri 2) | - | pebble-backend.exe (sidecar launch/cleanup) |

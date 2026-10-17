@@ -1,0 +1,378 @@
+/* ===== 输入区 ===== */
+.ia {
+  padding: 10px 20px 12px;
+  border-top: 1px solid var(--border-subtle);
+  background: var(--bg-surface);
+}
+.ia-hint {
+  font-size: 10px;
+  color: var(--muted);
+  margin-bottom: 4px;
+  min-height: 20px;
+  display: flex;
+  align-items: center;
+  gap: 2px;
+}
+
+/* ===== 附件预览芯片 ===== */
+.att-preview {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 4px;
+  margin-bottom: 6px;
+}
+.att-chip {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  padding: 3px 8px;
+  background: var(--bg-card);
+  border: 1px solid var(--border-subtle);
+  border-radius: 12px;
+  font-size: 10px;
+  color: var(--text-body);
+  line-height: 1.3;
+}
+.att-chip-icon { font-size: 11px; }
+.att-chip-name {
+  max-width: 120px;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.att-chip-size { color: var(--muted); opacity: .5; font-size: 9px; }
+.att-chip-rm {
+  background: none;
+  border: none;
+  cursor: pointer;
+  color: var(--muted);
+  font-size: 13px;
+  line-height: 1;
+  padding: 0 1px;
+  opacity: .5;
+  transition: opacity .15s;
+}
+.att-chip-rm:hover { opacity: 1; color: var(--error); }
+
+/* ===== 拖放覆盖层 ===== */
+.ia-dragging .ih,
+.ia-dragging .ia-hint { opacity: .35; pointer-events: none; }
+.ia-drop-overlay {
+  position: absolute;
+  inset: -4px;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  gap: 10px;
+  background: rgba(13,13,13,0.92);
+  border: 2px dashed var(--border-gold);
+  border-radius: 12px;
+  color: var(--accent);
+  font-size: 12px;
+  z-index: 30;
+  pointer-events: none;
+  font-family: var(--font-mono);
+  letter-spacing: .5px;
+  animation: drop-fade .12s ease;
+}
+@keyframes drop-fade {
+  from { opacity: 0; }
+  to { opacity: 1; }
+}
+
+.ih { display: flex; gap: 6px; align-items: flex-end; position: relative; }
+
+/* 输入框上边缘拖拽手柄（向上拉伸输入框；高度持久化于 localStorage） */
+.ih-resize {
+  position: absolute;
+  top: -3px;
+  left: 0;
+  right: 0;
+  height: 6px;
+  cursor: ns-resize;
+  z-index: 6;
+  touch-action: none;
+}
+.ih-resize::after {
+  content: '';
+  position: absolute;
+  left: 0;
+  right: 0;
+  top: 2px;
+  height: 2px;
+  border-radius: 1px;
+  background: var(--border-gold);
+  opacity: 0;
+  transition: opacity .15s ease;
+}
+.ih-resize:hover::after { opacity: .5; }
+.ih-resize.active::after { opacity: .85; }
+/* 拖拽中：全局锁定光标与文本选择 */
+body.ia-resizing, body.ia-resizing * { cursor: ns-resize !important; user-select: none !important; }
+
+/* ===== File Attach（输入框上方） ===== */
+.fa {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  flex: 1;
+  min-width: 0;
+  transition: all .2s var(--spring);
+}
+.fa-dragover {
+  background: rgba(255,191,0,0.04);
+  border-radius: 4px;
+  padding: 1px 4px;
+  margin: -1px -4px;
+  outline: 1px dashed rgba(255,191,0,0.2);
+  outline-offset: 1px;
+}
+.fa-input { display: none; }
+.fa-btn {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 18px;
+  height: 18px;
+  border: 1px solid transparent;
+  border-radius: 3px;
+  background: transparent;
+  color: var(--muted);
+  cursor: pointer;
+  transition: all .2s var(--spring);
+  flex-shrink: 0;
+  opacity: .55;
+}
+.fa-btn:hover {
+  opacity: 1;
+  color: var(--accent);
+  border-color: var(--border-gold);
+  background: var(--bg-hover);
+}
+.fa-btn svg { width: 12px; height: 12px; }
+.fa-hint {
+  font-size: 9px;
+  color: var(--accent);
+  opacity: .7;
+  letter-spacing: .5px;
+  user-select: none;
+  text-transform: uppercase;
+  font-weight: 500;
+}
+.fa-pills {
+  display: inline-flex;
+  gap: 3px;
+  flex-wrap: wrap;
+  align-items: center;
+  flex: 1;
+  min-width: 0;
+}
+.fa-pill {
+  display: inline-flex;
+  align-items: center;
+  gap: 3px;
+  padding: 1px 4px 1px 3px;
+  border-radius: 3px;
+  font-size: 9px;
+  line-height: 1.5;
+  background: var(--bg-input);
+  border: 1px solid var(--border-subtle);
+  color: var(--text-body);
+  transition: border-color .15s, background .15s;
+  max-width: 160px;
+  animation: fa-pill-in .18s var(--spring);
+}
+@keyframes fa-pill-in {
+  from { opacity: 0; transform: scale(.85); }
+  to { opacity: 1; transform: scale(1); }
+}
+.fa-pill:hover {
+  border-color: var(--border-hover);
+  background: var(--bg-hover);
+}
+.fa-dot {
+  width: 4px;
+  height: 4px;
+  border-radius: 50%;
+  flex-shrink: 0;
+}
+.fa-name {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  color: var(--text-body);
+  max-width: 90px;
+}
+.fa-rm {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 12px;
+  height: 12px;
+  border: none;
+  border-radius: 2px;
+  background: transparent;
+  color: var(--muted);
+  cursor: pointer;
+  font-size: 11px;
+  line-height: 1;
+  padding: 0;
+  transition: all .1s;
+  font-family: var(--font-mono);
+  flex-shrink: 0;
+  opacity: .3;
+}
+.fa-pill:hover .fa-rm { opacity: .7; }
+.fa-rm:hover {
+  opacity: 1 !important;
+  background: rgba(239,83,80,0.12);
+  color: var(--error);
+}
+
+/* File type dot colors */
+.cat-pdf .fa-dot { background: #ef5350; }
+.cat-excel .fa-dot { background: #4caf50; }
+.cat-word .fa-dot { background: #44aaff; }
+.cat-image .fa-dot { background: #ab47bc; }
+.cat-code .fa-dot { background: var(--primary); }
+.cat-doc .fa-dot { background: var(--muted); opacity: .4; }
+
+/* ===== Message Search（对话内搜索） ===== */
+.ms {
+  position: relative;
+  display: inline-flex;
+  align-items: center;
+  margin-left: auto;
+}
+.ms-btn {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 18px;
+  height: 18px;
+  border: 1px solid transparent;
+  border-radius: 3px;
+  background: transparent;
+  color: var(--muted);
+  cursor: pointer;
+  transition: all .2s var(--spring);
+  flex-shrink: 0;
+  opacity: .45;
+}
+.ms-btn:hover {
+  opacity: 1;
+  color: var(--accent);
+  border-color: var(--border-gold);
+  background: var(--bg-hover);
+}
+.ms-btn svg { width: 11px; height: 11px; }
+.ms-wrap {
+  display: inline-flex;
+  align-items: center;
+  gap: 3px;
+  border: 1px solid var(--border-subtle);
+  border-radius: 4px;
+  padding: 1px 4px;
+  background: var(--bg-input);
+  position: relative;
+}
+.ms-icon {
+  flex-shrink: 0;
+  color: var(--muted);
+  opacity: .5;
+}
+.ms-input {
+  border: none;
+  background: transparent;
+  color: var(--text);
+  font-family: var(--font-mono);
+  font-size: 10px;
+  outline: none;
+  width: 130px;
+  padding: 1px 0;
+}
+.ms-input::placeholder { color: var(--muted); opacity: .35; }
+.ms-close {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 14px;
+  height: 14px;
+  border: none;
+  border-radius: 2px;
+  background: transparent;
+  color: var(--muted);
+  cursor: pointer;
+  opacity: .4;
+  transition: opacity .15s;
+  flex-shrink: 0;
+  padding: 0;
+}
+.ms-close:hover { opacity: 1; color: var(--text); }
+.ms-popup {
+  position: absolute;
+  bottom: calc(100% + 6px);
+  right: 0;
+  min-width: 280px;
+  max-width: 400px;
+  max-height: 300px;
+  overflow-y: auto;
+  background: var(--bg-surface);
+  border: 1px solid var(--border-subtle);
+  border-radius: 8px;
+  box-shadow: 0 8px 24px rgba(0,0,0,0.4);
+  z-index: 10000;
+  animation: ms-popup-in 0.12s ease-out;
+}
+@keyframes ms-popup-in {
+  from { opacity: 0; transform: translateY(4px); }
+  to { opacity: 1; transform: translateY(0); }
+}
+.ms-empty {
+  padding: 14px 16px;
+  font-size: 10px;
+  color: var(--muted);
+  text-align: center;
+}
+.ms-item {
+  display: flex;
+  align-items: flex-start;
+  gap: 8px;
+  padding: 8px 12px;
+  cursor: pointer;
+  transition: background .1s;
+  border-bottom: 1px solid var(--border-subtle);
+}
+.ms-item:last-child { border-bottom: none; }
+.ms-item:hover,
+.ms-item.active { background: var(--bg-hover); }
+.ms-item-role {
+  flex-shrink: 0;
+  font-size: 9px;
+  font-weight: 600;
+  padding: 1px 6px;
+  border-radius: 3px;
+  text-transform: uppercase;
+  letter-spacing: .3px;
+  margin-top: 1px;
+}
+.ms-item-role.user { background: rgba(255,160,138,0.12); color: var(--accent); }
+.ms-item-role.agent { background: rgba(120,200,140,0.12); color: #4a9e5a; }
+.ms-item-text {
+  font-size: 10px;
+  line-height: 1.5;
+  color: var(--text-body);
+  word-break: break-word;
+  white-space: pre-wrap;
+  font-family: var(--font-mono);
+}
+.ms-info {
+  padding: 5px 12px;
+  font-size: 9px;
+  color: var(--muted);
+  opacity: .5;
+  text-align: right;
+  border-top: 1px solid var(--border-subtle);
+}
+

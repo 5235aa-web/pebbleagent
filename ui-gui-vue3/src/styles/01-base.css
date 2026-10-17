@@ -1,0 +1,137 @@
+/* ===== PebbleAgent GUI - 琥珀终端样式 ===== */
+
+/* ----- Tauri 无边框窗口 resize 句柄 ----- */
+.resize-n, .resize-s { position: fixed; left: 0; right: 0; height: 4px; z-index: 9999; }
+.resize-e, .resize-w { position: fixed; top: 0; bottom: 0; width: 4px; z-index: 9999; }
+.resize-ne, .resize-nw, .resize-se, .resize-sw { position: fixed; width: 8px; height: 8px; z-index: 9999; }
+.resize-n { top: 0; cursor: n-resize; }
+.resize-s { bottom: 0; cursor: s-resize; }
+.resize-e { right: 0; cursor: e-resize; }
+.resize-w { left: 0; cursor: w-resize; }
+.resize-ne { top: 0; right: 0; cursor: ne-resize; }
+.resize-nw { top: 0; left: 0; cursor: nw-resize; }
+.resize-se { bottom: 0; right: 0; cursor: se-resize; }
+.resize-sw { bottom: 0; left: 0; cursor: sw-resize; }
+
+/* ----- 拖拽文件区域（底部 180px） ----- */
+/* ----- 拖拽文件区域 ----- */
+.drag-zone { position: fixed; bottom: 0; left: 0; right: 0; height: 200px; z-index: 9999; background: rgba(255,191,0,0.1); border: 3px dashed var(--accent); border-radius: 14px; margin: 0 20px 20px; display: flex; align-items: center; justify-content: center; pointer-events: none; }
+.drag-zone-inner { display: flex; flex-direction: column; align-items: center; gap: 8px; color: var(--accent); }
+.drag-zone-inner svg { opacity: 0.7; }
+.drag-zone-inner span { font-size: 14px; font-weight: 600; opacity: 0.85; }
+.ia-atts { display: flex; flex-wrap: wrap; gap: 4px; padding: 4px 10px 6px; }
+/* 图片细节级别选择器（DeepSeek Vision detail: auto/low/original） */
+.ia-dl { display: inline-flex; align-items: center; gap: 2px; margin-left: auto; padding-left: 8px; }
+.ia-dl-lb { font-size: 9px; color: var(--muted); text-transform: uppercase; letter-spacing: .5px; margin-right: 2px; opacity: .7; }
+.ia-dl-btn { border: 1px solid var(--border-subtle); background: transparent; color: var(--muted); border-radius: 3px; font-size: 10px; line-height: 1; padding: 3px 7px; cursor: pointer; transition: all .15s ease; }
+.ia-dl-btn:hover { border-color: var(--accent); color: var(--accent); }
+.ia-dl-btn.on { background: rgba(255,191,0,.14); border-color: var(--accent); color: var(--accent); }
+.ia-att { display: inline-flex; align-items: center; gap: 4px; padding: 2px 8px 2px 6px; background: rgba(255,191,0,0.12); border-radius: 4px; font-size: 11px; color: var(--text-muted); }
+.ia-att-icon { font-size: 10px; color: var(--accent); font-weight: 600; }
+.ia-att-name { max-width: 180px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.ia-att-size { color: var(--muted); font-size: 10px; }
+.ia-att-rm { background: none; border: none; color: var(--muted); cursor: pointer; font-size: 13px; line-height: 1; padding: 0 2px; }
+.ia-att-rm:hover { color: #f44; }
+
+/* ----- 旧全局拖拽覆盖已废弃，保留无影响 ----- */
+.drag-overlay { display: none; }
+
+:root {
+  /* TUI 真实色号 */
+  --primary: #FFD700;
+  --accent: #FFBF00;
+  --border-gold: #CD7F32;
+  --text: #FFF8DC;
+  --muted: #CC9B1F;
+  --label: #DAA520;
+  --glow-start: rgba(255, 215, 0, 0.10);
+  --glow-end: rgba(205, 127, 50, 0.04);
+  --bg-deep: #0d0d0d;
+  --bg-surface: #111111;
+  --bg-card: #1a1a1a;
+  --bg-hover: #222222;
+  --bg-input: #0d0d0d;
+  --border-subtle: #2a2a2a;
+  --border-hover: #3a3a3a;
+  --text-body: #d4d4d4;
+  --success: #4caf50;
+  --error: #ef5350;
+  --warn: #ffa726;
+  --info: #44aaff;
+  --font-mono: 'JetBrains Mono', 'Fira Code', 'Consolas', monospace;
+  --spring: cubic-bezier(0.32, 0.72, 0, 1);
+  --sidebar-width: 240px;
+  --titlebar-height: 38px;
+  --statusbar-height: 30px;
+}
+
+/* ===== 主题色板系统 ===== */
+/* data-theme 属性加在 #root 上，切换主题时只改金色系 4 个变量 */
+
+/* 主题切换过渡动画（只持续 300ms，不影响日常交互） */
+#root.theme-transitioning *,
+#root.theme-transitioning {
+  transition: color 0.3s ease,
+              background-color 0.3s ease,
+              border-color 0.3s ease !important;
+}
+
+[data-theme="blue"] {
+  --primary: #44AAFF;
+  --accent: #4499FF;
+  --muted: #5588BB;
+  --border-gold: #336699;
+  --glow-start: rgba(68, 170, 255, 0.10);
+  --glow-end: rgba(51, 102, 153, 0.04);
+}
+[data-theme="rose"] {
+  --primary: #FF6699;
+  --accent: #FF5599;
+  --muted: #CC6699;
+  --border-gold: #AA5577;
+  --glow-start: rgba(255, 102, 153, 0.10);
+  --glow-end: rgba(170, 85, 119, 0.04);
+}
+[data-theme="emerald"] {
+  --primary: #00E676;
+  --accent: #00C853;
+  --muted: #00897B;
+  --border-gold: #00695C;
+  --glow-start: rgba(0, 230, 118, 0.10);
+  --glow-end: rgba(0, 105, 92, 0.04);
+}
+[data-theme="purple"] {
+  --primary: #CE93D8;
+  --accent: #BA68C8;
+  --muted: #8E24AA;
+  --border-gold: #6A1B9A;
+  --glow-start: rgba(206, 147, 216, 0.10);
+  --glow-end: rgba(106, 27, 154, 0.04);
+}
+
+*, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
+
+html, body {
+  height: 100%;
+  background: var(--bg-deep);
+  color: var(--text);
+  font-family: var(--font-mono);
+  font-size: 14px;
+  line-height: 1.6;
+  overflow: hidden;
+  -webkit-font-smoothing: antialiased;
+  user-select: none;
+}
+
+#root {
+  height: 100%;
+}
+
+/* Firefox */
+* { scrollbar-width: thin; scrollbar-color: #444 var(--bg-surface); }
+/* Chrome / Edge / Safari */
+::-webkit-scrollbar { width: 4px; }
+::-webkit-scrollbar-track { background: var(--bg-surface); }
+::-webkit-scrollbar-thumb { background: #444; border-radius: 3px; transition: background .15s; }
+::-webkit-scrollbar-thumb:hover { background: var(--accent); }
+

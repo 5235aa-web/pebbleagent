@@ -337,8 +337,8 @@ def _get_llm_client() -> tuple:
                 if base_url.endswith("/chat/completions"):
                     base_url = base_url.rsplit("/chat/completions", 1)[0]
                 model = (prov.get("models") or [model])[0]
-        except Exception:
-            pass
+        except Exception as e:
+            logger.warning(f"[Server] Failed to load llm_providers.json overrides: {e}")
     from openai import OpenAI
     client = OpenAI(api_key=api_key, base_url=base_url)
     return client, model
@@ -412,8 +412,8 @@ def _read_agent_model_config() -> dict:
             try:
                 with open(p, "r", encoding="utf-8") as f:
                     return json.load(f)
-            except:
-                pass
+            except Exception as e:
+                logger.warning(f"[Server] Failed to read agent model config {p}: {e}")
     return {"version": "1.0", "agents": {}}
 
 
@@ -602,13 +602,13 @@ def handle_prompt_submit(
             temp_val = prov.get("temperature")
             if temp_val is not None:
                 try: temperature = float(temp_val)
-                except: pass
+                except (TypeError, ValueError): logger.debug("[Server] Ignoring invalid temperature: %r", temp_val)
             tp_val = prov.get("topP")
             if tp_val is not None:
                 try: top_p = float(tp_val)
-                except: pass
-    except Exception:
-        pass
+                except (TypeError, ValueError): logger.debug("[Server] Ignoring invalid topP: %r", tp_val)
+    except Exception as e:
+        logger.warning(f"[Server] Failed to load provider generation settings: {e}")
 
     prev_count = _session_store.message_count(sid)
     _session_store.increment_messages(sid)

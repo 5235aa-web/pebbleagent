@@ -1,0 +1,145 @@
+/* ===== 布局 ===== */
+.app {
+  --sidebar-width-real: 240px;
+  position: relative;
+  display: grid;
+  grid-template-rows: var(--titlebar-height) 1fr var(--statusbar-height);
+  grid-template-columns: 1fr;
+  grid-template-areas:
+    "titlebar"
+    "main"
+    "statusbar";
+  height: 100vh;
+}
+.app.sidebar-collapsed {
+  --sidebar-width: 0px;
+}
+.main {
+  margin-left: calc(var(--sidebar-width-real) + 14px);
+  transition: margin-left 0.25s cubic-bezier(0.4, 0, 0.2, 1);
+}
+.app.sidebar-collapsed .main { margin-left: 14px; }
+
+/* ===== Backdrop 多层背景 ===== */
+.backdrop-glow {
+  pointer-events: none;
+  position: fixed;
+  inset: 0;
+  z-index: 0;
+  background: radial-gradient(
+    ellipse 140% 70% at 0% 0%,
+    var(--glow-start) 0%,
+    var(--glow-end) 40%,
+    transparent 70%
+  );
+  mix-blend-mode: lighten;
+}
+
+.backdrop-noise {
+  pointer-events: none;
+  position: fixed;
+  inset: 0;
+  z-index: 1;
+  background-image: url("data:image/svg+xml,%3Csvg viewBox='0 0 512 512' xmlns='http://www.w3.org/2000/svg'%3E%3Cfilter id='n'%3E%3CfeTurbulence type='fractalNoise' baseFrequency='0.9' numOctaves='4' stitchTiles='stitch'/%3E%3C/filter%3E%3Crect width='100%25' height='100%25' fill='%23eaeaea' filter='url(%23n)' opacity='0.7'/%3E%3C/svg%3E");
+  background-size: 512px 512px;
+  background-repeat: repeat;
+  mix-blend-mode: color-dodge;
+  opacity: 0.30;
+}
+
+/* 给 .app 创建独立层叠上下文，确保它在 backdrop 之上 */
+.app {
+  z-index: 2;
+}
+
+/* ===== 夹缝条（侧边栏折叠切换） ===== */
+.sb-gutter {
+  position: absolute;
+  left: var(--sidebar-width-real);
+  top: var(--titlebar-height);
+  bottom: var(--statusbar-height);
+  width: 14px;
+  background: var(--bg-surface);
+  border-right: 1px solid var(--border-subtle);
+  cursor: pointer;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  z-index: 11;
+  user-select: none;
+  transition: left 0.25s cubic-bezier(0.4, 0, 0.2, 1);
+}
+.app.sidebar-collapsed .sb-gutter {
+  left: 0;
+}
+.sb-gutter:hover {
+  background: var(--bg-hover);
+}
+.sb-gutter svg {
+  color: var(--muted);
+  opacity: 0.35;
+  transition: transform 0.28s var(--spring), opacity 0.2s;
+}
+.sb-gutter:hover svg {
+  opacity: 1;
+  color: var(--text);
+}
+.sidebar-collapsed .sb-gutter svg {
+  transform: rotate(180deg);
+}
+
+/* ===== 标题栏 ===== */
+.titlebar {
+  grid-area: titlebar;
+  position: relative;
+  background: var(--bg-surface);
+  border-bottom: 1px solid var(--border-subtle);
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  padding: 0 10px;
+}
+.titlebar-left { display: flex; align-items: center; gap: 8px; }
+.titlebar-logo {
+  font-weight: 700;
+  font-size: 12px;
+  letter-spacing: 1.5px;
+  color: var(--primary);
+}
+.titlebar-logo span { color: var(--muted); }
+.titlebar-version { font-size: 9px; color: var(--muted); opacity: .6; }
+.titlebar-center { position: absolute; left: 50%; transform: translateX(-50%); display: flex; align-items: center; gap: 6px; }
+.model-badge {
+  display: inline-flex;
+  align-items: center;
+  color: var(--accent);
+  padding: 2px 8px;
+  border: 1px solid var(--border-subtle);
+  border-radius: 4px;
+  font-size: 10px;
+  letter-spacing: .3px;
+  cursor: pointer;
+  background: none;
+  font-family: var(--font-mono);
+  transition: all .2s var(--spring);
+}
+.model-badge:hover {
+  background: var(--bg-hover);
+  border-color: var(--accent);
+}
+.titlebar-right { display: flex; gap: 4px; }
+.tb-btn {
+  background: none;
+  border: none;
+  color: var(--muted);
+  width: 26px;
+  height: 26px;
+  border-radius: 4px;
+  cursor: pointer;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  transition: all .2s var(--spring);
+}
+.tb-btn:hover { background: var(--bg-hover); color: var(--text); }
+

@@ -1,6 +1,6 @@
 # ============================================================
 # PebbleAgent — Python Requirements (requirements.txt)
-# Environment: Python 3.14 (Windows)
+# Environment: Python 3.11+ (verified on 3.14, Windows)
 # Install: pip install -r requirements.txt
 # ------------------------------------------------------------
 # Notes:
@@ -8,6 +8,7 @@
 #   2. Optional dependencies — corresponding features degrade or become unavailable if missing (try/fallback in code)
 #   3. Version pins = versions verified in the current development environment, used as minimum requirements
 #   4. Transitive dependencies (certifi / anyio / pydantic / yarl, etc.) are resolved automatically by pip
+#   5. Minimum Python = 3.11: numpy>=2.4 requires it. Core modules are 3.10-compatible.
 # ============================================================
 
 # ---------- Core Dependencies (required to run) ----------
@@ -32,7 +33,7 @@ tiktoken>=0.13.0
 # MCP HTTP transport (mcp_client.py)
 aiohttp>=3.14.1
 
-# Image / array processing (PDF OCR pipeline)
+# Image / array processing (PDF OCR pipeline; numpy>=2.4 requires Python 3.11+)
 numpy>=2.4.6
 
 # Image processing (PDF OCR)

@@ -3,7 +3,12 @@
 import { readFileSync } from 'node:fs'
 
 const vue = readFileSync(new URL('../ui-gui-vue3/src/components/PricingPanel.vue', import.meta.url), 'utf8')
-const css = readFileSync(new URL('../ui-gui-vue3/src/styles/index.css', import.meta.url), 'utf8')
+const cssDir = new URL('../ui-gui-vue3/src/styles/', import.meta.url)
+const indexCss = readFileSync(new URL('index.css', cssDir), 'utf8')
+const imported = [...indexCss.matchAll(/@import\s+'\.\/([^']+)'/g)].map((m) => m[1])
+const css = imported.length
+  ? imported.map((f) => readFileSync(new URL(f, cssDir), 'utf8')).join('\n')
+  : indexCss
 
 let pass = 0, fail = 0
 function check(name, cond) {

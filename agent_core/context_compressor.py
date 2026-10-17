@@ -70,22 +70,6 @@ class CompactDirection(Enum):
 
 
 @dataclass
-class ToolUseBlock:
-    """工具调用块"""
-    id: str
-    name: str
-    input: Dict[str, Any]
-    
-
-@dataclass
-class ToolResultBlock:
-    """工具结果块"""
-    tool_use_id: str
-    content: str
-    is_error: bool = False
-
-
-@dataclass
 class ContentBlock:
     """消息内容块"""
     type: str  # 'text', 'image', 'document', 'tool_use', 'tool_result'
@@ -1592,6 +1576,30 @@ def create_post_compact_file_attachments(
 # 兼容旧 API 的包装函数
 # ============================================================================
 
+def _messages_from_dicts(messages: List[Dict[str, Any]]) -> List[Message]:
+    """字典消息 → Message 对象（逐条生成 uuid）。"""
+    return [
+        Message(
+            uuid=str(uuid.uuid4()),
+            role=m.get("role", "user"),
+            content=m.get("content", ""),
+            reasoning_content=m.get("reasoning_content"),
+            tool_call_id=m.get("tool_call_id"),
+            tool_calls=m.get("tool_calls"),
+        )
+        for m in messages
+    ]
+
+
+def _compacted_messages_to_dicts(result: CompactionResult) -> List[Dict[str, Any]]:
+    """压缩结果中的消息序列 → 字典列表。"""
+    return [
+        msg.to_dict()
+        for msg in [result.boundary_marker] + result.summary_messages + result.messages_to_keep
+        if msg
+    ]
+
+
 def compress_context(
     messages: List[Dict[str, str]],
     max_tokens: int = DEFAULT_MAX_TOKENS,
@@ -1613,16 +1621,7 @@ def compress_context(
         压缩后的消息列表（字典格式）
     """
     # 转换为 Message 对象
-    msg_objects = []
-    for m in messages:
-        msg_objects.append(Message(
-            uuid=str(uuid.uuid4()),
-            role=m.get("role", "user"),
-            content=m.get("content", ""),
-            reasoning_content=m.get("reasoning_content"),
-            tool_call_id=m.get("tool_call_id"),
-            tool_calls=m.get("tool_calls")
-        ))
+    msg_objects = _messages_from_dicts(messages)
     
     # 执行压缩
     result = compact_conversation(
@@ -1637,12 +1636,7 @@ def compress_context(
         return messages
     
     # 转换回字典格式
-    output = []
-    for msg in [result.boundary_marker] + result.summary_messages + result.messages_to_keep:
-        if msg:
-            output.append(msg.to_dict())
-    
-    return output
+    return _compacted_messages_to_dicts(result)
 
 
 def smart_compress(
@@ -1717,16 +1711,7 @@ def manual_compress(
     返回详细的压缩结果
     """
     # 转换为 Message 对象
-    msg_objects = []
-    for m in messages:
-        msg_objects.append(Message(
-            uuid=str(uuid.uuid4()),
-            role=m.get("role", "user"),
-            content=m.get("content", ""),
-            reasoning_content=m.get("reasoning_content"),
-            tool_call_id=m.get("tool_call_id"),
-            tool_calls=m.get("tool_calls")
-        ))
+    msg_objects = _messages_from_dicts(messages)
     
     # 执行压缩
     result = compact_conversation(
@@ -1751,10 +1736,7 @@ def manual_compress(
         }
     
     # 转换压缩后的消息
-    compressed_messages = []
-    for msg in [result.boundary_marker] + result.summary_messages + result.messages_to_keep:
-        if msg:
-            compressed_messages.append(msg.to_dict())
+    compressed_messages = _compacted_messages_to_dicts(result)
     
     return {
         "success": True,

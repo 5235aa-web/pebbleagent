@@ -29,7 +29,7 @@
 - 52 built-in tools across file, shell, network, media, memory, planning, UI, and utility groups; MCP proxy tools (`mcp__*`)
 - Interaction tools: `clarify` (structured questions: title / prompt / options label+detail / multiple), `todo_write` / `todo_read` (session checklist), `enter_plan_mode` / `exit_plan_mode` / `create_plan` / `get_plan`
 - Dispatch: one declarative registry (`agent_core/tool_impl/registry.py`) maps tool names to handlers; handlers live in per-domain modules (filesystem / execution / web / documents / system / workspace / lsp / mcp_bridge); `tool_executor_impl.py` is the execution pipeline facade (policy → permission → snapshot → dispatch → write-result backfill)
-- Shell validation: BashValidator (read-only / destructive / mode / sed / path / semantic), PowerShellValidator (destructive patterns + path boundary), code destructive scan, network behaviour guards
+- Shell validation: BashValidator (read-only / destructive / mode / sed / path / semantic), PowerShellValidator (destructive patterns + path boundary), code destructive scan, network behaviour guards (rate / navigation / download counters scoped per session via contextvar)
 - Permission chain: modes (manual / auto / readonly / locked), allow / deny / ask rules with `tool:pattern` syntax, path whitelist, project boundary checks, per-(session, permission_type) trust, inline-code escalation, fail-closed on module errors
 - Audit: permission decisions persisted with chained SHA256 checksum (v3) and write-time secret masking
 - Snapshots: write-ahead file snapshots, revert with external-modification detection, undo support
@@ -43,7 +43,8 @@
 
 ## Frontend
 
-- Streaming render pipeline: 120ms throttled refresh, line-level cache, compacted-message folding with divider + pill
+- Streaming render pipeline: 120ms throttled refresh, line-level cache, compacted-message folding with divider + pill (`SegmentedMessageList.vue`, segments split by compaction boundaries)
+- Styles: `styles/index.css` imports ten domain files in cascade order (base / layout / sidebar / messages / input / panels / widgets / cards / settings / overlays)
 - Message flow: execution-order rendering (thinking / tool / question / content), inline clarify cards (title / prompt / options label+detail / multiple), multi-question answers, image attachments with viewer
 - Compaction card: 任务 / 现状 / 决定 / 待办 / 线索 sections with counts
 - HTML preview: sandboxed iframe (allow-scripts only), injected meta CSP, postMessage bridge, PNG capture, interactive comment layer
@@ -52,6 +53,7 @@
 
 ## Configuration
 
+- `requirements.txt` — Python 3.11+ (numpy>=2.4 floor; dev environment 3.14), core / optional / skills / build groups
 - `llm_providers.json` — providers, keys, models, reasoning effort
 - `permission_rules.json` / `path_whitelist.json` — permission policy
 - `model_pricing.json` / `cn_holidays.json` — billing table with peak/off-peak tiers and holiday data (hot reload)
@@ -64,6 +66,6 @@
 
 ## Verification
 
-- `tests/run_all.py` — Python suites (tool policy, orchestration, permissions, audit, snapshots, compaction, pricing, skills, experience ledger, RPC smoke)
+- `tests/run_all.py` — Python suites (tool policy, orchestration, permissions, permission chain e2e, audit, snapshots, compaction, pricing, skills, experience ledger, RPC smoke, guard scope, transcript manager, MCP registry, LSP framing)
 - `tests/run_all.mjs` — frontend logic suites (fold algorithm, WS recovery, UI formulas, time grouping)
 - CI: `.github/workflows/checks.yml` (compileall, Python suites, vue-tsc)

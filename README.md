@@ -6,7 +6,7 @@
 
 [![checks](https://img.shields.io/github/actions/workflow/status/5235aa-web/pebbleagent/checks.yml?style=flat-square&label=checks&labelColor=1f1f1f&color=00E676)](https://github.com/5235aa-web/pebbleagent/actions/workflows/checks.yml)
 [![License: AGPL-3.0](https://img.shields.io/badge/License-AGPL--3.0-CE93D8?style=flat-square&labelColor=1f1f1f)](LICENSE)
-[![Python 3.10+](https://img.shields.io/badge/Python-3.10%2B-44AAFF?style=flat-square&labelColor=1f1f1f)](https://www.python.org/)
+[![Python 3.11+](https://img.shields.io/badge/Python-3.11%2B-44AAFF?style=flat-square&labelColor=1f1f1f)](https://www.python.org/)
 [![Vue 3](https://img.shields.io/badge/Vue-3-00E676?style=flat-square&labelColor=1f1f1f)](https://vuejs.org/)
 [![Tauri 2](https://img.shields.io/badge/Tauri-2-FF6699?style=flat-square&labelColor=1f1f1f)](https://tauri.app/)
 [![Platform: Windows](https://img.shields.io/badge/Platform-Windows-8A92A6?style=flat-square&labelColor=1f1f1f)](#)
@@ -49,7 +49,7 @@ flowchart LR
 ### Prerequisites
 
 - Windows 10/11 (64-bit), the only supported platform for now
-- Python 3.10+
+- Python 3.11+
 - Node.js 18+ (for the frontend and npx-based MCP servers)
 - Rust toolchain (only needed to build the desktop shell)
 

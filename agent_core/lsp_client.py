@@ -795,14 +795,14 @@ class LspClient:
         try:
             # 发送 shutdown 请求
             await self._send_request("shutdown", {}, timeout=5.0)
-        except Exception:
-            pass
+        except Exception as e:
+            logger.debug(f"[LspClient] shutdown request failed: {e}")
         
         try:
             # 发送 exit 通知
             await self._send_notification("exit", {})
-        except Exception:
-            pass
+        except Exception as e:
+            logger.debug(f"[LspClient] exit notification failed: {e}")
         
         # 取消读取任务
         if self._reader_task and not self._reader_task.done():
@@ -820,8 +820,8 @@ class LspClient:
             except asyncio.TimeoutError:
                 self._process.kill()
                 await self._process.wait()
-            except Exception:
-                pass
+            except Exception as e:
+                logger.debug(f"[LspClient] process termination failed: {e}")
         
         # 取消所有待处理的请求
         for future in self._pending_requests.values():

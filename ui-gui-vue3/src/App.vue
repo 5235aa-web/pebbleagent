@@ -5,7 +5,7 @@ import { useChatStore } from './stores/chat'
 import { useFileDrop } from './composables/useFileDrop'
 import TitleBar from './components/TitleBar.vue'
 import Sidebar from './components/Sidebar.vue'
-import VirtualMessageList from './components/VirtualMessageList.vue'
+import SegmentedMessageList from './components/SegmentedMessageList.vue'
 import FileChangesPanel from './components/FileChangesPanel.vue'
 import InputArea from './components/InputArea.vue'
 import StatusBar from './components/StatusBar.vue'
@@ -20,7 +20,7 @@ const gateway = useGatewayStore()
 const chatStore = useChatStore()
 const fileDrop = useFileDrop()
 const sidebarCollapsed = ref(false)
-const vlistRef = ref<InstanceType<typeof VirtualMessageList> | null>(null)
+const vlistRef = ref<InstanceType<typeof SegmentedMessageList> | null>(null)
 const msgsContainerRef = ref<HTMLDivElement | null>(null)
 const theme = ref(localStorage.getItem(THEME_KEY) || 'amber')
 
@@ -93,7 +93,7 @@ watch(() => gateway.connected, v => { if (v) chatStore.initConversations().catch
 
     <div class="main">
       <TimelineBar :messages="gateway.messages" :container-ref="msgsContainerRef" :on-scroll-to-index="handleScrollToMessageIndex" />
-      <VirtualMessageList ref="vlistRef" :container-ref="msgsContainerRef" />
+      <SegmentedMessageList ref="vlistRef" :container-ref="msgsContainerRef" />
 
       <button v-if="gateway.messages.length > 0" class="scroll-bottom-btn" @click="vlistRef?.scrollToBottom()" title="Scroll to bottom">
         <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><polyline points="6 9 12 15 18 9"/></svg>

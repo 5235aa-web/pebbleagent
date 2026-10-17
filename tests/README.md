@@ -42,7 +42,7 @@ The repository also has three billing/holiday regression scripts at the project 
 | `test_render_perf.mjs` | stream flush throttle, v-memo revert guard, line render cache |
 | `test_ws_recovery.mjs` | WS disconnect recovery (source checks + logic simulation) |
 | `test_jump_collapse.mjs` | jump-to-compacted-message lands on fold divider |
-| `test_fold_algo.mjs` | fold algorithm **executed from real `VirtualMessageList.vue` source** |
+| `test_fold_algo.mjs` | fold algorithm **executed from real `SegmentedMessageList.vue` source** |
 | `test_input_resize.mjs` | input-box drag clamp formulas + source consistency |
 | `test_time_groups.mjs` | conversation time bucketing **executed from real `Sidebar.vue` source** |
 
@@ -53,6 +53,15 @@ The repository also has three billing/holiday regression scripts at the project 
 | `test_clarify_dual.py` | `clarify` dual-channel answers + guards |
 | `test_log_persistence.py` | log setup idempotency + suspicious stream-end detection |
 
+### Storage, guards & protocols
+| Test | Covers |
+| --- | --- |
+| `test_transcript_manager.py` | transcript write/read/search/delete under a temporary `PEBBLE_HOME` |
+| `test_guard_scope.py` | per-session rate/navigation/download counters, scoped reset, asyncio task isolation |
+| `test_permission_e2e.py` | rule parsing, allow/deny/ask, manual/auto/readonly/locked, persisted mode |
+| `test_mcp_registry.py` | MCP tool naming, name parsing, lookup, state shape |
+| `test_lsp_framing.py` | LSP Content-Length framing, invalid length/JSON, closed stream |
+
 ## Design conventions
 
 - **Exit codes, not frameworks.** Each test collects `[PASS]/[FAIL]` lines and exits non-zero
@@ -61,6 +70,6 @@ The repository also has three billing/holiday regression scripts at the project 
   (`new Function` / AST) from the shipped source files, so algorithm drift in the app
   fails the test loudly instead of silently passing a stale copy.
 - **Isolation.** Tests that touch storage set a temporary `PEBBLE_HOME`; tests that go
-  through the permission chain set `auto` **in memory only** (never persisted).
-  No production data is touched.
+  through the permission chain use a temporary rules file (mode changes persist there,
+  never in the project config). No production data is touched.
 - **No network.** All tests run offline.

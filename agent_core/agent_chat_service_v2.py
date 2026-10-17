@@ -229,8 +229,8 @@ def _snapshot_cn_holiday_files() -> dict:
         try:
             if os.path.exists(p):
                 snap[p] = os.path.getmtime(p)
-        except Exception:
-            pass
+        except OSError as e:
+            logger.debug("cn_holidays file stat failed (%s): %s", p, e)
     return snap
 
 def _load_cn_holidays() -> None:
@@ -262,8 +262,8 @@ def _load_cn_holidays() -> None:
             covered = data.get("years_covered")
             if isinstance(covered, list) and cur_year not in covered:
                 logger.warning("cn_holidays.json 未覆盖 %s 年，节假日判定本年不生效，请更新数据文件", cur_year)
-        except Exception:
-            pass
+        except Exception as e:
+            logger.debug("cn_holidays year coverage check failed: %s", e)
     else:
         # 降级为空集合（周末规则）：数据缺失/损坏时判定退化为现状行为，保证系统可用
         _cn_holidays, _cn_workdays, _cn_holidays_meta = set(), set(), {}
@@ -278,8 +278,8 @@ def _ensure_cn_holidays_fresh() -> None:
     try:
         if _snapshot_cn_holiday_files() != _cn_holidays_watch:
             _load_cn_holidays()
-    except Exception:
-        pass
+    except Exception as e:
+        logger.debug("cn_holidays hot reload check failed: %s", e)
 
 def is_cn_holiday(now: Optional[datetime] = None) -> bool:
     """判断（北京时间）给定时刻所在日期是否为中国法定节假日（放假日）。
@@ -458,16 +458,16 @@ class AgentChatServiceV2:
         try:
             from .truncation_manager import set_truncation_dir
             set_truncation_dir(path)
-        except Exception:
-            pass
+        except Exception as e:
+            logger.warning(f"[AgentChatServiceV2] Failed to set truncation dir: {e}")
         self._load_path_whitelist()
         if hasattr(self, '_mcp_manager') and self._mcp_manager:
             from .mcp.mcp_config import get_mcp_config_manager
             try:
                 config_manager = get_mcp_config_manager()
                 config_manager.set_project_path(path)
-            except Exception:
-                pass
+            except Exception as e:
+                logger.warning(f"[AgentChatServiceV2] Failed to set MCP project path: {e}")
 
     def _load_path_whitelist(self) -> list:
         """从 path_whitelist.json 加载用户配置的白名单路径并同步到执行器"""
@@ -485,8 +485,8 @@ class AgentChatServiceV2:
             for p in allowed:
                 if p not in merged:
                     merged.append(p)
-        except Exception:
-            pass
+        except Exception as e:
+            logger.warning(f"[AgentChatServiceV2] Failed to load agent allowed_paths: {e}")
         if merged:
             self._tool_executor.set_path_whitelist(merged)
         return merged

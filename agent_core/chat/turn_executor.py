@@ -246,6 +246,6 @@ async def prepare_turn(service, params: Dict[str, Any], state: TurnState) -> Asy
 
     try:
         from ..code_network_guardV2 import reset_all_guards
-        reset_all_guards()
+        reset_all_guards(conversation_uuid)
     except ImportError:
         pass

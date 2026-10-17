@@ -197,8 +197,10 @@ class StdioTransport:
             self._dispatch_task.cancel()
             try:
                 await asyncio.wait_for(asyncio.shield(self._dispatch_task), timeout=3.0)
-            except (asyncio.TimeoutError, asyncio.CancelledError, Exception):
-                pass
+            except (asyncio.TimeoutError, asyncio.CancelledError) as e:
+                logger.debug(f"[MCP Stdio] Previous dispatch task did not stop cleanly: {e}")
+            except Exception as e:
+                logger.warning(f"[MCP Stdio] Failed to stop previous dispatch task: {e}")
 
         # 启动 asyncio 消息分发
         self._dispatch_task = asyncio.create_task(self._dispatch_messages())

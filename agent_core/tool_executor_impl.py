@@ -110,6 +110,19 @@ class AgentToolExecutorImpl(
         Returns:
             执行结果字符串
         """
+        from .code_network_guardV2 import set_guard_scope, reset_guard_scope
+        token = set_guard_scope(context.conversation_uuid if context else "")
+        try:
+            return await self._execute_inner(tool_name, args, context)
+        finally:
+            reset_guard_scope(token)
+
+    async def _execute_inner(
+        self,
+        tool_name: str,
+        args: Dict[str, Any],
+        context: ToolExecutionContext = None
+    ) -> str:
         # ==================== Agent 工具策略检查（enforce 白名单/黑名单） ====================
         # 即使 LLM 幻觉调用了未注入 schema 的工具，也在执行入口被拒绝
         agent_name = context.agent_name if context else ""

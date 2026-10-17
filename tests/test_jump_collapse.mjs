@@ -23,7 +23,7 @@ check('not in a segment (no byMsg hit) -> normal', decide(false, false) === 'nor
 check('not in a segment (other state) -> normal', decide(false, true) === 'normal')
 
 // ===== 2. VirtualMessageList source consistency =====
-const vml = readFileSync(new URL('../ui-gui-vue3/src/components/VirtualMessageList.vue', import.meta.url), 'utf-8')
+const vml = readFileSync(new URL('../ui-gui-vue3/src/components/SegmentedMessageList.vue', import.meta.url), 'utf-8')
 const s1 = vml.indexOf('function scrollToMessageIndex')
 const e1 = vml.indexOf('defineExpose', s1)
 const fnBody = vml.slice(s1, e1)
