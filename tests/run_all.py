@@ -24,7 +24,11 @@ def main() -> int:
 
     print()
     if failed:
-        print(f"FAILED: {len(failed)} / {len(tests)}: {', '.join(failed)}")
+        msg = f"FAILED: {len(failed)} / {len(tests)}: {', '.join(failed)}"
+        print(msg)
+        # GitHub Actions annotation (ignored outside CI): makes the failing
+        # test names visible in the run's annotations API without opening logs.
+        print(f"::error::{msg}")
         return 1
     print(f"ALL PASSED: {len(tests)} tests")
     return 0

@@ -162,6 +162,11 @@ class PowerShellValidator:
             expanded = self._expand_ps_vars(path)
             # PowerShell 的 ~ 是用户主目录（不是项目内相对路径）
             if expanded.startswith("~"):
+                user_home = os.path.expanduser("~")
+                if user_home == "~" or not os.path.isabs(user_home):
+                    # 无法解析用户主目录（无 HOME/USERPROFILE 的干净环境，如 CI runner）
+                    # → 保守视为越界（否则 "~" 会被当项目内相对路径而放行）
+                    return False
                 expanded = os.path.expanduser(expanded)
             # 相对路径按项目解析
             if not os.path.isabs(expanded):

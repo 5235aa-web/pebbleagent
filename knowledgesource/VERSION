@@ -1,3 +1,9 @@
+2026-10-17: CI fix round (annotations diagnostics + Node20 deprecation + tilde-path hardening)
+- run_all.py now emits a GitHub Actions `::error::` annotation carrying the failing test names — CI failures become visible through the annotations API without opening the (login-gated) logs
+- checks.yml: actions/checkout v4→v5, setup-python v5→v6, setup-node v4→v5 (Node 20 → Node 24; clears the deprecation warning)
+- PowerShellValidator._is_path_safe: when the user home cannot be resolved (`~` stays unexpanded, e.g. a clean runner without HOME/USERPROFILE), the path is now treated as out-of-bounds instead of resolving inside the project — closes a `Remove-Item -Recurse ~` bypass found while reproducing the CI failure
+- Root-cause note: the failing run (#13) could not be reproduced locally — full suite passes natively, and a CI-equivalent simulation (the 5 CI packages + clean user dir outside TEMP + no site-packages) passes 16/16; next CI run will name the failing test in annotations if it persists
+
 2026-10-17: Ghost agent cleanup + skills directory alignment
 - Removed analysis_agent / article_agent (no YAML definitions): runtime ~/.pebble/agent_model_config.json (code_agent + chat_agent kept) and the project-root template both cleaned; frontend DEFAULT_AGENTS list trimmed to code_agent + chat_agent; Ch5 agent-definition table corrected (the two YAML/prompt rows referenced files that did not exist)
 - Skills alignment: two empty leftover directories (data-analysis / writing) removed — the directory count now matches the repository exactly (115 = 115); Ch9 counts recalibrated (115 total / 101 extended)
