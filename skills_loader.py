@@ -6,13 +6,49 @@ Skills Loader - Progressive Disclosure 技能加载器
 """
 
 from pathlib import Path
-from typing import Optional, Dict, List
+from typing import Any, Optional, Dict, List
 import re
 import logging
+
+import yaml
 
 logger = logging.getLogger(__name__)
 
 SKILLS_DIR = Path(__file__).parent / "skills"
+
+
+def _parse_frontmatter(content: str) -> Dict[str, Any]:
+    """解析 SKILL.md 头部的 YAML frontmatter（--- 包裹）。
+
+    只读取头部块，正文中的同名键不会被误命中；多行值（description: |）
+    与含冒号的值交给 YAML 解析器处理。
+    """
+    content = content.lstrip("\ufeff")
+    lines = content.splitlines()
+    if not lines or lines[0].strip() != "---":
+        return {}
+    end = None
+    for i in range(1, len(lines)):
+        if lines[i].strip() == "---":
+            end = i
+            break
+    if end is None:
+        return {}
+    try:
+        data = yaml.safe_load("\n".join(lines[1:end]))
+    except yaml.YAMLError as e:
+        logger.warning(f"[Skills] Invalid frontmatter: {e}")
+        return {}
+    return data if isinstance(data, dict) else {}
+
+
+def _extract_description(content: str) -> str:
+    """提取 description；frontmatter 不是合法 YAML 时回退到单行匹配。"""
+    desc = _parse_frontmatter(content).get("description")
+    if isinstance(desc, str) and desc.strip():
+        return desc.strip()
+    match = re.search(r'^description:\s*(.+)$', content, re.MULTILINE)
+    return match.group(1).strip() if match else ""
 
 
 def list_skills() -> List[Dict[str, str]]:
@@ -33,11 +69,7 @@ def list_skills() -> List[Dict[str, str]]:
             if skill_md.exists():
                 try:
                     content = skill_md.read_text(encoding="utf-8")
-                    # 提取 frontmatter 中的 description
-                    desc = ""
-                    match = re.search(r'description:\s*(.+)', content)
-                    if match:
-                        desc = match.group(1).strip()
+                    desc = _extract_description(content)
                     skills.append({
                         "name": d.name,
                         "description": desc or "无描述"

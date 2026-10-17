@@ -1,14 +1,9 @@
 #!/usr/bin/env python
 # -*- coding: utf-8 -*-
-"""Permission audit hardening (2026-10-17 security fix, review issue 5).
+"""Permission audit hardening.
 
-Before: audit checksum chain existed but (a) no masking — commands/code with
-API keys landed in the DB in plaintext; (b) verify_integrity was never called
-anywhere; (c) log_permission_check (which records full tool_args) was never
-invoked — only log_permission_decision was.
-
-Now: write-time masking, startup integrity check + RPC, and the check-request
-event is recorded again.
+Covers: write-time masking (API keys never land in the DB in plaintext),
+startup integrity check + RPC, and check-request event recording.
 
 Run: python tests/test_audit_hardening.py   (exit 0 = pass)
 """

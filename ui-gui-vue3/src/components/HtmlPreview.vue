@@ -19,7 +19,7 @@ const br=ref<HTMLDivElement|null>(null);const ir=ref<HTMLIFrameElement|null>(nul
 const bh=ref('0px');const sl=ref(0);const sw=ref(0);const cw=ref(0)
 const fbActive=ref(false);const resolvedContent=ref('')
 const FILE_RE=/<!--\s*@pebble-file:\s*(\S+)\s*-->/
-// ===== 预览沙箱（2026-10-16 安全加固）=====
+// ===== 预览沙箱 =====
 // iframe 不带 allow-same-origin（不透明源）：预览脚本无法触达宿主 DOM/storage/WS。
 // 宿主与预览仅通过 postMessage 通信；注入的 meta CSP 比主文档更严（connect-src 'none'），
 // 预览页不能联网、提交表单或嵌套 iframe。

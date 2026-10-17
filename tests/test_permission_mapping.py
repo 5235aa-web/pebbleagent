@@ -1,14 +1,10 @@
 #!/usr/bin/env python
 # -*- coding: utf-8 -*-
-"""Permission mapping unification (2026-10-17 security fix, review issue 4).
+"""Permission mapping unification.
 
-Before: gateway/permission_manager._get_permission_type had its own coarse
-mapping whose default was EXEC_COMMAND — MCP tools (mcp__*) and other unmapped
-tools fell into "exec:command", so remembering ONE MCP tool auto-approved
-execute_shell/powershell for the session (privilege escalation).
-
-Now: the method reuses agent_core.tool_permission as the single source of truth
-and defaults unmapped tools to UNKNOWN_TOOL, keeping trust keys isolated.
+_get_permission_type reuses agent_core.tool_permission as the single source of
+truth and defaults unmapped tools to UNKNOWN_TOOL, keeping trust keys isolated
+from exec:command.
 
 Run: python tests/test_permission_mapping.py   (exit 0 = pass)
 """

@@ -41,7 +41,7 @@ check('setTimeout scheduling', gw.includes('window.setTimeout(flushStreamState, 
   check(`60s high-freq delta -> flush ~${expected} (actual ${flushCount})`, Math.abs(flushCount - expected) < 10)
 }
 
-console.log('2) Fix-2 segment freeze (MessageBubble.vue) — REVERTED 2026-10-15')
+console.log('2) Segment freeze (MessageBubble.vue) — must stay reverted')
 check('isFrozen function removed', !mb.includes('function isFrozen'))
 check('no v-memo attribute usage', !mb.includes('v-memo="['))
 check('v-for reverted (no index var)', mb.includes('v-for="item in message.executionOrder"'))

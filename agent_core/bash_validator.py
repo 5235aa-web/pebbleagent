@@ -362,8 +362,8 @@ class BashValidator:
         扫描命令中的路径，检查是否越界
 
         使用正则提取所有类路径字符串，对每个路径进行边界检查。
-        2026-10-16 安全加固：引号内路径（open('/etc/shadow')）与变量前缀路径
-        （$HOME/.ssh/id_rsa、${HOME}/...）此前不被提取，现补充二次扫描。
+        引号内路径（open('/etc/shadow')）与变量前缀路径
+        （$HOME/.ssh/id_rsa、${HOME}/...）通过二次扫描提取。
         特殊处理：/dev/null、/tmp/、/proc/、/sys/ 等系统路径。
         """
         # 提取类路径字符串

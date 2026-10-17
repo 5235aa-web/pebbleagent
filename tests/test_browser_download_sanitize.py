@@ -1,6 +1,6 @@
 #!/usr/bin/env python
 # -*- coding: utf-8 -*-
-"""browser_download filename sanitization (path-escape fix, 2026-10-17).
+"""browser_download filename sanitization.
 
 Covers: unit matrix for _sanitize_download_filename + integration of
 _tool_browser_download with a fake httpx client (no network, temp project dir),
@@ -88,11 +88,12 @@ def main() -> int:
             return FakeResp()
 
     from agent_core.code_network_guardV2 import reset_all_guards
+    import agent_core.tool_impl.web as web_mod
 
-    orig_httpx = tei.httpx
+    orig_httpx = web_mod.httpx
     tmpdir = tempfile.mkdtemp(prefix="pebble_dl_test_")
     try:
-        tei.httpx = types.SimpleNamespace(AsyncClient=FakeClient)
+        web_mod.httpx = types.SimpleNamespace(AsyncClient=FakeClient)
         ex = AgentToolExecutorImpl(project_path=tmpdir)
 
         def run(filename, url="http://example.com/f.zip"):
@@ -127,7 +128,7 @@ def main() -> int:
         check("no escape artifacts outside project", not os.path.exists(parent_evil))
 
         # ---- Static guards: protections stay wired --------------------------
-        src_path = os.path.join(ROOT, "agent_core", "tool_executor_impl.py")
+        src_path = os.path.join(ROOT, "agent_core", "tool_impl", "web.py")
         with open(src_path, "r", encoding="utf-8") as f:
             src = f.read()
         check("static: sanitizer wired into download",
@@ -135,7 +136,7 @@ def main() -> int:
         check("static: boundary check wired into download",
               "PathBoundaryChecker.check_path_boundary" in src)
     finally:
-        tei.httpx = orig_httpx
+        web_mod.httpx = orig_httpx
         shutil.rmtree(tmpdir, ignore_errors=True)
 
     print(f"\n{passed} passed, {failed} failed")

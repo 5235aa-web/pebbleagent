@@ -33,12 +33,8 @@ from datetime import datetime, timezone, timedelta
 from typing import List, Dict, Any, Optional, AsyncGenerator
 from openai import AsyncOpenAI
 
-from .query_state_machine import (
-    ToolUseBlock,
-    ToolExecutionContext,
-)
+from .query_state_machine import ToolExecutionContext
 from .tool_orchestrator import (
-    ToolOrchestrator,
     ToolExecutor,
     ToolExecutionResult,
     ToolExecutionUpdate,
@@ -47,14 +43,11 @@ from .tool_concurrency import (
     is_concurrency_safe,
     partition_tool_calls,
     ToolCallBatch,
-    get_max_concurrency,
 )
 
 from .agent_loader import get_cached_agent, get_agent_system_prompt, filter_tools_for_agent, list_available_agents_from_yaml
 from .context_compressor import (
-    # 核心函数
-    is_prompt_too_long_error,
-    # Token 计数统一口径（2026-10-17 问题8：全项目单一实现，tiktoken + 中英文比例降级）
+    # Token 计数（tiktoken + 中英文比例降级）
     estimate_tokens,
 )
 # 导入 Transcript 管理器
@@ -79,6 +72,11 @@ from .tool_executor_impl import AgentToolExecutorImpl
 _mcp_manager = None
 
 from .safe_json import safe_json_loads, safe_json_dumps
+from .chat.usage import UsageTracker
+from .chat.prompt import compose_system_prompt
+from .chat.stream_client import StreamConsumer, open_stream
+from .chat.tool_cycle import ToolCycle
+from .chat.turn_executor import TurnState, prepare_turn
 
 logger = logging.getLogger(__name__)
 
@@ -99,13 +97,12 @@ def get_model_context_limit(model_name: str) -> int:
     for key, limit in MODEL_CONTEXT_LIMITS.items():
         if key in name:
             return limit
-    return 128_000  # default fallback（2026-10-16: 由 1M 收紧为保守窗口，避免未知模型高估）
+    return 128_000  # default fallback（保守窗口，避免未知模型高估）
 
 # ==================== Token 计数辅助 ====================
 
 def count_tokens(text: str) -> int:
-    """计算 token 数（2026-10-17 问题8：统一委托 context_compressor.estimate_tokens，
-    消除此前 tiktoken/len//3/len//4 三套口径并存的问题）"""
+    """计算 token 数（统一委托 context_compressor.estimate_tokens）"""
     return estimate_tokens(text)
 
 def count_tokens_for_full_context(
@@ -127,11 +124,11 @@ def count_tokens_for_full_context(
 
 
 def _is_suspicious_stream_end(finish_reason: Optional[str], response_text: str) -> bool:
-    """可疑流结束检测（2026-10-15 "过程突然终止"事件后新增）。
+    """可疑流结束检测。
 
     在"无工具调用、即将结束回合"时判定，两类可疑特征：
     1. finish_reason == 'length'：输出到达 max_tokens 被截断，任务未必完成；
-    2. 无文字输出：模型在"思考→行动"衔接点静默停止（事件特征：reasoning 正常
+    2. 无文字输出：模型在"思考→行动"衔接点静默停止（特征：reasoning 正常
        生成、本应发出工具调用或文字收尾，却直接断流）、完全空响应（API 异常）、
        或工具调用无效被全部丢弃等场景。
     正常结束（finish_reason=stop 且有文字收尾）不在此列。
@@ -399,15 +396,13 @@ class AgentChatServiceV2:
         # Transcript 管理器
         self._transcript_manager = get_transcript_manager()
         
-        # （2026-10-16 清理）原 _pending_question 死状态已移除（无赋值点；问题流转走 QuestionManager）
-        
         # Auto Memory 管理器
         self._auto_memory_manager = get_auto_memory_manager()
         
         # Agent Memory 管理器
         self._agent_memory_manager = get_agent_memory_manager()
         
-        # 记忆提取器（延迟初始化；提取节流状态由 AutoMemoryExtractor 内部维护，2026-10-16 接线）
+        # 记忆提取器（延迟初始化；提取节流状态由 AutoMemoryExtractor 内部维护）
         self._memory_extractor: Optional[AutoMemoryExtractor] = None
         
         # 工具执行器
@@ -418,182 +413,47 @@ class AgentChatServiceV2:
         self._mcp_initialized = False
         
         # 计费系统
-        self._model_pricing_mtime: float = 0.0  # 定价配置文件 mtime（热重载检测）
-        self._model_pricing = self._load_model_pricing()
-        self._session_usage: Dict[str, dict] = {}  # {conv_uuid: {total_cost, ...}}
+        self._ensure_usage()
     
+    def _ensure_usage(self) -> UsageTracker:
+        if not hasattr(self, "_usage"):
+            self._usage = UsageTracker(
+                _DATA_HOME,
+                os.path.dirname(os.path.dirname(__file__)),
+                current_pricing_period,
+            )
+        return self._usage
+
+    @property
+    def _model_pricing(self):
+        return self._ensure_usage().pricing
+
+    @_model_pricing.setter
+    def _model_pricing(self, value):
+        self._ensure_usage().pricing = value
+
+    @property
+    def _model_pricing_mtime(self):
+        return self._ensure_usage().pricing_mtime
+
+    @_model_pricing_mtime.setter
+    def _model_pricing_mtime(self, value):
+        self._ensure_usage().pricing_mtime = value
+
     def _load_model_pricing(self) -> dict:
-        """加载模型价格配置（与 _read_json_config 相同的路径优先级：数据目录 > 项目根）"""
-        data = _read_json_config("model_pricing.json")
-        if data:
-            # 记录实际生效文件的 mtime，供 _ensure_model_pricing_fresh 热重载比对
-            try:
-                for p in [
-                    os.path.join(_DATA_HOME, "model_pricing.json"),
-                    os.path.join(os.path.dirname(os.path.dirname(__file__)), "model_pricing.json"),
-                ]:
-                    if os.path.exists(p):
-                        self._model_pricing_mtime = os.path.getmtime(p)
-                        break
-            except Exception:
-                self._model_pricing_mtime = 0.0
-        return data if data else {"models": {}}
-    
+        return self._ensure_usage().reload()
+
     def _ensure_model_pricing_fresh(self) -> None:
-        """轻量热重载：配置文件 mtime 变化时自动重读定价表，无需重启后端"""
-        if self._model_pricing_mtime <= 0 and self._model_pricing.get("models"):
-            return  # 无文件记录（如打包只读），跳过检测
-        try:
-            for p in [
-                os.path.join(_DATA_HOME, "model_pricing.json"),
-                os.path.join(os.path.dirname(os.path.dirname(__file__)), "model_pricing.json"),
-            ]:
-                if os.path.exists(p):
-                    mt = os.path.getmtime(p)
-                    if mt != self._model_pricing_mtime:
-                        self._model_pricing = self._load_model_pricing()
-                    return
-        except Exception:
-            pass
-    
+        self._ensure_usage().ensure_fresh()
+
     def _calculate_cost(self, model: str, usage) -> Optional[dict]:
-        """
-        计算本次调用的费用
-        
-        Returns:
-            {
-                "input_tokens": int,
-                "cache_hit_tokens": int,
-                "output_tokens": int,
-                "input_cost": float,
-                "cache_hit_cost": float,
-                "output_cost": float,
-                "total_cost": float,
-                "period": "peak" | "offpeak" | None,   # 分时模型本次计费时段
-                "pricing_used": {...}                    # 本次实际使用的单价（per 1M tokens）
-            }
-        """
-        # 定价文件 mtime 热重载（改 model_pricing.json 无需重启）
-        self._ensure_model_pricing_fresh()
-        
-        pricing_data = self._model_pricing.get("models", {}).get(model)
-        if not pricing_data:
-            return None
-        
-        pricing = pricing_data.get("pricing", {})
-        period = None
-        
-        # mimo-v2.5 阶梯定价（超过阈值 tokens 切换高价档）
-        prompt_tokens = getattr(usage, 'prompt_tokens', 0)
-        tier_config = pricing_data.get("pricing_tier_high")
-        if tier_config and prompt_tokens > tier_config.get("threshold_tokens", 256000):
-            pricing = tier_config
-        else:
-            # DeepSeek 分时定价：配置了 pricing_peak + pricing_offpeak 的模型，
-            # 按北京时间实时判定高峰/空闲，选取对应单价（前端展示同规则）。
-            peak_cfg = pricing_data.get("pricing_peak")
-            offpeak_cfg = pricing_data.get("pricing_offpeak")
-            if peak_cfg and offpeak_cfg:
-                period = current_pricing_period()
-                pricing = peak_cfg if period == "peak" else offpeak_cfg
-        
-        prompt_all = prompt_tokens
-        cache_hit = getattr(usage, 'prompt_cache_hit_tokens', 0)
-        cache_miss = prompt_all - cache_hit if cache_hit > 0 else prompt_all
-        completion = getattr(usage, 'completion_tokens', 0)
-        
-        if cache_hit > 0:
-            input_cost = (cache_miss / 1_000_000) * pricing.get("input_per_million", 0)
-            cache_cost = (cache_hit / 1_000_000) * pricing.get("cache_hit_per_million", 0)
-        else:
-            input_cost = (prompt_all / 1_000_000) * pricing.get("input_per_million", 0)
-            cache_cost = 0.0
-            cache_hit = 0
-            cache_miss = prompt_all
-        
-        output_cost = (completion / 1_000_000) * pricing.get("output_per_million", 0)
-        total = round(input_cost + cache_cost + output_cost, 6)
-        
-        return {
-            "input_tokens": cache_miss,           # 非缓存输入（用于计费和面板显示）
-            "cache_hit_tokens": cache_hit,
-            "output_tokens": completion,
-            "input_cost": round(input_cost, 6),
-            "cache_hit_cost": round(cache_cost, 6),
-            "output_cost": round(output_cost, 6),
-            "total_cost": total,
-            "period": period,
-            "pricing_used": dict(pricing) if pricing else None
-        }
-    
+        return self._ensure_usage().calculate_cost(model, usage)
+
     def _accumulate_cost(self, conversation_uuid: str, cost_info: dict, model_name: str = None) -> dict:
-        """累计会话费用（只增不减，不受压缩影响，同时持久化到数据库）"""
-        if conversation_uuid not in self._session_usage:
-            # 尝试从 agent_chat.db 恢复历史累计值（服务重启后有效）
-            existing = self._load_session_cost_from_db(conversation_uuid)
-            if existing:
-                self._session_usage[conversation_uuid] = existing
-            else:
-                self._session_usage[conversation_uuid] = {
-                    "total_cost": 0.0,
-                    "total_input_tokens": 0,
-                    "total_cache_hit_tokens": 0,
-                    "total_output_tokens": 0,
-                    "api_calls": 0,
-                    "currency": "CNY"
-                }
-        
-        session = self._session_usage[conversation_uuid]
-        session["total_cost"] += cost_info["total_cost"]
-        # total_input_tokens = 总输入（含缓存命中；2026-10-16 语义修正，此前只累计非缓存输入）
-        session["total_input_tokens"] += cost_info["input_tokens"] + cost_info["cache_hit_tokens"]
-        session["total_cache_hit_tokens"] += cost_info["cache_hit_tokens"]
-        session["total_output_tokens"] += cost_info["output_tokens"]
-        session["api_calls"] += 1
-        
-        # 持久化到 SQLite（异步写入，不阻塞主流程）
-        api_call_index = session["api_calls"]
-        try:
-            from . import agent_chat_history as history
-            conv = history.get_agent_conversation_by_uuid(conversation_uuid)
-            if conv:
-                history.save_api_call_cost(
-                    conversation_id=conv["id"],
-                    model_name=model_name or "unknown",
-                    api_call_index=api_call_index,
-                    input_tokens=cost_info["input_tokens"],
-                    cache_hit_tokens=cost_info["cache_hit_tokens"],
-                    output_tokens=cost_info["output_tokens"],
-                    input_cost=cost_info["input_cost"],
-                    cache_hit_cost=cost_info["cache_hit_cost"],
-                    output_cost=cost_info["output_cost"],
-                    total_cost=cost_info["total_cost"],
-                    currency="CNY"
-                )
-        except Exception as e:
-            logger.warning(f"[Cost] Failed to persist cost to database: {e}")
-        
-        return {**session, "this_call": cost_info}
-    
+        return self._ensure_usage().accumulate(conversation_uuid, cost_info, model_name)
+
     def _load_session_cost_from_db(self, conversation_uuid: str) -> Optional[dict]:
-        """从 agent_chat.db 恢复历史费用累计值（服务重启后调用）"""
-        try:
-            from . import agent_chat_history as history
-            conv = history.get_agent_conversation_by_uuid(conversation_uuid)
-            if conv:
-                summary = history.get_conversation_cost_summary(conv["id"])
-                if summary and summary.get("api_calls", 0) > 0:
-                    return {
-                        "total_cost": summary["total_cost"],
-                        "total_input_tokens": summary["total_input_tokens"],
-                        "total_cache_hit_tokens": summary["total_cache_hit_tokens"],
-                        "total_output_tokens": summary["total_output_tokens"],
-                        "api_calls": summary["api_calls"],
-                        "currency": summary.get("currency", "CNY")
-                    }
-        except Exception as e:
-            logger.debug(f"[Cost] Failed to load existing session cost from DB: {e}")
-        return None
+        return self._ensure_usage().load_session_cost(conversation_uuid)
     
     def _resolve_path(self, path: str) -> str:
         """解析路径，支持相对路径"""
@@ -728,7 +588,7 @@ class AgentChatServiceV2:
                 "model": use_model,
                 "messages": [{"role": "user", "content": title_prompt}],
                 "temperature": 0.3,
-                "max_tokens": 200,  # 标题 ≤20 字（原 100000 为复制粘贴错误，2026-10-16 修正）
+                "max_tokens": 200,  # 标题 ≤20 字
                 "stream": True,
             }
             
@@ -900,8 +760,7 @@ class AgentChatServiceV2:
                     "name": agent_def.name,
                     "description": agent_def.description,
                     "model": agent_def.model,
-                    "skills": agent_def.skills,
-                    "triggers": agent_def.triggers[:5] if agent_def.triggers else []
+                    "skills": agent_def.skills
                 })
         
         return result
@@ -916,7 +775,6 @@ class AgentChatServiceV2:
                 "model": agent_def.model,
                 "temperature": agent_def.temperature,
                 "skills": agent_def.skills,
-                "triggers": agent_def.triggers,
                 "context_strategy": agent_def.context_strategy.type
             }
         return None
@@ -972,7 +830,7 @@ class AgentChatServiceV2:
                     continue
             
             # assistant 消息的 tool_calls 必须每个都有 id
-            # （2026-10-17 问题8：不再原地修改入参，改为构造副本）
+            # 构造副本，不原地修改入参
             if role == "assistant" and msg.get("tool_calls"):
                 if any(not tc.get("id") for tc in msg["tool_calls"]):
                     new_tool_calls = []
@@ -991,7 +849,7 @@ class AgentChatServiceV2:
         return sanitized
     
     def _build_and_sanitize_tool_calls(self, tool_calls_chunks: Dict, tools: List[Dict[str, Any]]) -> Optional[List[Dict[str, Any]]]:
-        """从流式 chunks 构建工具调用列表并清洗（2026-10-17 问题8：自 chat_stream 提取）
+        """从流式 chunks 构建工具调用列表并清洗
 
         1. 空 id 修复：流式返回中 tool_call.id 可能因网络波动/chunk 乱序/取消时机
            而保持空字符串。统一生成稳定 UUID，确保下游消息构建、execution_order
@@ -1059,9 +917,8 @@ class AgentChatServiceV2:
     ) -> None:
         """异步提取记忆（后台执行，不阻塞响应）
 
-        节流判断统一走 AutoMemoryExtractor.should_extract（2026-10-16 接线）：
-        消息数 / 轮数间隔 / token 间隔三个配置化阈值（ExtractMemoryConfig），
-        替代此前服务层的硬编码判断。
+        节流判断统一走 AutoMemoryExtractor.should_extract：
+        消息数 / 轮数间隔 / token 间隔三个配置化阈值（ExtractMemoryConfig）。
         """
         try:
             client = AsyncOpenAI(
@@ -1144,240 +1001,42 @@ class AgentChatServiceV2:
         # ========== MCP 初始化 ==========
         await self._ensure_mcp_initialized(project_path)
         
-        # 1. 加载 Agent 配置
-        agent_def = get_cached_agent(agent_name)
-        if not agent_def:
-            yield {"type": "error", "message": f"Agent '{agent_name}' not found"}
+        # 1-11. 准备本轮状态
+        state = TurnState()
+        async for ev in prepare_turn(self, {
+            "agent_name": agent_name,
+            "message": message,
+            "conversation_uuid": conversation_uuid,
+            "user_id": user_id,
+            "model": model,
+            "attachments": attachments,
+            "project_path": project_path,
+            "temperature": temperature,
+            "top_p": top_p,
+            "thinking_enabled": thinking_enabled,
+            "reasoning_effort": reasoning_effort,
+            "user_msg_uuid": user_msg_uuid,
+        }, state):
+            yield ev
+        if state.aborted:
             return
-        
-        # 2. 获取或创建对话（使用 conversation_uuid 作为持久键）
-        conv = history.get_agent_conversation_by_uuid(conversation_uuid)
-        if not conv:
-            history.create_agent_conversation(user_id, agent_name, title="New conversation", uuid=conversation_uuid)
-            conv = history.get_agent_conversation_by_uuid(conversation_uuid)
-        
-        if conv is None:
-            yield {"type": "error", "message": "Failed to create conversation"}
-            return
-        
-        conversation_id = conv["id"]
-        
-        # 2.5 设置 Transcript 会话
-        self._transcript_manager.set_session(
-            session_id=conversation_uuid,
-            project_path=project_path or self._current_project_path
-        )
-        
-        # 3. 构建用户消息（文本部分存DB，图片部分仅给LLM、不持久化）
-        IMAGE_EXT = {'.png':'image/png','.jpg':'image/jpeg','.jpeg':'image/jpeg','.gif':'image/gif','.webp':'image/webp','.bmp':'image/bmp'}
-        full_message = message
-        llm_images: list = []  # image_url 块，仅用于 LLM 请求
-        if attachments:
-            attachment_texts = []
-            for att in attachments:
-                name = att.get('name', 'unknown')
-                b64 = att.get('data_base64', '')
-                is_image = False
-                if b64:
-                    ext = '.' + name.rsplit('.', 1)[-1].lower() if '.' in name else ''
-                    mime = IMAGE_EXT.get(ext, '')
-                    if mime:
-                        img_block = {
-                            "type": "image_url",
-                            "image_url": {"url": f"data:{mime};base64,{b64}"}
-                        }
-                        # 图片细节级别（DeepSeek Vision：low=缩放512x512省token；high/original=原图；auto=等价 original）
-                        detail = att.get("detail")
-                        if detail in ("low", "high", "original", "auto"):
-                            img_block["image_url"]["detail"] = detail
-                        llm_images.append(img_block)
-                        is_image = True
-                        continue  # 图片不进 DB，只给 LLM
-                if is_image:
-                    continue
-                text_content = att.get("text_content")
-                if not text_content and b64:
-                    parsed = _extract_attachment_text(name, b64)
-                    if parsed:
-                        text_content = parsed
-                if text_content:
-                    attachment_texts.append(f"[附件: {name}]\n{text_content}")
-                else:
-                    attachment_texts.append(f"[附件: {name}]\n(该文件类型的文本内容无法解析，请提示用户改用 read_file/read_pdf 工具处理或转换为文本格式)")
-            if attachment_texts:
-                full_message = message + "\n\n" + "\n\n".join(attachment_texts)
-        
-        # 4. 保存用户消息（仅文本，不含图片）
-        user_message_id = history.add_agent_chat_message(
-            conversation_id=conversation_id,
-            role="user",
-            content=full_message,
-            token_count=count_tokens(full_message),
-            agent_name=agent_name,
-            msg_uuid=user_msg_uuid
-        )
-        
-        # 5. 加载历史消息
-        context_messages = history.get_agent_chat_messages_for_context(conversation_id, limit=999999)
-        
-        # 5.5 获取 LLM 配置（显式模型 > agent_model_config.json > YAML > provider 默认）
-        agent_model_override = self._load_agent_model_config(agent_name) or {}
-        self._load_path_whitelist()
-        llm_config = self._get_llm_config(agent_name, model)
-        use_model = llm_config['model']
-        
-        # 判断是否为 DeepSeek 模型
+
+        agent_def = state.agent_def
+        conversation_id = state.conversation_id
+        messages = state.messages
+        context_messages = state.context_messages
+        llm_config = state.llm_config
+        use_model = state.use_model
+        final_temperature = state.final_temperature
+        final_top_p = state.final_top_p
+        final_thinking_enabled = state.final_thinking_enabled
+        final_reasoning_effort = state.final_reasoning_effort
+        client = state.client
+        cancel_event = state.cancel_event
+        user_message_id = state.user_message_id
+        pending_todo_events = state.pending_todo_events
+        full_message = state.full_message
         is_deepseek = 'deepseek' in (use_model or '').lower()
-        
-        # 确定最终使用的参数
-        configured_temperature = agent_model_override.get("temperature")
-        final_temperature = temperature if temperature is not None else (
-            configured_temperature if configured_temperature is not None else (
-                agent_def.temperature if agent_def.temperature is not None else llm_config.get("temperature")
-            )
-        )
-        final_top_p = top_p if top_p is not None else getattr(agent_def, 'top_p', None)
-        if final_top_p is None:
-            final_top_p = llm_config.get("top_p")
-        
-        # 思考模式参数（所有厂商统一：开关 + 强度，构建逻辑见 build_thinking_params）
-        final_thinking_enabled = thinking_enabled if thinking_enabled is not None else True
-        final_reasoning_effort = reasoning_effort if reasoning_effort is not None else "high"
-        
-        # 调试日志：显示模型和参数
-        logger.debug(f"[AgentChatServiceV2] LLM配置: model={use_model}, temperature={final_temperature}, top_p={final_top_p}, agent={agent_name}")
-        logger.debug(f"[AgentChatServiceV2] Provider配置: base_url={llm_config['base_url']}")
-        logger.debug(f"[AgentChatServiceV2] 思考模式: thinking_enabled={final_thinking_enabled}" + (f", reasoning_effort={final_reasoning_effort}" if final_thinking_enabled else ""))
-        
-        # 6. 上下文压缩：已移除自动压缩；压缩由用户手动触发（session.compress RPC）
-        
-        # 7. 获取系统提示词
-        system_prompt = get_agent_system_prompt(agent_def)
-        
-        # 7.1 注入记忆提示词（带内容哈希缓存，避免 system prompt 不必要的变化）
-        memory_prompt_text = ""
-        try:
-            self._auto_memory_manager.set_project(project_path or self._current_project_path)
-            
-            from .memory import load_memory_prompt, get_memory_prompt_for_agent
-            auto_memory_prompt = load_memory_prompt()
-            agent_memory_prompt = get_memory_prompt_for_agent(
-                agent_type=agent_name,
-                project_path=project_path or self._current_project_path
-            )
-            
-            current_memory = (auto_memory_prompt or "") + (agent_memory_prompt or "")
-            memory_hash = str(hash(current_memory))
-            
-            if memory_hash != self._cached_memory_hash:
-                self._cached_memory_hash = memory_hash
-                if auto_memory_prompt:
-                    self._cached_memory_prompt = "\n\n" + auto_memory_prompt
-                else:
-                    self._cached_memory_prompt = ""
-                if agent_memory_prompt:
-                    self._cached_memory_prompt += "\n\n" + agent_memory_prompt
-            
-            memory_prompt_text = self._cached_memory_prompt
-            
-            if memory_prompt_text:
-                logger.info(f"[AgentChatServiceV2] Injected memory prompt ({len(memory_prompt_text)} chars)")
-        except Exception as e:
-            logger.warning(f"[AgentChatServiceV2] Failed to build memory prompt: {e}")
-        
-        # 7.5 添加项目路径提示
-        project_path_instruction = f"""
-
-【重要：项目工作目录】
-你的工作目录（项目文件夹）是：{self._current_project_path}
-
-⚠️ 严格遵守以下规则：
-1. 所有文件操作必须在这个目录下进行
-2. 使用相对路径时，会自动相对于此目录解析
-3. 绝对禁止访问此目录之外的文件（安全限制）
-4. 执行Shell命令时，会自动在此目录下执行
-5. 如果用户要求操作其他目录的文件，必须明确拒绝并告知你的工作目录
-
-当前工作目录: {self._current_project_path}
-"""
-        # 7.6 加载用户便签 (usernote)
-        usernote_content = ""
-        try:
-            _un_data = _read_json_config("usernote.json")
-            if _un_data:
-                usernote_content = (_un_data.get("content") or "").strip()
-        except Exception:
-            pass
-        
-        usernote_prompt = ""
-        if usernote_content:
-            usernote_prompt = f"""
-
-<usernote>
-{usernote_content}
-</usernote>
-
-你有能力通过 usernote_write 工具读取和修改 usernote 的内容。usernote 是用户用来记录重要上下文、决策、待办事项的便签，优先级高于对话历史。当用户要求你修改 usernote 时，调用 usernote_write 工具。"""
-        
-        system_prompt = system_prompt + memory_prompt_text + project_path_instruction + usernote_prompt
-        
-        # 8. 构建消息列表
-        messages = [{"role": "system", "content": system_prompt}]
-        for msg in context_messages[:-1]:
-            messages.append(msg)
-        # 图片用多模态 content 数组；纯文本保持字符串兼容
-        if llm_images:
-            user_content: list = [{"type": "text", "text": full_message or message}]
-            user_content.extend(llm_images)
-            messages.append({"role": "user", "content": user_content})
-        else:
-            messages.append({"role": "user", "content": full_message})
-        
-        # 兜底：过滤/修复不合法的 tool 消息
-        messages = self._sanitize_messages(messages)
-        
-        # 9. 创建 AsyncOpenAI 客户端
-        try:
-            client = AsyncOpenAI(
-                api_key=llm_config['api_key'],
-                base_url=llm_config['base_url'],
-                timeout=300.0
-            )
-        except Exception as e:
-            logger.error(f"[AgentChatServiceV2] Failed to create OpenAI client: {e}")
-            yield {"type": "error", "message": f"Failed to initialize LLM client: {e}"}
-            return
-        
-        # 11. 创建取消信号
-        cancel_event = asyncio.Event()
-        self._cancel_signals[conversation_uuid] = cancel_event
-        
-        # 11.5 设置 Todo 事件回调，按会话隔离
-        from tools.todo_tool import TodoManager
-        
-        TodoManager.set_session_id(conversation_uuid)
-
-        # 设置权限管理器的会话 ID（用于权限弹窗关联当前会话）
-        try:
-            from gateway.permission_manager import get_permission_manager
-            get_permission_manager().set_session_id(conversation_uuid)
-        except Exception:
-            pass
-
-        pending_todo_events = []
-        
-        def on_todo_update(todos_list):
-            pending_todo_events.append(todos_list)
-        
-        TodoManager.set_event_callback(on_todo_update)
-        
-        # 11.5 重置防爬守卫（每轮对话开始）
-        try:
-            from .code_network_guardV2 import reset_all_guards
-            reset_all_guards()
-        except ImportError:
-            pass
-        
         # 12. 发送开始事件
         yield {
             "type": "chat_started",
@@ -1397,7 +1056,7 @@ class AgentChatServiceV2:
             order_index = 0  # 全局顺序索引，确保严格按输出顺序
             was_interrupted = False  # 是否被用户中断
             suspicious_retry_done = False  # C: 每回合最多自动重试一次（可疑结束检测）
-            in_suspicious_retry = False  # 2026-10-16: 当前 iteration 是否为可疑重试轮（API 兜底保护窗口）
+            in_suspicious_retry = False  # 当前 iteration 是否为可疑重试轮（API 兜底保护窗口）
             
             logger.info(f"[AgentChatServiceV2] Starting state machine loop (unlimited iterations)")
             
@@ -1422,16 +1081,12 @@ class AgentChatServiceV2:
                 tool_calls_chunks = {}
                 iteration_start_order_index = len(execution_order)
 
-                # 统一上下文口径（2026-10-16）：历史轮的 tool 输出与 DB 重载路径一致地
+                # 统一上下文口径：历史轮的 tool 输出与 DB 重载路径一致地
                 # 截断到 MAX_TOOL_OUTPUT_CONTEXT_CHARS；当前轮结果在 append 时保持全文
                 for _m in messages:
                     if _m.get("role") == "tool" and isinstance(_m.get("content"), str):
                         _m["content"] = history._truncate_context_text(
                             _m["content"], history.MAX_TOOL_OUTPUT_CONTEXT_CHARS)
-                
-                # 流式输出时的状态追踪：实时检测内容类型切换
-                current_chunk_type = None  # 'reasoning' 或 'content'
-                current_chunk_content = ""  # 当前累积的内容
                 
                 # ========== 调用 LLM ==========
                 tools = self._get_tools_definition(agent_def)
@@ -1455,155 +1110,30 @@ class AgentChatServiceV2:
                 
                 logger.debug(f"[AgentChatServiceV2] Final stream_params keys: {list(stream_params.keys())}")
                 
-                # 尝试 API 调用，支持响应式压缩
-                max_api_retries = 3
-                api_retry_count = 0
-                stream = None
-                graceful_abort = False  # 2026-10-16: 重试轮被 API 拒绝时置 True → 跳出主循环走优雅收尾
-                
-                while api_retry_count < max_api_retries:
-                    # 检查取消
-                    if cancel_event.is_set():
-                        logger.info("[AgentChatServiceV2] Cancelled during API retry")
-                        was_interrupted = True
-                        yield {"type": "cancelled", "message": "Generation cancelled during API retry"}
-                        break
-                    
-                    try:
-                        stream = await client.chat.completions.create(**stream_params)
-                        in_suspicious_retry = False  # 请求已成功发出，兜底窗口关闭
-                        break
-                    except Exception as api_error:
-                        api_retry_count += 1
-                        api_error_text = str(api_error).lower()
-
-                        is_ptl, token_gap, context_limit = is_prompt_too_long_error(api_error)
-                        
-                        # 上下文超长：自动压缩已移除，引导用户手动压缩后重试
-                        if is_ptl:
-                            detail = f"（gap={token_gap}, limit={context_limit}）" if token_gap is not None else ""
-                            logger.warning(f"[AgentChatServiceV2] API returned prompt_too_long{detail}; manual compaction required")
-                            raise RuntimeError(
-                                f"上下文长度超出模型窗口{detail}，本次生成已停止。"
-                                f"请手动压缩会话后重试。"
-                            )
-                        
-                        # 2026-10-16 兜底：可疑重试轮的请求被 API 拒绝（如 400 Invalid assistant
-                        # message——重试构造的历史消息非法）时，不再硬终止，接受当前状态为完成
-                        if in_suspicious_retry and "invalid assistant message" in api_error_text:
-                            logger.warning(
-                                f"[AgentChatServiceV2] Suspicious-retry request rejected by API "
-                                f"({api_error}); accepting turn as complete"
-                            )
-                            graceful_abort = True
-                            break
-                        raise api_error
-                
+                # 调用 LLM（含重试与上下文超长处理）
+                stream, open_status, graceful_abort = await open_stream(
+                    client, stream_params, cancel_event, in_suspicious_retry
+                )
+                if open_status == "cancelled":
+                    was_interrupted = True
+                    yield {"type": "cancelled", "message": "Generation cancelled during API retry"}
+                    break
+                in_suspicious_retry = False
                 if stream is None:
                     if graceful_abort:
                         break  # 跳出 iteration 主循环 → 走正常收尾（接受为完成）
                     raise RuntimeError("Failed to get API response after retries")
                 
-                # 流式响应处理（async for 在 await 之间让出事件循环 → 取消信号可立即响应）
-                chunk_count = 0
-                tool_call_chunk_count = 0
-                
-                try:
-                    async for chunk in stream:
-                        chunk_count += 1
-                        
-                        if cancel_event.is_set():
-                            logger.info(f"[AgentChatServiceV2] Cancel detected at chunk #{chunk_count}")
-                            was_interrupted = True
-                            yield {"type": "cancelled", "message": "Generation cancelled"}
-                            break
-                        
-                        if not (chunk.choices and len(chunk.choices) > 0):
-                            continue
-                        
-                        # B: 捕获 finish_reason（最后一个 chunk 携带；None=流异常缺失）
-                        if chunk.choices[0].finish_reason:
-                            finish_reason = chunk.choices[0].finish_reason
-                        
-                        delta = chunk.choices[0].delta
-                        
-                        # ── 推理内容 ──
-                        if hasattr(delta, 'reasoning_content') and delta.reasoning_content:
-                            if current_chunk_type == 'content' and current_chunk_content:
-                                execution_order.append({"type": "text", "content": current_chunk_content, "order": order_index})
-                                order_index += 1
-                                current_chunk_content = ""
-                            current_chunk_type = 'reasoning'
-                            current_chunk_content += delta.reasoning_content
-                            reasoning_text += delta.reasoning_content
-                            yield {"type": "reasoning", "content": delta.reasoning_content, "order": order_index}
-                            await asyncio.sleep(0)  # 让出事件循环，让 WebSocket _send 任务执行
-                        
-                        # ── 文本内容 ──
-                        if delta.content:
-                            if current_chunk_type == 'reasoning' and current_chunk_content:
-                                execution_order.append({"type": "reasoning", "content": current_chunk_content, "order": order_index})
-                                order_index += 1
-                                current_chunk_content = ""
-                            current_chunk_type = 'content'
-                            current_chunk_content += delta.content
-                            response_text += delta.content
-                            # [DEBUG-STREAM-BACKEND] print(f"[DEBUG-STREAM-BACKEND] yield content chunk: len={len(delta.content)}, total_response={len(response_text)}")
-                            yield {"type": "content", "content": delta.content, "order": order_index}
-                            await asyncio.sleep(0)  # 让出事件循环，让 WebSocket _send 任务执行
-                        
-                        # ── 工具调用 ──
-                        if hasattr(delta, 'tool_calls') and delta.tool_calls:
-                            tool_call_chunk_count += 1
-                            for tc in delta.tool_calls:
-                                idx = tc.index
-                                if idx not in tool_calls_chunks:
-                                    tool_calls_chunks[idx] = {'id': '', 'type': 'function', 'function': {'name': '', 'arguments': ''}}
-                                if tc.id:
-                                    tool_calls_chunks[idx]['id'] = tc.id
-                                if tc.function:
-                                    if tc.function.name:
-                                        tool_calls_chunks[idx]['function']['name'] = tc.function.name
-                                    if tc.function.arguments:
-                                        tool_calls_chunks[idx]['function']['arguments'] += tc.function.arguments
-                                current_tool_id = tool_calls_chunks[idx]['id'] or f"temp_{idx}"
-                                current_tool_name = tool_calls_chunks[idx]['function']['name'] or ''
-                                if current_tool_name:
-                                    yield {
-                                        "type": "tool_call_streaming",
-                                        "tool_call_id": current_tool_id,
-                                        "tool_name": current_tool_name,
-                                        "arguments_chunk": tc.function.arguments if tc.function and tc.function.arguments else '',
-                                        "arguments_full": tool_calls_chunks[idx]['function']['arguments'],
-                                        "index": idx
-                                    }
-                                    await asyncio.sleep(0)  # 让出事件循环，让 WebSocket _send 任务执行
-                except Exception as stream_err:
-                    err_str = str(stream_err)
-                    logger.info(f"[AgentChatServiceV2] Stream ended: {err_str}")
-                    if cancel_event.is_set():
-                        was_interrupted = True
-                        yield {"type": "cancelled", "message": "Generation cancelled"}
-                        break
-                    raise
-                
-                if current_chunk_type and current_chunk_content:
-                    if current_chunk_type == 'reasoning':
-                        execution_order.append({
-                            "type": "reasoning",
-                            "content": current_chunk_content,
-                            "order": order_index
-                        })
-                        order_index += 1
-                    elif current_chunk_type == 'content':
-                        execution_order.append({
-                            "type": "text",
-                            "content": current_chunk_content,
-                            "order": order_index
-                        })
-                        order_index += 1
-                current_chunk_content = ""
-                current_chunk_type = None
+                # 流式响应处理
+                consumer = StreamConsumer(execution_order, order_index, cancel_event)
+                async for ev in consumer.consume(stream):
+                    yield ev
+                was_interrupted = consumer.interrupted
+                response_text = consumer.content
+                reasoning_text = consumer.reasoning
+                finish_reason = consumer.finish_reason
+                tool_calls_chunks = consumer.tool_calls_chunks
+                order_index = consumer.order_index
 
                 # 先累加本轮的 response_text 和 reasoning_text（中断前也要保存）
                 if reasoning_text:
@@ -1647,14 +1177,14 @@ class AgentChatServiceV2:
                         logger.warning(f"[Cost] Failed to calculate cost: {e}", exc_info=True)
                 # ========================================
                 
-                # 构建工具调用列表（2026-10-17 问题8：清洗逻辑提取为 _build_and_sanitize_tool_calls）
+                # 构建工具调用列表（清洗逻辑见 _build_and_sanitize_tool_calls）
                 tool_calls = self._build_and_sanitize_tool_calls(tool_calls_chunks, tools)
                 # ========================================
                 
                 # ========== 判断是否终止 ==========
                 if not tool_calls:
-                    # C: 可疑结束检测 + 自动重试一次（2026-10-15 "过程突然终止"事件：
-                    # 模型在"思考→行动"衔接点静默停止，原逻辑直接误判为"任务完成"）
+                    # 可疑结束检测 + 自动重试一次：
+                    # 模型在"思考→行动"衔接点静默停止时，不能直接判定为"任务完成"
                     suspicious = _is_suspicious_stream_end(finish_reason, response_text)
                     if suspicious and not suspicious_retry_done:
                         suspicious_retry_done = True
@@ -1664,7 +1194,7 @@ class AgentChatServiceV2:
                             f"content_len={len(response_text)}, reasoning_len={len(reasoning_text)}) - auto-retrying once"
                         )
                         # 回传本轮输出保持上下文连贯（DeepSeek 思考模式要求回传 reasoning_content）
-                        # 2026-10-16: content 为空时不得回传——空 content + 无 tool_calls 的 assistant
+                        # content 为空时不得回传——空 content + 无 tool_calls 的 assistant
                         # 消息会被 API 拒绝（400 Invalid assistant message），跳过以保持请求合法
                         if response_text:
                             messages.append({
@@ -1686,246 +1216,37 @@ class AgentChatServiceV2:
                     break
                 
                 # ========== 执行工具（智能并发） ==========
-                logger.info(f"[AgentChatServiceV2] Executing {len(tool_calls)} tool calls with smart concurrency")
-                
-                # 构建助手消息
-                assistant_msg = {
+                logger.info(f"[AgentChatServiceV2] Executing {len(tool_calls)} tool calls")
+
+                messages.append({
                     "role": "assistant",
                     "content": response_text or None,
-                    "tool_calls": tool_calls
-                }
-                # 如果有推理内容，添加到消息中（DeepSeek 思考模式要求必须回传，其他模型可选）
-                assistant_msg["reasoning_content"] = reasoning_text if reasoning_text else None
-                messages.append(assistant_msg)
-                
-                # 检查是否有 ask_user_question 工具，需要提前发送事件并注入 question_id
-                for tc in tool_calls:
-                    tool_name = tc.get("function", {}).get("name", "")
-                    if tool_name == "ask_user_question":
-                        # 解析参数获取问题数据
-                        tool_args_str = tc.get("function", {}).get("arguments", "{}")
-                        try:
-                            tool_args = safe_json_loads(tool_args_str, default={}) if isinstance(tool_args_str, str) else tool_args_str
-                        except Exception:
-                            tool_args = {}
-                        
-                        questions = tool_args.get("questions", [])
-                        if questions:
-                            # 生成 question_id 并注入到工具参数中
-                            question_id = str(uuid.uuid4())
-                            tool_args["question_id"] = question_id
-                            # 更新工具参数（字符串格式）
-                            tc["function"]["arguments"] = json.dumps(tool_args, ensure_ascii=False)
-                            
-                            # ⚠️ 必须在 yield 前注册问题，否则用户可能在注册完成前提交答案
-                            # 导致 submit_answers() 的答案被 set_pending_questions() 清掉
-                            from tools.ask_question_tool import QuestionManager
-                            QuestionManager.set_pending_questions({
-                                "id": question_id,
-                                "questions": questions,
-                                "timestamp": time.time()
-                            })
-                            
-                            logger.info(f"[AgentChatServiceV2] Sending ask_question event for {question_id}")
-                            yield {
-                                "type": "ask_question",
-                                "question_id": question_id,
-                                "questions": questions
-                            }
-                
-                # 转换工具调用为 ToolUseBlock 格式（在修改 tc 之后）
-                tool_use_blocks = []
-                tool_results_map = {}
-                
-                for tc in tool_calls:
-                    tool_args_str = tc.get("function", {}).get("arguments", "{}")
-                    try:
-                        tool_args = safe_json_loads(tool_args_str, default={}) if isinstance(tool_args_str, str) else tool_args_str
-                    except Exception:
-                        tool_args = {}
-                    
-                    tool_name = tc.get("function", {}).get("name", "")
-                    tc_id = tc.get("id", f"route_{uuid.uuid4().hex[:8]}")
-                    
-                    tool_use_blocks.append(ToolUseBlock(
-                        id=tc.get("id", str(uuid.uuid4())[:8]),
-                        name=tool_name,
-                        arguments=tool_args
-                    ))
-                
-                # 创建执行上下文
-                exec_context = ToolExecutionContext(
+                    "tool_calls": tool_calls,
+                    "reasoning_content": reasoning_text if reasoning_text else None,
+                })
+
+                cycle = ToolCycle(
+                    executor=self._tool_executor,
+                    cancel_event=cancel_event,
+                    execution_order=execution_order,
+                    order_index=order_index,
+                    messages=messages,
                     conversation_uuid=conversation_uuid,
                     agent_name=agent_name,
                     project_path=self._current_project_path,
-                    cancel_event=cancel_event,
-                    # 快照系统上下文字段
-                    snapshot_session_uuid=conversation_uuid,
-                    snapshot_message_id=user_message_id,
+                    user_message_id=user_message_id,
+                    tool_executions=tool_executions,
+                    pending_todo_events=pending_todo_events,
                 )
-                
-                # 【关键修复】确保工具执行器使用正确的项目路径
-                self._tool_executor.set_project_path(self._current_project_path)
-                
-                # 工具执行前检查取消
-                if cancel_event.is_set():
-                    logger.info("[AgentChatServiceV2] Cancelled before tool execution")
-                    was_interrupted = True
-                    # 把已收集的工具记录到 execution_order，避免 tool_call_id 丢失
-                    for tc in tool_calls:
-                        execution_order.append({
-                            "type": "tool",
-                            "order": order_index,
-                            "tool_info": {
-                                "id": tc.get("id", ""),
-                                "name": tc.get("function", {}).get("name", "unknown"),
-                                "status": "cancelled",
-                                "input": tc.get("function", {}).get("arguments", ""),
-                                "output": "Cancelled by user",
-                                "duration": 0
-                            }
-                        })
-                        order_index += 1
-                    yield {"type": "cancelled", "message": "Generation cancelled before tool execution"}
-                    break
-                
-                # 使用 ToolOrchestrator 执行工具
-                orchestrator = ToolOrchestrator(
-                    tool_executor=self._tool_executor,
-                    max_concurrency=get_max_concurrency()
-                )
-                
-                # 用 try/except 保护 async for，确保 break 时 aclose() 的异常不会跳过中断处理
-                try:
-                    async for update in orchestrator.run_tools(tool_use_blocks, exec_context):
-                        event = update.event
-                        result = update.result
-                        
-                        # 发送工具执行事件
-                        yield {
-                            "type": "tool_execution",
-                            "tool_execution_id": event.tool_execution_id,
-                            "tool_call_id": result.tool_call_id if result else event.tool_execution_id,
-                            "tool_name": event.tool_name,
-                            "status": event.status,
-                            "input": event.input or "",
-                            "output": event.output or "",
-                            "duration": event.duration or 0,
-                            "order": order_index  # 当前顺序索引
-                        }
-                        
-                        # 如果有结果，保存它
-                        if result:
-                            tool_results_map[result.tool_call_id] = result
-                            
-                            # 记录到执行列表
-                            tool_executions.append({
-                                "id": result.tool_call_id,
-                                "name": result.tool_name,
-                                "status": result.status,
-                                "input": result.input,
-                                "output": result.output,
-                                "duration": result.duration
-                            })
-                            
-                            # 按实际执行顺序记录工具
-                            execution_order.append({
-                                "type": "tool",
-                                "order": order_index,
-                                "tool_info": {
-                                    "id": result.tool_call_id,
-                                    "name": result.tool_name,
-                                    "status": result.status,
-                                    "input": result.input,
-                                    "output": result.output,
-                                    "duration": result.duration
-                                }
-                            })
-                            order_index += 1
-                        elif event.status == "cancelled":
-                            # 取消的工具也要记录到 execution_order，否则重建消息时会缺少 tool_call_id
-                            execution_order.append({
-                                "type": "tool",
-                                "order": order_index,
-                                "tool_info": {
-                                    "id": event.tool_execution_id,
-                                    "name": event.tool_name,
-                                    "status": "cancelled",
-                                    "input": event.input or "",
-                                    "output": "Error: Tool execution cancelled by user",
-                                    "duration": event.duration or 0
-                                }
-                            })
-                            order_index += 1
-                        
-                        # 检查待发送的 todo 事件
-                        while pending_todo_events:
-                            todos_data = pending_todo_events.pop(0)
-                            yield {
-                                "type": "todo_update",
-                                "todos": todos_data
-                            }
-                        
-                        # （2026-10-16 清理）此处原 _pending_question 死分支已移除：
-                        # ask_question 事件由 tool 处理路径直接 yield（QuestionManager.set_pending_questions）
+                async for ev in cycle.prepare(tool_calls):
+                    yield ev
+                async for ev in cycle.run(tool_calls):
+                    yield ev
+                order_index = cycle.order_index
+                was_interrupted = cycle.interrupted
 
-                        if cancel_event.is_set():
-                            logger.info("[AgentChatServiceV2] Cancellation detected during tool execution")
-                            was_interrupted = True
-                            
-                            # 即使取消了，也要补上已完成的工具结果，否则下次 API 调用缺少 tool_call_id
-                            for tc in tool_calls:
-                                tool_id = tc.get("id", "")
-                                tool_result = tool_results_map.get(tool_id)
-                                if tool_result:
-                                    messages.append({
-                                        "role": "tool",
-                                        "tool_call_id": tool_id,
-                                        "content": tool_result.output
-                                    })
-                                else:
-                                    messages.append({
-                                        "role": "tool",
-                                        "tool_call_id": tool_id,
-                                        "content": "Error: Tool execution cancelled by user"
-                                    })
-                            
-                            yield {"type": "cancelled", "message": "Generation cancelled"}
-                            break
-                except GeneratorExit:
-                    # async for 被 break 时 aclose() 可能抛出 GeneratorExit，标记中断后放行
-                    was_interrupted = True
-                except asyncio.CancelledError:
-                    was_interrupted = True
-                    # 不重新抛出，让 while 循环后的保存代码执行
-                except Exception:
-                    # 其他异常不特殊处理，让外层 except 捕获
-                    raise
-                
-                # 如果工具执行被中断，直接跳出 while 循环（不再等下一轮迭代）
                 if was_interrupted:
                     break
-                
-                # 添加所有工具结果到消息
-                for tc in tool_calls:
-                    tool_id = tc.get("id", "")
-                    tool_result = tool_results_map.get(tool_id)
-                    if tool_result:
-                        messages.append({
-                            "role": "tool",
-                            "tool_call_id": tool_id,
-                            "content": tool_result.output
-                        })
-                    else:
-                        # 如果没有结果，添加空结果
-                        messages.append({
-                            "role": "tool",
-                            "tool_call_id": tool_id,
-                            "content": "Error: Tool execution result not found"
-                        })
-                
-                logger.info(f"[AgentChatServiceV2] Tool execution completed, continuing to next iteration...")
-            
             # ========== 循环结束，保存结果 ==========
             
             # 序列化 execution_order 为 JSON
@@ -2030,8 +1351,7 @@ class AgentChatServiceV2:
                             "role": m.get("role", "user"),
                             "content": m.get("content", "")
                         }
-                        # 携带工具调用信息（供提取器 _has_memory_writes 去重判断；
-                        # 2026-10-16 修复：此前 extract_messages 不含 tool_calls 导致去重恒失效）
+                        # 携带工具调用信息（供提取器 _has_memory_writes 去重判断）
                         tcs = m.get("tool_calls")
                         if not tcs and m.get("execution_order") is not None:
                             eo = m.get("execution_order")

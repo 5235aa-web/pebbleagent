@@ -71,7 +71,7 @@ def _atomic_write_json(path: Path, data: dict):
     os.replace(tmp, path)
 
 
-# ==================== file.* RPC 路径守卫（2026-10-16 安全加固） ====================
+# ==================== file.* RPC 路径守卫 ====================
 
 def _get_current_project_root() -> str:
     """当前激活项目目录（与工具执行器一致；服务未初始化时回退打包根）"""
@@ -140,7 +140,7 @@ def _guard_rpc_path(path: str, allow_url: bool = False) -> tuple:
         return False, f"path check failed: {e}", ""
 
 
-# ==================== MCP 自动安装辅助（2026-10-16） ====================
+# ==================== MCP 自动安装辅助 ====================
 
 def _detect_arch() -> str:
     """检测 CPU 架构（amd64 / arm64）"""
@@ -250,7 +250,7 @@ def _install_download_server(server_name: str, entry: dict) -> str:
                 )
             logger.info(f"[Server] MCP '{server_name}' sha256 verified ({actual[:16]}...)")
         else:
-            # 未配置校验和 → 拒绝自动下载（2026-10-16 安全加固：网络下载的二进制必须校验；
+            # 未配置校验和 → 拒绝自动下载（网络下载的二进制必须校验；
             # 手动 path 模式不受影响，或向 mcp_install.json 补充 release hash 后启用）
             raise RuntimeError(
                 f"'{server_name}' has no sha256 configured in mcp_install.json; automatic download refused. "
@@ -366,7 +366,7 @@ def _norm_project_path(path: str) -> str:
 
 def _validate_project_dir(path: str) -> tuple:
     """
-    校验项目目录（2026-10-16 安全加固）：
+    校验项目目录：
     必须存在、是目录、且非盘根（盘根会使所有路径边界检查失效）。
     Returns: (ok, error, resolved_path)
     """
@@ -431,7 +431,7 @@ def _ensure_service() -> AgentChatServiceV2:
 def _submit_clarify_answer(answer: str, request_id: str = "", answers: dict = None):
     """提交用户对 ask_question 的回答到 QuestionManager
 
-    多问题支持（2026-10-15）：
+    多问题支持：
     - 新通道：前端传 answers 对象 {问题文本: 答案}（多问题卡片），直接透传；
     - 旧通道：仅 answer 字符串（单问题 / skip / 旧前端），包装为 {"0": answer}。
 
@@ -523,7 +523,7 @@ def handle_request(method: str, params: dict, rid: str) -> Optional[dict]:
         path = _norm_project_path(params.get("path", ""))
         data = _read_projects()
         if path in data["projects"]:
-            # 校验（2026-10-16）：历史列表可能含盘根/失效路径，切换时复核
+            # 校验：历史列表可能含盘根/失效路径，切换时复核
             ok, err, resolved = _validate_project_dir(path)
             if not ok:
                 return {"id": rid, "error": {"code": -32000, "message": err}}
@@ -976,7 +976,7 @@ def handle_request(method: str, params: dict, rid: str) -> Optional[dict]:
             return {"id": rid, "error": {"code": -32602, "message": "paths must be a list"}}
         if len(new_paths) > 5:
             return {"id": rid, "error": {"code": -32602, "message": "maximum 5 paths allowed"}}
-        # 2026-10-17 安全修复（评审问题7b）：路径内容校验，防止"白名单盘根"关掉边界
+        # 路径内容校验，防止"白名单盘根"关掉边界
         for p in new_paths:
             if not isinstance(p, str) or not p.strip():
                 return {"id": rid, "error": {"code": -32602, "message": "paths entries must be non-empty strings"}}
@@ -1027,7 +1027,7 @@ def handle_request(method: str, params: dict, rid: str) -> Optional[dict]:
             mode = PermissionMode(mode_str)
             mgr = get_permission_manager()
             mgr.set_mode(mode)
-            # 2026-10-17 安全修复（评审问题7c）：模式切换写审计（bypass/autoAllow 等高危切换可追溯）
+            # 模式切换写审计（bypass/autoAllow 等高危切换可追溯）
             try:
                 from gateway.permission_audit import get_audit_logger, AuditEvent, AuditEventType
                 get_audit_logger().log_event(AuditEvent(
@@ -1088,7 +1088,7 @@ def handle_request(method: str, params: dict, rid: str) -> Optional[dict]:
             return {"id": rid, "error": {"code": -32000, "message": str(e)}}
 
     if method == "permission.audit.verify":
-        """校验权限审计日志完整性（2026-10-17 接入 verify_integrity）"""
+        """校验权限审计日志完整性"""
         try:
             from gateway.permission_audit import get_audit_logger
             ok = get_audit_logger().verify_integrity()
@@ -1249,7 +1249,7 @@ def handle_request(method: str, params: dict, rid: str) -> Optional[dict]:
         path = params.get("path", "")
         if not path:
             return {"id": rid, "result": {"ok": False, "error": "path is required"}}
-        # 校验（2026-10-16 安全加固）：必须为存在的目录，且拒绝盘根（否则全部路径边界检查失效）
+        # 校验：必须为存在的目录，且拒绝盘根（否则全部路径边界检查失效）
         ok, err, resolved = _validate_project_dir(path)
         if not ok:
             return {"id": rid, "result": {"ok": False, "error": err}}
@@ -2282,7 +2282,7 @@ def handle_prompt_submit(
                     questions = event.get("questions", [])
                     if questions:
                         qs = questions if isinstance(questions, list) else [questions]
-                        # 多问题支持（2026-10-15）：发送完整问题列表；单问题字段保留向后兼容
+                        # 多问题支持：发送完整问题列表；单问题字段保留向后兼容
                         q_full = [{
                             "question": q.get("question", "") if isinstance(q, dict) else str(q),
                             "header": (q.get("header", "QUESTION") if isinstance(q, dict) else "QUESTION"),

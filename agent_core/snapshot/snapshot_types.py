@@ -78,7 +78,7 @@ class FileSnapshotRecord:
     backup_size: int = 0            # 备份文件大小（字节）
     backup_mtime: float = 0.0       # 备份文件的原始修改时间
 
-    # 写入结果（2026-10-17 问题6：工具执行后回填；用于回退时的外部修改检测）
+    # 写入结果（工具执行后回填；用于回退时的外部修改检测）
     write_result_sha256: str = ""   # 该次工具调用结束后文件的 SHA256（不存在则为空）
 
     # 文件状态

@@ -32,9 +32,9 @@
 |------|-----|--------|---------|
 | ws_server.py | Gateway | - | server.py |
 | server.py | Gateway | ws_server.py, entry.py | agent_chat_service_v2, session, config |
-| session.py | Data (sessions.db: session CRUD + project_path multi-project ownership + compaction flags) | create(project_path), list(limit, project_path) (incl. last_message_at = latest message time), delete(), delete_message(), adopt_unassigned(), unassigned_count() | server.py | sessions.db | 📦Data |
+| session.py | Data (sessions.db: session CRUD + project_path multi-project ownership + compaction flags) | create(project_path), list(limit, project_path) (incl. last_message_at = latest message time), delete, delete_message, adopt_unassigned, unassigned_count | server.py | sessions.db | 📦Data |
 | agent_chat_history.py | Data | agent_chat_service_v2 | agent_chat.db |
-| **agent_chat_service_v2.py** | 🔴Core | server.py → chat_stream() | OpenAI SDK, tool_orchestrator, agent_chat_history, agent_loader, context_compressor, memory |
+| **agent_chat_service_v2.py** | 🔴Core | server.py → chat_stream | OpenAI SDK, tool_orchestrator, agent_chat_history, agent_loader, context_compressor, memory |
 | agent_loader.py | Service | agent_chat_service_v2 | agents/*.yaml + *_prompt.md |
 | context_compressor.py | Service | agent_chat_service_v2, server.py | - |
 | tool_orchestrator.py | Service | agent_chat_service_v2 | tool_executor_impl |

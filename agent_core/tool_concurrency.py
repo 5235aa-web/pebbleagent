@@ -70,7 +70,7 @@ READ_ONLY_TOOLS: Set[str] = {
     "git_log",
     "git_diff",
     
-    # 网络获取 — 2026-10-16: 浏览器回退已移除（纯 httpx），fetch_url 恢复只读并行
+    # 网络获取（纯 httpx，只读并行）
     "fetch_url",
     
     # 系统信息
@@ -133,7 +133,7 @@ WRITE_TOOLS: Set[str] = {
     # Todo 写入
     "todo_write",
     
-    # Plan 模式（进入/退出为会话状态变更，归 SIDE_EFFECT_TOOLS；2026-10-16 对齐）
+    # Plan 模式（进入/退出为会话状态变更，归 SIDE_EFFECT_TOOLS）
     "create_plan",
     
     # Brief 消息

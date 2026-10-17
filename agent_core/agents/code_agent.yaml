@@ -70,36 +70,6 @@ system_prompt_file: code_agent_prompt.md
 skills:
   - ckb
 
-# Trigger keywords (for auto-routing)
-triggers:
-  - write code
-  - programming
-  - program
-  - script
-  - python
-  - javascript
-  - js
-  - html
-  - css
-  - java
-  - debug
-  - error
-  - bug
-  - file
-  - create file
-  - read file
-  - modify file
-  - regex
-  - algorithm
-  - function
-  - class
-  - api
-  - webpage
-  - website
-  - web
-  - frontend
-  - backend
-
 # Metadata
 meta:
   version: "1.1"

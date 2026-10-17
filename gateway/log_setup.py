@@ -1,9 +1,8 @@
 # -*- coding: utf-8 -*-
 """统一日志配置：stderr（控制台）+ 轮转文件（可事后追查）。
 
-2026-10-15 新增：后端日志此前仅输出到 stderr（cmd 窗口），进程重启后无法
-追查历史（"过程突然终止"事件调查因此缺失最直接的证据）。本模块将日志同时
-写入 {PEBBLE_HOME}/logs/backend.log（5MB × 5 轮转，UTF-8）。
+后端日志同时写入 stderr 与 {PEBBLE_HOME}/logs/backend.log
+（5MB × 5 轮转，UTF-8），便于进程重启后追查历史。
 """
 
 import logging

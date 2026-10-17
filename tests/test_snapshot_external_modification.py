@@ -1,17 +1,11 @@
 #!/usr/bin/env python
 # -*- coding: utf-8 -*-
-"""Snapshot revert: external-modification detection (2026-10-17, review issue 6).
+"""Snapshot revert: external-modification detection.
 
-Before: conflict phase one treated ANY "current SHA != backup SHA" as normal
-("will_overwrite") — content changed after the revert point by another program
-or by hand was silently overwritten.  external_modification was defined but
-never produced.
-
-Now: after each write tool the snapshot manager records the write-result SHA
-(write_result_sha256).  Revert detection treats the current content as safe only
-if it is inside the file's known set (all backup SHA ∪ all write-result SHA);
-otherwise an external_modification conflict is raised.  Records without
-write-result data (legacy) keep the old behavior.
+Revert detection treats the current content as safe only if it is inside the
+file's known set (all backup SHA ∪ all write-result SHA); otherwise an
+external_modification conflict is raised. Records without write-result data
+(legacy) keep the old behavior.
 
 Run: python tests/test_snapshot_external_modification.py   (exit 0 = pass)
 """

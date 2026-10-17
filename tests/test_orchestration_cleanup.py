@@ -1,11 +1,10 @@
 #!/usr/bin/env python
 # -*- coding: utf-8 -*-
-"""Orchestration-layer cleanup (2026-10-17, review issue 8).
+"""Orchestration-layer cleanup.
 
 Covers: extracted _build_and_sanitize_tool_calls equivalence, _sanitize_messages
 no longer mutating its input, unified token counting (single implementation),
-dead-code removal (StreamEvent orphans / _execute_tool), and the merged tool
-executor core.
+symbol presence/absence checks, and the merged tool executor core.
 
 Run: python tests/test_orchestration_cleanup.py   (exit 0 = pass)
 """
@@ -98,18 +97,16 @@ def main() -> int:
     out = truncate_to_tokens("x" * 5000, 10)
     check("token: truncate_to_tokens still works", len(out) < 5000 and "truncated" in out)
 
-    # ---- Dead-code removal ----------------------------------------------------
+    # ---- Symbol presence / absence --------------------------------------------
     qsm_src = read("agent_core/query_state_machine.py")
-    for dead in ("ChatMessage", "MessageType", "ContentEvent", "CompactEvent",
+    for name in ("ChatMessage", "MessageType", "ContentEvent", "CompactEvent",
                  "ChatStartedEvent", "ChatCompletedEvent", "ErrorEvent",
                  "CancelledEvent", "parse_tool_calls_from_response"):
-        # docstring mentions the removed names for changelog purposes; assert no
-        # class/def definitions remain
-        check(f"dead removed: {dead}",
-              f"class {dead}" not in qsm_src and f"def {dead}" not in qsm_src)
-    check("dead: ToolExecutionContext kept", "class ToolExecutionContext" in qsm_src)
-    check("dead: ToolExecutionEvent kept", "class ToolExecutionEvent" in qsm_src)
-    check("dead: _execute_tool method removed", not hasattr(svc, "_execute_tool"))
+        check(f"absent: {name}",
+              f"class {name}" not in qsm_src and f"def {name}" not in qsm_src)
+    check("present: ToolExecutionContext", "class ToolExecutionContext" in qsm_src)
+    check("present: ToolExecutionEvent", "class ToolExecutionEvent" in qsm_src)
+    check("absent: _execute_tool method", not hasattr(svc, "_execute_tool"))
 
     # ---- Executor merge -------------------------------------------------------
     orch_src = read("agent_core/tool_orchestrator.py")

@@ -213,8 +213,7 @@ class ToolOrchestrator:
         # 创建输出队列
         output_queue: asyncio.Queue[ToolExecutionUpdate] = asyncio.Queue()
         
-        # 创建所有工具的执行任务（受 max_concurrency 信号量约束；2026-10-16 修复
-        # 此前 max_concurrency 仅被赋值未生效、只读工具批内无界并发的问题）
+        # 创建所有工具的执行任务（受 max_concurrency 信号量约束）
         sem = asyncio.Semaphore(max(1, int(self.max_concurrency or 10)))
 
         async def _guarded_execute(tc):
@@ -294,10 +293,9 @@ class ToolOrchestrator:
         context: ToolExecutionContext
     ) -> AsyncGenerator[ToolExecutionUpdate, None]:
         """
-        工具执行核心逻辑（2026-10-17 问题8：并行/串行执行器合并的单一实现）
+        工具执行核心逻辑（并行/串行共用的单一实现）
 
-        此前 _execute_tool_with_queue 与 _execute_single_tool 近乎逐行复制；
-        现由本 async generator 承担全部执行与事件构造，两个消费端各做薄包装。
+        由本 async generator 承担全部执行与事件构造，两个消费端各做薄包装。
 
         Yields:
             工具执行更新事件

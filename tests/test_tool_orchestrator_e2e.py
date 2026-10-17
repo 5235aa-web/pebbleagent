@@ -2,13 +2,9 @@
 # -*- coding: utf-8 -*-
 """ToolOrchestrator end-to-end regression guard.
 
-Background (2026-10-16 incident): the dead query-state DSL removal deleted
-``ToolExecutionContext.state`` but left 6 dangling ``context.state.turn_count``
-references in tool_orchestrator.py — silently breaking the whole tool execution
-chain (parallel path swallowed the AttributeError via gather(return_exceptions),
-serial path raised).  This test runs the real ToolOrchestrator against a fake
-executor and asserts the full parallel / serial / mixed / failure / cancel
-matrix, plus a static scan that the dangling reference can never come back.
+Runs the real ToolOrchestrator against a fake executor and asserts the full
+parallel / serial / mixed / failure / cancel matrix, plus a static scan that
+no dangling ``context.state`` reference can reappear.
 
 Run: python tests/test_tool_orchestrator_e2e.py   (exit 0 = pass)
 """

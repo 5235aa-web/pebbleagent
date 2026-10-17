@@ -189,9 +189,9 @@ class PermissionAuditLogger:
         except (TypeError, ValueError):
             return "1" if value else "0"
 
-    # ===== 敏感信息脱敏（2026-10-17 安全修复，评审问题 5）=====
+    # ===== 敏感信息脱敏 =====
     # 审计库中 target/content/tool_args 等字段会记录命令与代码原文；
-    # 含 API key / token / 密码的命令此前会原样落盘。写入前统一掩码。
+    # 含 API key / token / 密码的内容在写入前统一掩码。
     _SENSITIVE_PATTERNS = [
         (re.compile(r'sk-[A-Za-z0-9_\-]{8,}'), 'sk-***'),
         (re.compile(r'ghp_[A-Za-z0-9]{20,}'), 'ghp_***'),
@@ -222,7 +222,7 @@ class PermissionAuditLogger:
 
     def _compute_checksum(self, event: AuditEvent, prev_checksum: str = "") -> str:
         """
-        计算事件校验和（v3 链式，2026-10-16）：
+        计算事件校验和（v3 链式）：
         checksum = sha256(prev_checksum | payload)。链上任一记录被修改（含去前缀降级）
         都会导致后续重算失配，无法通过单点重算掩盖。
         """
@@ -242,7 +242,7 @@ class PermissionAuditLogger:
         if not event.timestamp:
             event.timestamp = datetime.utcnow().isoformat()
         
-        # 脱敏（2026-10-17）：防止 API key / 密码等明文落盘
+        # 脱敏：防止 API key / 密码等明文落盘
         # （在 checksum 计算之前执行，校验和覆盖脱敏后的值）
         event.target = self._mask_sensitive(event.target)
         event.content = self._mask_sensitive(event.content)
@@ -547,7 +547,7 @@ class PermissionAuditLogger:
     
     def verify_integrity(self, event_id: int = None) -> bool:
         """
-        验证日志完整性（2026-10-16 链式校验）
+        验证日志完整性（链式校验）
 
         - v3 记录：链式重算 sha256(prev_checksum|payload)；链上任一环被修改
           或去前缀降级都会失配

@@ -77,9 +77,6 @@ class AgentDefinition:
     system_prompt: str = ""
     system_prompt_file: Optional[str] = None
     
-    # 触发关键词
-    triggers: List[str] = field(default_factory=list)
-    
     # 元数据
     meta: Dict[str, Any] = field(default_factory=dict)
     
@@ -167,7 +164,6 @@ def load_agent_yaml(agent_name: str) -> Optional[AgentDefinition]:
             behavior=behavior,
             system_prompt=system_prompt,
             system_prompt_file=system_prompt_file,
-            triggers=config.get('triggers', []),
             meta=config.get('meta', {}),
             _config_path=yaml_path
         )
@@ -257,24 +253,6 @@ def get_agent_system_prompt(agent_def: AgentDefinition) -> str:
             logger.error(f"[AgentLoader] Error preloading skills: {e}")
     
     return prompt
-
-
-def should_agent_handle(agent_def: AgentDefinition, user_message: str) -> bool:
-    """
-    检查Agent是否应该处理用户消息
-    
-    基于触发关键词匹配
-    """
-    if not agent_def.triggers:
-        return False
-    
-    msg_lower = user_message.lower()
-    
-    for trigger in agent_def.triggers:
-        if trigger.lower() in msg_lower:
-            return True
-    
-    return False
 
 
 # 缓存已加载的Agent定义

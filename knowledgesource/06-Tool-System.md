@@ -1,16 +1,34 @@
 # 6. Tool System
 
+### agent_core/tool_impl/ (9 files — tool handlers by domain)
+
+The executor is a thin pipeline (policy → permission → snapshot → dispatch → write-result backfill); handlers live in per-domain modules and are registered in one table.
+
+| File | Function | Tag |
+|------|------|------|
+| registry.py | Declarative dispatch table (53 tool names → handler) | 🔴Core |
+| filesystem.py | Read/write/edit/search/glob/ls/grep/directory tools | 🔴Core |
+| execution.py | Shell, PowerShell, inline code, subprocess lifecycle | 🔴Core |
+| web.py | Fetch, search, browser navigate/download, network guards | 🔴Core |
+| documents.py | PDF reading + OCR | 🟡Aux |
+| system.py | Env vars, system info, processes, git status/log/diff | 🟡Aux |
+| workspace.py | Todo, notes, questions, plans, skills, tool discovery | 🟡Aux |
+| lsp.py | Language-server code intelligence (9 tools + formatters) | 🟡Aux |
+| mcp_bridge.py | MCP tool routing | 🟡Aux |
+
+`agent_core/tool_executor_impl.py` is the facade: mixin composition + the execution pipeline.
+
 ### tools/ (18 files)
 
 | File | Function | Tag |
 |------|------|------|
-| base_tool.py | Unified tool base class + ToolRegistry (**2026-10-16: permission-manager ImportError now denies — fail-closed**; **2026-10-17: background-thread permission-skip branch removed — non-main-thread + event-loop calls are no longer auto-allowed**) | 🔴Core |
+| base_tool.py | Unified tool base class + ToolRegistry (**permission-manager ImportError denies — fail-closed**; **all tool execution goes through the permission layer regardless of thread**) | 🔴Core |
 | tool_registry.py | Tool registry (singleton) | 🔴Core |
 | file_tools.py | File operation tool set | 🔴Core |
 | todo_tool.py | Todo list management | 🔴Core |
 | ask_question_tool.py | User question tool | 🟡Aux |
 | execute_code_tool.py | Code execution tool | 🟡Aux |
-| powershell_tool.py | PowerShell tool (**danger_level raised to "high" since 2026-10-16**) | 🟡Aux |
+| powershell_tool.py | PowerShell tool (danger_level "high") | 🟡Aux |
 | grep_tool.py | Code search tool | 🟡Aux |
 | glob_tool.py | File matching tool | 🟡Aux |
 | web_fetch_tool.py | HTTP request tool | 🟡Aux |
@@ -28,9 +46,9 @@
 | File | Function | Key symbols | Tag |
 |------|------|---------|------|
 | mcp_manager.py | MCP connection management | McpManager | 🔴Core |
-| mcp_client.py | MCP stdio client (**placeholder commands (REPLACE_WITH_...) rejected with a clear error, 2026-10-16**) | StdioTransport | 🔴Core |
+| mcp_client.py | MCP stdio client (**placeholder commands (REPLACE_WITH_...) rejected with a clear error, **) | StdioTransport | 🔴Core |
 | mcp_config.py | MCP config management | McpConfigManager | 🟡Aux |
-| mcp_integration.py | MCP tool registration | register_mcp_tools() | 🔴Core |
+| mcp_integration.py | MCP tool registration | register_mcp_tools | 🔴Core |
 | mcp_types.py | MCP type definitions | - | 🧪Types |
 
 ### Extension Tools (extensions/tools/)
@@ -45,16 +63,18 @@ Custom tools just need to be placed under `extensions/tools/` exposing those 4 a
 
 | Stage | Module | Mechanism |
 |------|------|------|
-| Shell command validation | bash_validator.py (19.5KB) | Six-layer validator: read_only (read-only → concurrency-safe) / destructive (blocks destructive ops) / mode / sed -i / path out-of-bounds / semantic intent; three integration points — tool_executor_impl._tool_execute_shell (before execution), permission_enforcer (dangerous commands), tool_concurrency (read-only concurrency decision); **since 2026-10-17 also applied to execute_code when language="bash"** |
-| PowerShell command validation | powershell_validator.py (**new 2026-10-17**) | PowerShellValidator: system-destructive block patterns (Format-Volume / Clear-Disk / Initialize-Disk / diskpart / bcdedit / cipher /w / mkfs / vssadmin-delete / shutdown-restart / format X: / dd) → blocked; path extraction ($env: vars expanded, ~ resolved, drive roots / project-outside paths) → blocked; dangerous-op warnings (Remove-Item / registry / policy / IEX etc.); wired into tool_executor_impl._tool_powershell |
-| Code destructive scan | code_destructive_guard.py (**new 2026-10-17**) | scan_code_for_destructive_behavior(): high-confidence literal patterns (rm -rf /, del /s <drive root>, format C:, mkfs, dd of=/dev/, shutil.rmtree root, PS disk commands) → blocked; wired into tool_executor_impl._tool_execute_code (all languages) |
-| Code network behavior | code_network_guardV2.py | Static scan (crawler frameworks / HTTP-library imports / loop-pagination patterns / dynamic-import bypass) + three runtime guards: RateLimiter (≤6 req/min per domain), PathDepthGuard (≤3 navigations per turn), DownloadGuard (≤2 files / ≤50MB per turn); **since 2026-10-16 the powershell tool is scanned too (scan_code_for_scraping_behavior(command, "powershell")) — previously a full bypass of the guard** |
+| Shell command validation | bash_validator.py (19.5KB) | Six-layer validator: read_only (read-only → concurrency-safe) / destructive (blocks destructive ops) / mode / sed -i / path out-of-bounds / semantic intent; three integration points — tool_executor_impl._tool_execute_shell (before execution), permission_enforcer (dangerous commands), tool_concurrency (read-only concurrency decision); also applied to execute_code when language="bash" |
+| PowerShell command validation | powershell_validator.py | PowerShellValidator: system-destructive block patterns (Format-Volume / Clear-Disk / Initialize-Disk / diskpart / bcdedit / cipher /w / mkfs / vssadmin-delete / shutdown-restart / format X: / dd) → blocked; path extraction ($env: vars expanded, ~ resolved, drive roots / project-outside paths) → blocked; dangerous-op warnings (Remove-Item / registry / policy / IEX etc.); wired into tool_executor_impl._tool_powershell |
+| Code destructive scan | code_destructive_guard.py | scan_code_for_destructive_behavior: high-confidence literal patterns (rm -rf /, del /s <drive root>, format C:, mkfs, dd of=/dev/, shutil.rmtree root, PS disk commands) → blocked; wired into tool_executor_impl._tool_execute_code (all languages) |
+| Code network behavior | code_network_guardV2.py | Static scan (crawler frameworks / HTTP-library imports / loop-pagination patterns / dynamic-import bypass) + three runtime guards: RateLimiter (≤6 req/min per domain), PathDepthGuard (≤3 navigations per turn), DownloadGuard (≤2 files / ≤50MB per turn); the powershell tool is scanned too (scan_code_for_scraping_behavior(command, "powershell")) |
 | LSP tool family (9) | lsp_client.py (65KB) | lsp_go_to_definition / find_references / hover / document_symbol / workspace_symbol / go_to_implementation / prepare_call_hierarchy / incoming_calls / outgoing_calls — schemas in tool_definitions.py, execution via tool_executor_impl → LspClient (auto-discovers pyright/jedi/pylsp) |
-| Browser tools | tool_executor_impl (httpx) | fetch_url / web_search / browser_navigate / browser_download implemented directly via httpx; **browser_download filename sanitized since 2026-10-17 (_sanitize_download_filename: rejects .. / absolute paths / drive-colon / control chars / Windows reserved names, keeps safe subdirs; PathBoundaryChecker realpath/commonpath check as backstop — previously a path-escape arbitrary-write primitive)** |
-| Audit | gateway/permission_audit.py | All permission decisions persisted (permission_audit.db) + chained SHA256 checksum v3 + **write-time secret masking since 2026-10-17** (see Chapter 4) |
+| Browser tools | tool_executor_impl (httpx) | fetch_url / web_search / browser_navigate / browser_download implemented directly via httpx; browser_download filenames are sanitized (_sanitize_download_filename: rejects .. / absolute paths / drive-colon / control chars / Windows reserved names, keeps safe subdirs; PathBoundaryChecker realpath/commonpath check as backstop) |
+| Audit | gateway/permission_audit.py | All permission decisions persisted (permission_audit.db) + chained SHA256 checksum v3 + write-time secret masking (see Chapter 4) |
+
+**Design note — heuristic validation layer**: the shell / PowerShell / code / network guards are pattern-based by design. They are a fast, dependency-free first line of defence that covers the realistic command surface of day-to-day production use, adds no execution latency, and keeps every rule readable and auditable. They are not intended as a formal sandbox or AST-level taint analysis: the permission layer (ask / allow / deny rules + path whitelist) remains the authoritative boundary, and these guards sit on top of it as defence in depth. Matches are surfaced as explicit blocks with the offending pattern, so rules are easy to review and tune.
 
 ### Notes
 
 1. **Tool architecture — four layers**: BaseTool + ToolRegistry + Extensions Loader + MCP (MCP servers defined in the root .mcp.json, 6 of them incl. blender; dependency declarations and the frontend panel use mcp_install.json + the mcp.install_info RPC)
-7. **Todo event path**: `TodoManager._event_callback` is only set inside the LLM stream. When an Agent calls `todo_write` itself, it falls back to `_ws_push_callback` (fixed 2026-07)
-20. **brief tool policy (2026-09-25)**: ① code_agent_prompt.md explicitly forbids calling brief (brief renders inside a tool card — tiny font, no formatting — and is reserved for short user-facing notices, not body text; the ban appears both in the red-line rules section and the output-spec section); ② **mechanism facts (updated 2026-10-15)**: with enforce=false, agent YAML tool permissions inject tool schemas in full via get_tools_definition_with_mcp(); the `enforce` switch forces filtering (chat_agent enabled: non-whitelisted tool schemas are not uploaded + execution entry interception; see Chapter 5 note #10). code_agent has enforce off and full injection; the prompt ban remains its only soft constraint; ③ for a "hard ban" (model cannot see brief at all): set `enforce: true` + `disallowed: [brief]` in that agent's yaml (or omit brief from the whitelist) (requires backend restart); physical-removal path (7 places): tools/brief_tool.py (delete file), tools/__init__.py (import+__all__), tools/tool_registry.py (_STATIC_TOOL_MODULES), tool_definitions.py (schema block), tool_concurrency.py (WRITE_TOOLS), tool_executor_impl.py (dispatch+_tool_brief implementation), tool_permission.py (permission table); ④ prompt changes take effect after backend restart (agent cache is process-level, no mtime invalidation)
+7. **Todo event path**: `TodoManager._event_callback` is only set inside the LLM stream. When an Agent calls `todo_write` itself, it falls back to `_ws_push_callback`
+20. **brief tool policy **: ① code_agent_prompt.md explicitly forbids calling brief (brief renders inside a tool card — tiny font, no formatting — and is reserved for short user-facing notices, not body text; the ban appears both in the red-line rules section and the output-spec section); ② **mechanism facts (updated)**: with enforce=false, agent YAML tool permissions inject tool schemas in full via get_tools_definition_with_mcp; the `enforce` switch forces filtering (chat_agent enabled: non-whitelisted tool schemas are not uploaded + execution entry interception; see Chapter 5 note #10). code_agent has enforce off and full injection; the prompt ban remains its only soft constraint; ③ for a "hard ban" (model cannot see brief at all): set `enforce: true` + `disallowed: [brief]` in that agent's yaml (or omit brief from the whitelist) (requires backend restart); physical-removal path (7 places): tools/brief_tool.py (delete file), tools/__init__.py (import+__all__), tools/tool_registry.py (_STATIC_TOOL_MODULES), tool_definitions.py (schema block), tool_concurrency.py (WRITE_TOOLS), tool_executor_impl.py (dispatch+_tool_brief implementation), tool_permission.py (permission table); ④ prompt changes take effect after backend restart (agent cache is process-level, no mtime invalidation)

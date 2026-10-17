@@ -6,7 +6,7 @@ const URL_RE=/(https?:\/\/[^\s<>"'`「」\]\)，。、；：！？\u3000-\u303f\
 const WWW_RE=/(www\.[^\s<>"'`「」\]\)，。、；：！？\u3000-\u303f\uff00-\uffef]+)/gi
 function linkifyBare(text:string):string{let t=text.replace(URL_RE,'<a class="mc-link" href="$1" data-external="1">$1</a>');t=t.replace(WWW_RE,'<a class="mc-link" href="$1" data-external="1">$1</a>');return t}
 function rim(line:string):string{let t=line.replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;');t=t.replace(/\[([^\]]+)\]\(([^)]+)\)/g,(_,label,url)=>{return`<a class="mc-link" href="${url}" data-external="1">${label}</a>`});const parts=t.split(/(<a\b[^>]*>.*?<\/a>)/g);for(let i=0;i<parts.length;i++){if(i%2===0)parts[i]=linkifyBare(parts[i])}t=parts.join('');t=t.replace(/\*\*(.+?)\*\*/g,'<strong style="color:var(--text)">$1</strong>').replace(/__(.+?)__/g,'<strong style="color:var(--text)">$1</strong>');t=t.replace(/`([^`]+)`/g,'<code class="mc-inline-code">$1</code>');return t}
-// 行级渲染缓存（渲染性能修复 ③，2026-10-15）：超长文本流式期间已定稿的行命中缓存（字符串不变 → v-html prop 相同 → DOM 不重建），
+// 行级渲染缓存：超长文本流式期间已定稿的行命中缓存（字符串不变 → v-html prop 相同 → DOM 不重建），
 // 每帧仅重算正在增长的最后一行；上限 3000 行防内存膨胀
 const lineCache=new Map<string,string>()
 function rimCached(line:string):string{let v=lineCache.get(line);if(v===undefined){v=rim(line);if(lineCache.size>3000)lineCache.clear();lineCache.set(line,v)}return v}

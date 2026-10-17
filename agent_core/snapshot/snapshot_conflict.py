@@ -81,7 +81,7 @@ class ConflictDetector:
     def _phase_one_sha256(self, records: List[FileSnapshotRecord]) -> List[Dict[str, Any]]:
         """逐文件对比当前磁盘 SHA256 与快照记录的 SHA256
 
-        2026-10-17 问题6 升级：SHA 不同时不再一律判为"将被覆盖"。
+        SHA 不同时不再一律判为"将被覆盖"。
         若当前 SHA 不在该文件的"AI 掌控已知集合"（所有 backup_sha256 ∪
         write_result_sha256）中，说明回退点之后的内容可能来自外部修改
         （别的程序/人工），报 external_modification 冲突而非静默覆盖。

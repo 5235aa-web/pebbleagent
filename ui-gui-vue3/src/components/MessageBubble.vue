@@ -12,7 +12,7 @@ const iu=computed(()=>p.message.role==='user')
 const hasQInline=computed(()=>!!(p.message.executionOrder?.some(it=>it.type==='question')))
 const ts=computed(()=>{if(!p.message.createdAt)return'';const d=new Date(p.message.createdAt);const x=(n:number)=>String(n).padStart(2,'0');return`${d.getFullYear()}-${x(d.getMonth()+1)}-${x(d.getDate())} ${x(d.getHours())}:${x(d.getMinutes())}:${x(d.getSeconds())}`})
 function fm(ms:number):string{return ms<1000?`${ms}ms`:`${(ms/1000).toFixed(1)}s`}
-// 段级 v-memo 冻结已回退（2026-10-15）：Vue 在 v-for 内 v-memo 共享缓存槽位，同分支段（memo 值相同）会互相串内容（详见 VERSION）
+// 不要在 v-for 内使用 v-memo：Vue 共享缓存槽位，同分支段（memo 值相同）会互相串内容
 const copied=ref(false);const deleting=ref(false)
 const canCopy=computed(()=>(p.message.content||'').length>0)
 const canDelete=computed(()=>true)

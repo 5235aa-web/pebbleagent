@@ -229,7 +229,7 @@ class PermissionEnforcer:
                 return True, "Tool does not require permission check", audit_info
 
         except ImportError as e:
-            # fail-closed（2026-10-16）：权限模块不可用时拒绝执行，而非默认放行
+            # fail-closed：权限模块不可用时拒绝执行，而非默认放行
             logger.error(f"[PermissionEnforcer] tool_permission not available, denying (fail-closed): {e}")
             audit_info["decision_source"] = "module_unavailable"
             return False, "Permission module unavailable (fail-closed)", audit_info
@@ -266,7 +266,7 @@ class PermissionEnforcer:
         # 3. 权限管理器检查
         permission_manager = self._get_permission_manager()
         if permission_manager is None:
-            # fail-closed（2026-10-16）
+            # fail-closed
             audit_info["decision_source"] = "manager_unavailable"
             return False, "Permission manager unavailable (fail-closed)", audit_info
 
@@ -286,8 +286,7 @@ class PermissionEnforcer:
         except ImportError:
             audit_info["permission_level"] = "medium"
 
-        # 记录权限检查请求（2026-10-17 接入：log_permission_check 此前定义但从未被调用；
-        # 脱敏由 PermissionAuditLogger.log_event 统一处理）
+        # 记录权限检查请求（脱敏由 PermissionAuditLogger.log_event 统一处理）
         audit_logger = self._get_audit_logger()
         if audit_logger:
             try:

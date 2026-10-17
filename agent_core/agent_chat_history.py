@@ -28,9 +28,8 @@ DB_PATH = os.path.join(_DATA_HOME, "agent_chat.db")
 def _connect() -> sqlite3.Connection:
     """统一连接工厂：WAL + 外键约束 + 写锁等待（对齐 sessions.db 策略）。
 
-    - WAL: 多读者/单写者，降低并发锁冲突（此前默认 DELETE 模式，写锁全库）
+    - WAL: 多读者/单写者，降低并发锁冲突
     - foreign_keys=ON: 阻止"会话行不存在时写入消息"产生孤儿数据
-      （此前 FK 未启用，曾产生 conversation_id=70 孤儿消息并引发上层 FK 崩溃）
     - timeout=10: 写锁等待 10 秒（默认 5 秒，多会话并发下更宽容）
     """
     conn = sqlite3.connect(str(DB_PATH), timeout=10)

@@ -208,7 +208,7 @@ async def _init_mcp_background():
         logger.warning(f"[MCP] Auto-init deferred (will init on first request): {e}")
 
 async def _verify_audit_integrity_background():
-    """启动时后台校验审计日志完整性（2026-10-17 接入：verify_integrity 此前从未被调用）"""
+    """启动时后台校验审计日志完整性"""
     try:
         from gateway.permission_audit import get_audit_logger
         ok = await asyncio.to_thread(get_audit_logger().verify_integrity)
@@ -408,7 +408,7 @@ async def main(host: str = "127.0.0.1", port: int = 19876):
     # 后台启动 MCP 自动初始化
     _mcp_init_task = asyncio.create_task(_init_mcp_background())
 
-    # 后台校验审计日志完整性（启动时一次；2026-10-17 接入 verify_integrity）
+    # 后台校验审计日志完整性（启动时一次）
     asyncio.create_task(_verify_audit_integrity_background())
 
     # max_size: allow large prompt.submit messages with base64 image attachments

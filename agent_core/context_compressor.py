@@ -59,7 +59,7 @@ _encoder = None
 # ============================================================================
 
 class CompactTrigger(Enum):
-    """压缩触发类型（2026-10-16：自动/响应式触发已移除，仅保留手动触发）"""
+    """压缩触发类型"""
     MANUAL = "manual"
 
 
@@ -1187,8 +1187,7 @@ def create_skill_attachment_if_needed(
 def truncate_to_tokens(content: str, max_tokens: int) -> str:
     """截断内容到指定 token 数量，保留头部
 
-    2026-10-17 问题8：统一使用 estimate_tokens 口径；字符预算按
-    estimate_tokens 降级公式的中英文比例反推（不再使用独立的 //4 口径）。
+    字符预算按 estimate_tokens 降级公式的中英文比例反推。
     """
     if estimate_tokens(content) <= max_tokens:
         return content

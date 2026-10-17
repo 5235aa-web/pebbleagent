@@ -149,7 +149,7 @@ class StdioTransport:
     
     async def connect(self) -> None:
         """启动子进程并建立连接"""
-        # 占位符路径检测（2026-10-16）：未配置的 server 直接报明确错误，不尝试启动
+        # 占位符路径检测：未配置的 server 直接报明确错误，不尝试启动
         if self.command and "REPLACE_WITH" in self.command:
             raise RuntimeError(
                 f"MCP server command is a placeholder ('{self.command}'); "

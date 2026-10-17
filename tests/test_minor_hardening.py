@@ -1,6 +1,6 @@
 #!/usr/bin/env python
 # -*- coding: utf-8 -*-
-"""Minor hardening batch (2026-10-17, review issue 7).
+"""Minor hardening batch.
 
 7a BaseTool background-thread permission skip removed
 7b path_whitelist.save validates entries (no drive/filesystem roots)

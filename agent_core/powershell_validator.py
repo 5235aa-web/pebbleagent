@@ -1,9 +1,7 @@
 """
-PowerShell 命令验证器（2026-10-17 安全修复）
+PowerShell 命令验证器
 
-背景：powershell 工具此前只有网络行为扫描（code_network_guardV2），
-缺少与 execute_shell（BashValidator）同级的破坏性/路径校验，
-存在"换个入口绕过校验"的问题（安全评审问题 2）。
+与 execute_shell（BashValidator）同级，覆盖破坏性命令与路径边界检查。
 
 检查项（与 BashValidator 对齐）：
 1. 系统级破坏命令（磁盘/启动配置/备份删除/关机等）→ blocked

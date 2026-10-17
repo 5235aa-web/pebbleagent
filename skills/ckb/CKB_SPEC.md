@@ -1,416 +1,421 @@
-# CKB（代码知识库）— 逻辑规范 v2.0
+# CKB (Code Knowledge Base) — Specification v2.0
 
-> 本文档定义 CKB 机制的完整逻辑：检测、构建、编写、索引、验证、迁移。
-> **v2.0 核心变更**：知识库由单文件（PROJECT_GRAPH.md）改为「目录 + 章节文件」结构——
-> `content.md` 为章节目录，各章独立成文件（如「三、Gateway网关系统.md」），
-> 读取与更新均先查目录、再按需定位章节，避免整文件加载。
-> CKB Skill 文件（SKILL.md）引用本文档作为技术参考。
+> This document defines the complete CKB mechanism: detection, build, writing, indexing, verification, migration.
+> **v2.0 core change**: the knowledge base moved from a single file (PROJECT_GRAPH.md) to a directory plus chapter files —
+> `content.md` is the chapter directory, each chapter is its own file (e.g. `03-Gateway-System.md`),
+> and both reading and updating locate chapters through the directory instead of loading one large file.
+> The CKB skill file (SKILL.md) references this document as the technical specification.
 
 ---
 
-## 一、检测逻辑（Gate Check）
+## 1. Detection Logic (Gate Check)
 
-### 1.1 触发时机
+### 1.1 When to run
 
-Agent 每次对话开始时（接到用户第一条有效任务请求后），必须执行检测。
+The agent must run detection at the start of every conversation, right after receiving the first valid task request.
 
-### 1.2 检测步骤
+### 1.2 Detection steps
 
 ```
-1. 确认项目根目录（当前工作目录）
-2. 直接 read_file "knowledgesource/content.md"（相对于项目根目录）—— 用读取动作完成探测
-3. 判断：
-   ├─ 读取成功 → 获得章节目录 → 按需读取相关章节文件 → 进入正常工作
-   ├─ 报错 File not found → 回退检查旧版单文件（见 1.3）
-   └─ 其他错误 → 报告用户
+1. Confirm the project root (current working directory)
+2. read_file "knowledgesource/content.md" (relative to the project root) — the read itself is the probe
+3. Decide:
+   ├─ Read succeeds → chapter directory available → read the relevant chapters on demand → proceed normally
+   ├─ File not found → fall back to the legacy single-file layout (see 1.3)
+   └─ Other errors → report to the user
 ```
 
-**按需读取原则（v2.0 核心）**：检测阶段只读取目录文件（content.md），不读取章节文件全文。执行任务时，根据 content.md 中每章的说明（括号内）定位与任务相关的章，只读取那些章节文件。仅当任务涉及全局（如整体重构、全项目审计）时才读取多个章节。
+**Read on demand (the v2.0 core rule)**: detection reads only the directory file (`content.md`), never the full chapters. During work, use the one-line summary in `content.md` (the parenthesised note) to locate the chapters relevant to the task and read only those. Read multiple chapters only when the task needs a global view (e.g. a full refactor or a project-wide audit).
 
-**⚠️ 工具选择约束（重要）**：禁止用 glob 检测知识库是否存在——本环境 glob 对"含目录前缀的相对路径"模式（如 `knowledgesource/content.md`、`knowledgesource/*`）存在漏报缺陷（实测：文件存在却返回 0 结果），会误判为"无知识库"而触发不必要的构建。检测一律使用 `read_file` 直读或 `get_file_info`（均实测可靠）。
+**⚠️ Tool constraint (important)**: never use glob to detect the knowledge base. In this environment glob under-reports directory-prefixed relative patterns (e.g. `knowledgesource/content.md`, `knowledgesource/*`) — measured: it returns zero results while the file exists, which falsely triggers an unnecessary build. Always probe with `read_file` or `get_file_info` (both verified reliable).
 
-### 1.3 旧格式兼容（v1.x → v2.0 过渡）
+### 1.3 Legacy format compatibility (v1.x → v2.0)
 
-若 content.md 不存在（File not found），回退检查旧版单文件 PROJECT_GRAPH.md：
+If `content.md` does not exist (File not found), fall back to the legacy single file PROJECT_GRAPH.md:
 
 ```
 read_file "knowledgesource/PROJECT_GRAPH.md"
-├─ 成功 → 旧版单文件格式（v1.x）：
-│    1. 以旧文件为权威参考继续工作（不阻塞任务）
-│    2. 提示用户："本项目知识库为旧版单文件格式，建议迁移到新格式（目录 + 章节文件）。
-│       迁移后可按需读取章节，无需整文件加载。是否迁移？"
-│    3. 用户同意 → 按第六章《迁移规范》执行迁移
-└─ 失败 → 无知识库 → 先询问用户是否构建，同意后进入构建模式（见第二章）
+├─ Succeeds → legacy single-file format (v1.x):
+│    1. Continue working with the legacy file as the authoritative reference (do not block the task)
+│    2. Tell the user: "This project's knowledge base uses the legacy single-file format. Migrating to the new
+│       format (directory + chapter files) allows reading chapters on demand instead of loading one large file.
+│       Migrate now?"
+│    3. User agrees → migrate per Chapter 6 (Migration)
+└─ Fails → no knowledge base → ask the user whether to build one; on approval enter build mode (see Chapter 2)
 ```
 
-### 1.4 构建模式的硬约束
+### 1.4 Hard constraints in build mode
 
-在构建模式中，以下行为**绝对禁止**：
-- 回答用户任务请求
-- 执行代码
-- 调用写操作工具（write_file/edit_file/execute_shell 等）—— 生成知识库文件本身除外
-- 对项目代码做出任何判断或推测
+In build mode the following are **strictly forbidden**:
 
-唯一允许的操作：读取文件、调用 codebase_memory 工具、生成知识库文件（content.md + 章节文件 + VERSION）。
+- answering task requests
+- executing code
+- calling write tools (write_file / edit_file / execute_shell, etc.) — except generating the knowledge base files themselves
+- making any judgement or speculation about the project code
+
+Allowed operations only: reading files, calling codebase_memory tools, and generating knowledge base files (`content.md` + chapter files + `VERSION`).
 
 ---
 
-## 二、构建流水线（Build Pipeline）
+## 2. Build Pipeline
 
-构建分为 6 个阶段，按顺序执行，每个阶段完成后才进入下一阶段。
+The build runs in 6 stages, in order; each stage completes before the next begins.
 
-### 阶段 1：全量索引（Index）
+### Stage 1: Full index
 
-**目标**：将项目导入代码知识库数据库。
-
-```
-1. 调用 mcp__codebase_memory__index_repository(repo_path=项目根目录, mode="full")
-2. 等待索引完成
-3. 记录索引结果：total_nodes, total_edges, 检出语言列表
-```
-
-**输出**：索引完成确认（node count + edge count）。
-
-**时间预估**：中型项目（100-200文件）约 2-5 分钟。
-
-### 阶段 2：架构提取（Architecture）
-
-**目标**：获取项目的高层架构、模块分层、调用关系。
+**Goal**: import the project into the code knowledge graph database.
 
 ```
-1. 调用 mcp__codebase_memory__get_architecture(project, aspects=["all"])
-2. 从返回结果提取：
-   - node_labels: 各类型节点数量
-   - edge_types: 关系类型
-   - languages: 语言分布
-   - clusters: 社区检测结果（模块自然分组）
-   - hotspots: 高扇入节点（核心模块）
-   - boundaries: 跨模块调用热力
-3. 列出所有目录（list_directory 根目录 + 各子目录）
+1. Call mcp__codebase_memory__index_repository(repo_path=<project root>, mode="full")
+2. Wait for indexing to finish
+3. Record the result: total_nodes, total_edges, detected languages
 ```
 
-**输出**：架构总览（语言、模块分层、热点节点）。
+**Output**: index confirmation (node count + edge count).
 
-### 阶段 3：文件枚举与分类（Inventory）
+**Time estimate**: a medium project (100-200 files) takes about 2-5 minutes.
 
-**目标**：穷举所有源码文件，按类型和重要性分类。
+### Stage 2: Architecture extraction
+
+**Goal**: obtain the high-level architecture, module layers, and call relationships.
 
 ```
-1. glob "**/*.py" → 所有 Python 文件
-2. glob "**/*.ts" "**/*.vue" "**/*.tsx" → 所有前端文件
-3. glob "**/*.json" "**/*.yaml" "**/*.toml" → 配置文件
-4. glob "**/*.md"（排除 knowledgesource/）→ 文档文件
+1. Call mcp__codebase_memory__get_architecture(project, aspects=["all"])
+2. Extract from the result:
+   - node_labels: node counts per type
+   - edge_types: relationship types
+   - languages: language distribution
+   - clusters: community detection results (natural module groups)
+   - hotspots: high-fan-in nodes (core modules)
+   - boundaries: cross-module call heat
+3. List all directories (list_directory on the root + each subdirectory)
+```
 
-5. 对每个文件分类：
-   - 入口文件（含 main/run/app 等入口函数）
-   - 核心服务文件（>500 行，含核心类/函数）
-   - 工具文件（_tool.py / _tools.py / tool_*.py）
-   - 数据层文件（db/database/session/store）
-   - 配置加载文件（config/settings/env）
-   - 类型定义文件（types/schema/model）
-   - 测试文件（test_*/_test）
-   - 存根文件（函数体为空或固定返回 None/False）
-   - 废弃文件（位于废弃目录或被注释标记为 deprecated）
-   - 辅助/脚本文件
+**Output**: architecture overview (languages, module layers, hotspot nodes).
 
-6. 排除目录：
+### Stage 3: File enumeration and classification
+
+**Goal**: enumerate every source file and classify by type and importance.
+
+```
+1. glob "**/*.py" → all Python files
+2. glob "**/*.ts" "**/*.vue" "**/*.tsx" → all frontend files
+3. glob "**/*.json" "**/*.yaml" "**/*.toml" → configuration files
+4. glob "**/*.md" (excluding knowledgesource/) → documentation
+
+5. Classify each file:
+   - entry file (contains a main/run/app entry function)
+   - core service file (>500 lines, core classes/functions)
+   - tool file (_tool.py / _tools.py / tool_*.py)
+   - data layer file (db/database/session/store)
+   - configuration loader (config/settings/env)
+   - type definition file (types/schema/model)
+   - test file (test_*/_test)
+   - stub file (empty body or fixed None/False return)
+   - deprecated file (in a deprecated directory or marked deprecated)
+   - helper/script file
+
+6. Excluded directories:
    - __pycache__/
    - node_modules/
    - dist/
    - .git/
    - .pebble/snapshots/
-   - 任何生成/构建产物目录
+   - any generated/build output directory
 ```
 
-**输出**：文件分类清单（按目录+分类）。
+**Output**: classified file inventory (by directory + category).
 
-### 阶段 4：关系追踪（Trace）
+### Stage 4: Relationship tracing
 
-**目标**：对每个关键模块追踪调用关系。
-
-```
-1. 对每个核心服务文件，选取关键函数（入口函数、类构造函数、主要方法）
-2. 调用 mcp__codebase_memory__trace_path(project, function_name, direction="both", depth=2)
-3. 记录：
-   - callers: 谁调用了这个函数
-   - callees: 这个函数调用了谁
-4. 对每个热点节点（高扇入），额外追踪 depth=3 以捕获完整调用链
-5. 构建模块级调用矩阵：
-   - 模块 A → 模块 B（调用次数/关系类型）
-```
-
-**输出**：每个模块的调用关系表 + 全局调用矩阵。
-
-### 阶段 5：采样确认（Sample）
-
-**目标**：随机采样文件确认索引准确性，避免因索引遗漏导致知识库错误。
+**Goal**: trace call relationships for every key module.
 
 ```
-1. 从每个目录随机选取 1-2 个文件
-2. read_file 读取头部（前 30 行）确认：模块描述、导入、主要类/函数
-3. 对以下文件类型，必须全量读取（不可采样）：
-   - 入口文件（run_backend.py, ws_server.py, entry.py, main.py）
-   - 所有 __init__.py
-   - 所有 YAML 配置文件
-4. 与索引结果交叉验证：确认索引的符号、调用链与实际代码一致
+1. For each core service file, pick the key functions (entry points, constructors, main methods)
+2. Call mcp__codebase_memory__trace_path(project, function_name, direction="both", depth=2)
+3. Record:
+   - callers: who calls this function
+   - callees: what this function calls
+4. For each hotspot node (high fan-in), trace an extra depth=3 to capture the full chain
+5. Build a module-level call matrix:
+   - module A → module B (call count / relationship type)
 ```
 
-**输出**：采样确认报告（如有不一致，标注并修正）。
+**Output**: per-module call tables + a global call matrix.
 
-### 阶段 6：生成知识库（Generate）
+### Stage 5: Sampling confirmation
 
-**目标**：将信息组织为「目录 + 章节文件」结构，写入 knowledgesource/。
+**Goal**: sample files to confirm index accuracy and avoid knowledge base errors caused by indexing gaps.
 
 ```
-1. 规划章结构（见 3.4 章节划分原则）：
-   - 全局内容单列章：项目总览、模块拓扑
-   - 功能系统各列一章：基于 clusters（社区检测）+ 目录结构 + 实际功能划分
-2. 逐章生成章节文件：knowledgesource/{中文数字}、{章名}.md
-   - 每章包含：该系统的文件索引（表格）+ 相关关键路径（编号步骤）+ 相关边界标注
-3. 生成目录文件：knowledgesource/content.md（格式见 3.2）
-4. 写入 knowledgesource/VERSION（格式：v{date}-{file_count}files-{node_count}nodes）
+1. Pick 1-2 files at random from each directory
+2. read_file the head (first 30 lines) to confirm: module description, imports, main classes/functions
+3. The following must be read in full (no sampling):
+   - entry files (run_backend.py, ws_server.py, entry.py, main.py)
+   - every __init__.py
+   - every YAML configuration file
+4. Cross-check against the index: confirm indexed symbols and call chains match the actual code
 ```
 
-**输出**：content.md + 全部章节文件 + VERSION 更新。
+**Output**: sampling confirmation report (note and correct any mismatch).
+
+### Stage 6: Generate the knowledge base
+
+**Goal**: organise the information as a directory plus chapter files under `knowledgesource/`.
+
+```
+1. Plan the chapter structure (see 3.4 Chapter division principles):
+   - Standalone global chapters: project overview, module topology
+   - One chapter per functional system: clusters (community detection) + directory layout + actual responsibilities
+2. Generate chapter files one by one: knowledgesource/{NN}-{Chapter-Name}.md
+   - Each chapter contains: the system's file index (table) + related critical paths (numbered steps) + related boundary notes
+3. Generate the directory file: knowledgesource/content.md (format in 3.2)
+4. Write knowledgesource/VERSION (format: v{date}-{file_count}files-{node_count}nodes)
+```
+
+**Output**: content.md + all chapter files + VERSION update.
 
 ---
 
-## 三、编写规范（知识库格式）
+## 3. Writing Specification (Knowledge Base Format)
 
-### 3.1 文件结构
+### 3.1 File structure
 
 ```
 knowledgesource/
-├── content.md               # 目录：章列表 + 每章一句话说明（先读这个）
-├── 一、项目总览.md            # 全局章
-├── 二、模块拓扑.md            # 全局章
-├── 三、{系统名}.md            # 功能系统章
+├── content.md               # directory: chapter list + one-line summary per chapter (read this first)
+├── 01-Project-Overview.md   # global chapter
+├── 02-Module-Topology.md    # global chapter
+├── 03-{System-Name}.md      # functional system chapter
 ├── ...
-└── VERSION                  # 版本记录（单文件，结构不变）
+└── VERSION                  # change log (single file, format unchanged)
 ```
 
-### 3.2 content.md 格式
+### 3.2 content.md format
 
 ```
-# 项目代码知识库 — {项目名}（目录）
+# {Project} Code Knowledge Base — Directory
 
-> 最后更新于 YYYY-MM-DD | {变更摘要} | {统计信息}
+> Last updated YYYY-MM-DD | {change summary} | {statistics}
 
-一、项目总览（项目定位、技术栈、入口）
-二、模块拓扑（模块分层与调用关系图）
-三、{系统名}（{一句话说明}）
-四、{系统名}（{一句话说明}）
+01-Project-Overview (positioning, stack, entry points)
+02-Module-Topology (module layers and call relationships)
+03-{System-Name} ({one-line summary})
+04-{System-Name} ({one-line summary})
 ...
 
-> 读取指引：先读本目录定位章节，再按需读取对应章节文件（如「三、XXX.md」）。
+> Reading guide: read this directory first, then open only the chapters you need (e.g. `03-Gateway-System.md`).
 ```
 
-**规则**：
-- 章条目的括号内为"必要的说明"（一句话；不必要可省略）
-- 章条目与章节文件名严格一一对应：目录写「三、Gateway网关系统」，对应文件即为「三、Gateway网关系统.md」
-- 顶部引用块保留：最后更新时间、变更摘要、统计信息（文件数等）
+**Rules**:
 
-### 3.3 章节文件命名规则
+- The parenthesised note after each chapter entry is the "necessary summary" (one line; omit if unnecessary)
+- Chapter entries and chapter file names correspond one-to-one: an entry `03-Gateway-System` means the file `03-Gateway-System.md`
+- Keep the header block: last update time, change summary, statistics (file count, etc.)
 
-- 格式：`{中文数字}、{章名}.md`
-- 编号：中文数字（一、二、三、……十、十一、十二……）
-- 编号与章名之间用中文顿号「、」分隔
-- 章名：简洁（2-12 字），不得含文件系统非法字符 `< > : " / \ | ? *`
-- 章序变化（插入/删除章）时同步重命名文件，保持「目录 ↔ 文件」一一对应、编号连续
+### 3.3 Chapter file naming rules
 
-### 3.4 章节划分原则
+- Format: `{NN}-{Chapter-Name}.md`
+- Index: two decimal digits (01, 02, ... 10, 11, 12 ...)
+- Index and name are separated by a hyphen `-`
+- Name: English Title Case, hyphen-separated (e.g. Project-Overview, Gateway-System); no spaces, no filesystem-reserved characters `< > : " / \ | ? *`
+- When chapters are inserted or removed, rename the affected files to keep the directory ↔ files mapping one-to-one and the indices contiguous
 
-- 全局内容单列章：「项目总览」「模块拓扑」置于最前
-- 功能系统各列一章：依据 clusters（社区检测）+ 目录结构 + 实际功能划分
-- 归属规则：文件索引、关键路径、边界标注按所属系统归入对应章节
-- 跨系统内容：纯全局流程（如项目整体启动流程）放入「项目总览」或「模块拓扑」章
-- 章数：5-15 章；单章预期超过约 1000 行时考虑再拆（按子模块独立成章）
-- 章名示例：「三、Gateway网关系统」「四、Agent智能体系统」「五、前端UI」
+### 3.4 Chapter division principles
 
-### 3.5 章节内容格式
+- Global content gets its own chapters: "Project Overview" and "Module Topology" come first
+- One chapter per functional system: based on clusters (community detection) + directory layout + actual responsibilities
+- Ownership rule: file index, critical paths, and boundary notes belong to the chapter of the system they belong to
+- Cross-system content: purely global flows (e.g. the overall startup sequence) go into "Project Overview" or "Module Topology"
+- Chapter count: 5-15; consider splitting a chapter expected to exceed ~1000 lines (sub-modules become separate chapters)
+- Example names: `03-Gateway-System`, `04-Agent-System`, `05-Frontend-UI`
 
-**规则 1：文件索引表格列**
+### 3.5 Chapter content format
 
-每个文件在表格中的列（按顺序）：
-| 文件 | 功能 | 关键符号 | 调用方 | 被调用方 | 标注 |
+**Rule 1: file index table columns**
 
-- **文件**：相对于项目根目录的路径
-- **功能**：一句话描述文件职责（从源码/文档提取，不推测）
-- **关键符号**：最重要的 1-3 个类/函数名（精确到可被 lsp/grep 找到）
-- **调用方**：谁调用了这个模块（模块名或文件名）
-- **被调用方**：这个模块调用了谁
-- **标注**：🔴核心 / 🟡辅助 / ⚠️存根 / 🗑️废弃 / 📦配置 / 🧪测试
+Columns for every file, in order:
 
-**规则 2：关键路径用编号步骤**
+| File | Function | Key symbols | Callers | Callees | Tag |
 
-每条关键路径必须是线性步骤，每步一行，精确到文件和函数名：
+- **File**: path relative to the project root
+- **Function**: one-line description of the file's responsibility (extracted from source/docs, never guessed)
+- **Key symbols**: the 1-3 most important classes/functions (precise enough to be found by lsp/grep)
+- **Callers**: who calls this module (module or file name)
+- **Callees**: what this module calls
+- **Tag**: 🔴Core / 🟡Aux / ⚠️Stub / 🗑️Deprecated / 📦Config / 🧪Test
+
+**Rule 2: critical paths use numbered steps**
+
+Every critical path is a linear sequence, one step per line, precise down to file and function name:
+
 ```
-1. 前端 InputArea.vue → gateway.store.sendMessage(text)
+1. Frontend InputArea.vue → gateway.store.sendMessage(text)
 2. WebSocket → "prompt.submit" → ws_server.py:handle_ws()
-3. 后台线程 → server.py:handle_prompt_submit(sid, text, write_event)  -- L1269
+3. Background thread → server.py:handle_prompt_submit(sid, text, write_event)  -- L1269
 ```
 
-**规则 3：ASCII 拓扑图**
+**Rule 3: ASCII topology diagram**
 
 ```
-[数据层]    session.py, agent_chat_history.py
-               ↑ 读写
-[工具层]    tools/, extensions/, mcp/
-               ↑ 调用
-[服务层]    agent_chat_service_v2.py（核心）
-               ↑ 调用
-[网关层]    server.py, ws_server.py
-               ↑ 调用
-[前端层]    gateway.ts, config.ts
+[Data layer]     session.py, agent_chat_history.py
+               ↑ read/write
+[Tool layer]     tools/, extensions/, mcp/
+               ↑ call
+[Service layer]  agent_chat_service_v2.py (core)
+               ↑ call
+[Gateway layer]  server.py, ws_server.py
+               ↑ call
+[Frontend layer] gateway.ts, config.ts
 ```
 
-箭头方向统一：`↑` 表示"被上层调用"，`↓` 表示"调用下层"。
+Arrow direction is consistent: `↑` means "called by the layer above", `↓` means "calls the layer below".
 
-**规则 4：边界标注分类**
+**Rule 4: boundary note categories**
 
-- `⚠️存根`：函数体为空或固定返回 None 的文件
-- `🐛已知问题`：已确认的 bug/设计缺陷
-- `❗容易误判`：agent 最容易出错的理解陷阱
-- `🗑️废弃`：已不再维护但仍存在的目录/文件
+- `⚠️Stub`: empty body or fixed None return
+- `🐛Known issue`: confirmed bug / design defect
+- `❗Easy to misread`: the understanding trap an agent is most likely to fall into
+- `🗑️Deprecated`: no longer maintained but still present
 
-### 3.6 文件索引覆盖要求
+### 3.6 File index coverage requirements
 
-- 必须覆盖所有 .py 文件（不含 __pycache__）
-- 必须覆盖所有 .ts/.vue 文件（不含 node_modules/dist）
-- 必须覆盖所有配置文件（.json/.yaml/.toml/.env.example）
-- 测试文件可简化为一行（文件名 + "测试"）
-- 入口文件必须详细描述（多行）
+- Must cover every .py file (excluding __pycache__)
+- Must cover every .ts/.vue file (excluding node_modules/dist)
+- Must cover every configuration file (.json/.yaml/.toml/.env.example)
+- Test files may be reduced to one line (file name + "test")
+- Entry files must be described in detail (multiple lines)
 
-### 3.7 长度控制
+### 3.7 Length control
 
-- 单章不超过约 1000 行；超过时按子模块再拆为独立章
-- 章数超过 15 时，检查划分粒度是否合理（过碎则合并同类系统）
-- v1.x 的"单文件 3000 行上限"由章节化取代，不再适用
+- A single chapter stays under ~1000 lines; split by sub-module when it grows beyond that
+- When chapters exceed 15, check whether the granularity is reasonable (merge related systems if too fragmented)
+- The v1.x "single file 3000-line cap" is superseded by chaptering and no longer applies
 
 ---
 
-## 四、索引机制
+## 4. Indexing Mechanism
 
-### 4.1 工具选择
+### 4.1 Tool selection
 
-| 阶段 | 主工具 | 辅助工具 |
+| Stage | Primary tool | Supporting tools |
 |------|--------|---------|
-| 全量索引 | mcp__codebase_memory__index_repository | - |
-| 架构提取 | mcp__codebase_memory__get_architecture | list_directory, read_structure |
-| 文件枚举 | glob | list_directory, get_file_info |
-| 关系追踪 | mcp__codebase_memory__trace_path | mcp__codebase_memory__search_knowledge base |
-| 采样确认 | read_file | lsp_document_symbol |
-| 生成知识库 | write_file（逐章 + content.md） | - |
+| Full index | mcp__codebase_memory__index_repository | - |
+| Architecture extraction | mcp__codebase_memory__get_architecture | list_directory, read_structure |
+| File enumeration | glob | list_directory, get_file_info |
+| Relationship tracing | mcp__codebase_memory__trace_path | mcp__codebase_memory__search_knowledge base |
+| Sampling confirmation | read_file | lsp_document_symbol |
+| Generate knowledge base | write_file (per chapter + content.md) | - |
 
-### 4.2 codebase_memory 使用要点
+### 4.2 codebase_memory usage notes
 
-- `index_repository` 只在首次构建时调用一次（写入开销大）
-- `get_architecture` 是只读操作，可并发与其他工具调用
-- `trace_path` 对每个关键函数调用一次，深度建议 depth=2（调用方和被调用方各两层）
-- `search_knowledge base` 用于确认特定符号的存在性和位置
+- `index_repository` is called once, on the first build (write cost is high)
+- `get_architecture` is read-only and can run concurrently with other tools
+- `trace_path` is called once per key function; depth=2 is recommended (two levels of callers and callees)
+- `search_knowledge base` confirms the existence and location of a specific symbol
 
-### 4.3 索引质量检查
+### 4.3 Index quality checks
 
-构建完成后，执行以下检查：
-
-```
-1. 文件总数检查：glob 结果 vs 各章节文件索引行数之和
-   → 差异 >5 个文件 → 标记为 "需要补充"
-
-2. 关键符号检查：对前 10 大文件，随机选取 3 个关键符号
-   → search_knowledge base 确认符号存在于索引中 → 不一致则修复
-
-3. 调用关系检查：选取 5 条关键路径中的步骤
-   → trace_path 验证调用链存在 → 不一致则修复
-
-4. 入口覆盖检查：所有入口文件（含 main 函数的文件）必须出现在文件索引中
-```
-
----
-
-## 五、验证逻辑（Verification）
-
-### 5.1 自动验证清单
-
-CKB 生成后，必须通过以下验证才能标记为"完成"：
+After the build, run these checks:
 
 ```
-□ content.md 已生成，章列表与章节文件一一对应（数量、名称一致）
-□ 每个章节文件存在且非空
-□ 文件索引覆盖了所有 glob 结果中的文件（差异 <5）
-□ 每个目录至少有一个文件被采样确认
-□ 所有入口文件在关键路径中有对应步骤
-□ 所有标注为 "⚠️存根" 的文件已经 read_file 确认（不是推测）
-□ 模块拓扑表中的每个模块都存在于文件索引中
-□ 关键路径中的每个函数名可通过 search_knowledge base 验证存在
-□ 没有 "TODO"、"待确认" 等未解决标记（已确认的除外）
-□ VERSION 文件已写入且与当前文件数和索引节点数一致
-```
+1. File count check: glob results vs the sum of index rows across chapters
+   → difference > 5 files → mark as "needs completion"
 
-### 5.2 增量更新
+2. Key symbol check: for the 10 largest files, pick 3 key symbols at random
+   → search_knowledge base confirms the symbol exists in the index → fix any mismatch
 
-当项目代码发生变化时：
+3. Call relationship check: pick steps from 5 critical paths
+   → trace_path verifies the call chain exists → fix any mismatch
 
-```
-1. 读 content.md 定位受影响的章
-2. 读对应章节文件，更新受影响条目（文件索引、关键路径、边界标注）
-3. 新增/删除章：同步更新 content.md，按命名规则重命名受影响文件（保持编号连续）
-4. VERSION 追加变更记录
-```
-
-若发现知识库与实际代码明显不符（如索引的文件已不存在），按上述流程修正。
-
-### 5.3 新旧格式判定
-
-```
-- 新格式（v2.0）：knowledgesource/content.md 存在
-- 旧格式（v1.x）：仅有 knowledgesource/PROJECT_GRAPH.md
-- 无知识库：两者皆不存在 → 触发构建流程
+4. Entry coverage check: every entry file (a file with a main function) must appear in the file index
 ```
 
 ---
 
-## 六、迁移规范（v1.x → v2.0）
+## 5. Verification Logic
 
-### 6.1 迁移步骤
+### 5.1 Automatic verification checklist
+
+A CKB build must pass the following before it can be marked "complete":
 
 ```
-1. 读取旧 PROJECT_GRAPH.md 全文
-2. 规划章结构（按 3.4 章节划分原则）
-3. 将旧文件内容重组为各章节文件（重组，不是重写——不丢失内容）
-4. 生成 content.md
-5. 删除旧 PROJECT_GRAPH.md
-6. VERSION 追加迁移记录
+□ content.md generated; chapter list matches chapter files (count and names)
+□ Every chapter file exists and is non-empty
+□ File index covers every file in the glob results (difference < 5)
+□ At least one file per directory sampled and confirmed
+□ Every entry file has a corresponding step in the critical paths
+□ Every file tagged "⚠️Stub" confirmed with read_file (not assumed)
+□ Every module in the topology table exists in the file index
+□ Every function name in the critical paths is verifiable via search_knowledge base
+□ No unresolved "TODO" or "to be confirmed" markers (confirmed ones excepted)
+□ VERSION written and consistent with the current file count and index node count
 ```
 
-### 6.2 迁移原则
+### 5.2 Incremental updates
 
-- **不丢失内容**：迁移是内容重组，不是重新生成；有疑问的内容保留原文，宁可冗余不可缺失
-- **归属存疑的条目**：放入最相关的章，并在该条目上注明跨模块关系
-- 迁移完成后执行 5.1 验证清单
+When project code changes:
+
+```
+1. Read content.md to locate the affected chapters
+2. Read those chapter files and update the affected entries (file index, critical paths, boundary notes)
+3. Chapters added/removed: update content.md and rename the affected files per the naming rule (keep indices contiguous)
+4. Append a change record to VERSION
+```
+
+If the knowledge base clearly disagrees with the actual code (e.g. an indexed file no longer exists), correct it with the same flow.
+
+### 5.3 Format detection
+
+```
+- New format (v2.0): knowledgesource/content.md exists
+- Legacy format (v1.x): only knowledgesource/PROJECT_GRAPH.md exists
+- No knowledge base: neither exists → trigger the build flow
+```
 
 ---
 
-## 七、与系统提示词的集成
+## 6. Migration (v1.x → v2.0)
 
-### 7.1 集成方式
-
-CKB 机制通过以下方式嵌入 agent 行为：
-
-1. **Skill 文件**：`skills/ckb/SKILL.md` 包含简化版的检测 → 构建流程，agent 通过 `load_skill("ckb")` 加载
-2. **系统提示词注入**：code_agent 的系统提示词中直接嵌入 CKB 检测规则（简短版）
-3. **预加载 skill**：code_agent 的 YAML 配置中 `skills: [ckb]` 确保 CKB 在会话开始时已加载
-
-### 7.2 系统提示词中的规则文本
+### 6.1 Migration steps
 
 ```
-## CKB 机制（强制）
+1. Read the legacy PROJECT_GRAPH.md in full
+2. Plan the chapter structure (per 3.4 Chapter division principles)
+3. Reorganise the legacy content into chapter files (reorganise, do not rewrite — lose nothing)
+4. Generate content.md
+5. Delete the legacy PROJECT_GRAPH.md
+6. Append a migration record to VERSION
+```
 
-对话开始时检测 knowledgesource/content.md：
-- 读取成功 → 读目录定位章节，按需读取章节文件
-- 不存在 → 回退检查 PROJECT_GRAPH.md（旧格式，提示迁移）
-- 均不存在 → 进入构建模式，禁止任何其他操作，直到知识库生成完毕
+### 6.2 Migration principles
 
-构建模式硬约束：你只能使用 read_file、glob、codebase_memory 工具。
-禁止写代码、禁止回答任务请求、禁止对项目代码做推测。
+- **Lose nothing**: migration is content reorganisation, not regeneration; keep the original wording when in doubt — redundancy is better than omission
+- **Entries with unclear ownership**: place them in the most relevant chapter and note the cross-module relationship on the entry
+- Run the 5.1 checklist after migration
+
+---
+
+## 7. Integration with the System Prompt
+
+### 7.1 Integration
+
+The CKB mechanism is embedded in agent behaviour in three ways:
+
+1. **Skill file**: `skills/ckb/SKILL.md` contains the condensed detection → build flow; the agent loads it via `load_skill("ckb")`
+2. **System prompt injection**: the code_agent system prompt embeds the CKB detection rule (short form)
+3. **Skill preload**: the code_agent YAML declares `skills: [ckb]`, ensuring CKB is loaded when the session starts
+
+### 7.2 Rule text in the system prompt
+
+```
+## CKB mechanism (mandatory)
+
+At the start of a conversation, probe knowledgesource/content.md:
+- Read succeeds → read the directory, locate chapters, read the chapters you need
+- Missing → fall back to PROJECT_GRAPH.md (legacy format, suggest migration)
+- Neither exists → enter build mode and do nothing else until the knowledge base is generated
+
+Build-mode hard constraints: you may only use read_file, glob, and codebase_memory tools.
+Do not write code, do not answer task requests, do not speculate about the project code.
 ```

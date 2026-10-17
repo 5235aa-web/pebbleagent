@@ -1,12 +1,9 @@
 #!/usr/bin/env python
 # -*- coding: utf-8 -*-
-"""Command/code validation parity (2026-10-17 security fix, review issue 2).
+"""Command/code validation parity.
 
-Before: execute_shell had full BashValidator checks, but powershell and
-execute_code(bash) only did the V2 network scan — destructive commands
-(rm -rf /, del /s /q C:\\, Remove-Item -Recurse C:\\Windows) could run by
-"switching the entry tool".  Now all three entries share destructive/path
-validation.
+execute_shell, powershell and execute_code(bash) share destructive/path
+validation, so a destructive command cannot run by switching the entry tool.
 
 Covers: PowerShellValidator matrix, code_destructive_guard matrix, bash-script
 validation via _tool_execute_code, and integration through the private tool
@@ -132,7 +129,7 @@ def main() -> int:
           r.startswith("Error: 命令被阻止执行"), f"got: {r[:80]}")
 
     # ================= Static guards =================
-    with open(os.path.join(ROOT, "agent_core", "tool_executor_impl.py"), "r", encoding="utf-8") as f:
+    with open(os.path.join(ROOT, "agent_core", "tool_impl", "execution.py"), "r", encoding="utf-8") as f:
         src = f.read()
     check("static: PowerShellValidator wired into powershell tool",
           "PowerShellValidator(self._current_project_path)" in src)

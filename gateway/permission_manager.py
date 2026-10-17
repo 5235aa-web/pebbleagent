@@ -207,7 +207,7 @@ class PermissionManager:
         rule_content = rule.rule_content
         if rule_content.endswith(':*'):
             # 前缀匹配，如 "npm:*"
-            # 2026-10-17 问题7f：加词边界，防止 "git:*" 放行 "gitk"/"git-secret"
+            # 词边界：防止 "git:*" 放行 "gitk"/"git-secret"
             prefix = rule_content[:-2]
             return content == prefix or re.match(rf'^{re.escape(prefix)}(?:\s|$)', content) is not None
         elif rule_content.startswith('*') and rule_content.endswith('*'):
@@ -223,7 +223,7 @@ class PermissionManager:
 
     def _is_inline_code_exec(self, tool_name: str, content: Optional[str]) -> bool:
         """
-        检测命令是否为"内联代码执行"（2026-10-16 安全加固）。
+        检测命令是否为"内联代码执行"。
 
         python -c / node -e / perl -e / powershell -Command / bash -c 这类形态，
         前缀 allow 规则（如 Bash(python:*)）不得放行，需升级为用户询问。
@@ -373,12 +373,9 @@ class PermissionManager:
     def _get_permission_type(self, tool_name: str) -> PermissionType:
         """根据工具名称获取权限类型
 
-        2026-10-17 修复（安全评审问题 4）：
-        1. 优先复用 agent_core.tool_permission 的权威映射——此前本方法与
-           tool_permission.py 各有一份映射，未映射工具（MCP mcp__*、web_search、
-           grep 等）在本方法中默认落 EXEC_COMMAND，导致"记住一次 MCP 工具 →
-           (session, 'exec:command') 入信任 → execute_shell 被自动放行"的提权面。
-        2. 未映射工具改为 UNKNOWN_TOOL（仍会询问，且信任键与 exec:command 隔离）。
+        映射规则：
+        1. 优先复用 agent_core.tool_permission 的权威映射（单一来源）。
+        2. 未映射工具归为 UNKNOWN_TOOL（仍会询问，且信任键与 exec:command 隔离）。
         """
         # 权威映射：agent_core.tool_permission（延迟导入避免循环依赖）
         try:

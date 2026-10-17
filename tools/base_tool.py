@@ -136,10 +136,7 @@ class BaseTool(ABC, Generic[InputT, OutputT]):
         if not self.requires_permission:
             return PermissionResult(allowed=True, reason="No permission required")
         
-        # 2026-10-17 安全修复（评审问题7a）：移除非主线程跳过逻辑。
-        # 此前"非主线程 + 有运行中事件循环"被当作子 agent 直接跳过权限检查
-        # （返回 allowed=True），构成"在后台线程执行工具即可绕过权限"的提权面。
-        # 当前项目的工具执行（无论哪个线程）都应经过统一权限层。
+        # 所有线程的工具执行都经过统一权限层，不按线程跳过检查。
         
         # 默认实现：调用权限管理器
         try:
@@ -165,7 +162,7 @@ class BaseTool(ABC, Generic[InputT, OutputT]):
                 ask_user=not allowed and "rule" not in message.lower()
             )
         except ImportError:
-            # 权限管理器不可用：fail-closed 拒绝（2026-10-16 安全加固）
+            # 权限管理器不可用：fail-closed 拒绝
             logger.error(f"[{self.name}] Permission manager not available, denying (fail-closed)")
             return PermissionResult(allowed=False, reason="Permission manager not available (fail-closed)")
         except Exception as e:

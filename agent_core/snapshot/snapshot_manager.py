@@ -168,7 +168,7 @@ class SnapshotManager:
                 self._db.execute(FILE_SNAPSHOTS_TABLE_DDL)
                 for index_ddl in FILE_SNAPSHOTS_INDEXES_DDL:
                     self._db.execute(index_ddl)
-                # 迁移（2026-10-17 问题6）：已有库补 write_result_sha256 列
+                # 迁移：已有库补 write_result_sha256 列
                 try:
                     self._db.execute(
                         "ALTER TABLE file_snapshots ADD COLUMN write_result_sha256 TEXT NOT NULL DEFAULT ''"
@@ -489,7 +489,7 @@ class SnapshotManager:
         message_id: int,
         tool_call_id: str
     ) -> None:
-        """工具执行后回填"写入结果 SHA"（2026-10-17 问题6）
+        """工具执行后回填"写入结果 SHA"
 
         回退冲突检测需要区分"AI 修改后的状态"与"外部修改"：仅有写前备份时，
         最后一次写入的结果不在任何 backup_sha256 中，无法区分。本方法在工具
@@ -508,7 +508,7 @@ class SnapshotManager:
             )
 
     def collect_known_sha256(self, relative_path: str) -> tuple:
-        """收集某文件在 AI 掌控内的全部已知 SHA（2026-10-17 问题6）
+        """收集某文件在 AI 掌控内的全部已知 SHA
 
         Returns:
             (known: set[str], has_write_result: bool)
@@ -603,7 +603,7 @@ class SnapshotManager:
         return result
 
     def _resolve_copy_file(self, args: Dict) -> List[Dict]:
-        """copy_file（2026-10-17 问题7e：此前不建快照）
+        """copy_file 快照解析
 
         回退语义：目标文件被创建 → 回退删除；目标被覆盖 → 回退恢复旧内容。
         源文件不变，无需备份。
@@ -663,7 +663,7 @@ class SnapshotManager:
         return [FileSnapshotRecord.from_db_row(r) for r in rows]
 
     def query_all_retained(self) -> List[FileSnapshotRecord]:
-        """查询所有需保留的快照记录（active + reverted，2026-10-16）
+        """查询所有需保留的快照记录（active + reverted）
 
         reverted 快照的备份文件仍被 UndoEngine（撤销回退）依赖，
         孤儿清理必须把它们视为有效，否则撤销回退会因备份缺失而失败。

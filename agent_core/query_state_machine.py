@@ -4,12 +4,6 @@ Query State Machine - 查询状态机（事件与上下文类型）
 - StreamEvent / ToolExecutionEvent: 流式工具执行事件
 - ToolUseBlock: 工具调用结构
 - ToolExecutionContext: 工具执行上下文（各执行器共享）
-
-注（2026-10-16）：原 Continue/Terminal/QueryState/QueryConfig/QueryLoop
-状态机 DSL 全仓零调用（主循环为 chat_stream 内手写实现），已移除。
-注（2026-10-17）：清理零引用死代码（MessageType / ChatMessage /
-ContentEvent / CompactEvent / ChatStartedEvent / ChatCompletedEvent /
-ErrorEvent / CancelledEvent / parse_tool_calls_from_response）。
 """
 
 from dataclasses import dataclass, field
