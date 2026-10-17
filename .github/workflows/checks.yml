@@ -20,8 +20,9 @@ jobs:
 
       # Minimal dependency set only — the full requirements.txt pulls in OCR/ML
       # extras (easyocr -> torch) that are lazy-imported and not needed for tests.
+      # websockets is required: test_minor_hardening imports gateway.ws_server.
       - name: Install Python dependencies
-        run: pip install "openai>=2.43.0" "httpx>=0.28.1" "PyYAML>=6.0.3" "tiktoken>=0.13.0" "aiohttp>=3.14.1"
+        run: pip install "openai>=2.43.0" "httpx>=0.28.1" "PyYAML>=6.0.3" "tiktoken>=0.13.0" "aiohttp>=3.14.1" "websockets>=16.0"
 
       - name: Syntax check (compileall)
         run: python -m compileall -q agent_core gateway tools tests run_backend.py skills_loader.py peb_check_holiday.py peb_check_holiday_env.py peb_check_pricing_scope.py
