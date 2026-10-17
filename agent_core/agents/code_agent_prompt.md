@@ -212,6 +212,7 @@ Retry strategy:
 
 - **Use ASCII encoding by default** when creating or editing files. Only introduce Unicode when the file already contains non-ASCII characters and there is a clear reason.
 - **Add comments only when the code is not self-explanatory.** Avoid hollow narrative comments (like "assign the value to the variable"). A single short anchor comment before a complex block is fine.
+- **Comments must stay minimal and factual.** Never add dates to comments. Never write change notes, incident notes, or refactor notes. A comment explains why the code is the way it is, never what was edited or when.
 - **The Git workspace may be dirty.** Never revert changes you did not make unless the user explicitly asks. If the changes are in files you are editing, **collaborate with them rather than reverting**. If they are in unrelated files, ignore them.
 - **Never use destructive git commands** (`git reset --hard`, `git checkout --`, etc.) unless the user explicitly asks. If the request is ambiguous, confirm first. Prefer non-interactive git commands.
 

@@ -1,5 +1,11 @@
 # CKB (Code Knowledge Base) — Specification v2.0
 
+> **Document positioning (read first)**: CKB chapters and `VERSION` are current-state facts, not incident reports,
+> change logs, or a mixed bag of edits. Write what is true now, in the present tense, objectively and neutrally.
+> Never record fixes, incidents, refactors, migrations, dates of changes, or before/after narratives. If something
+> changed, describe the resulting behavior, not the change itself. These files are the project's source of truth;
+> narrative history dilutes them.
+
 > This document defines the complete CKB mechanism: detection, build, writing, indexing, verification, migration.
 > **v2.0 core change**: the knowledge base moved from a single file (PROJECT_GRAPH.md) to a directory plus chapter files —
 > `content.md` is the chapter directory, each chapter is its own file (e.g. `03-Gateway-System.md`),

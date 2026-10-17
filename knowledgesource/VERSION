@@ -15,6 +15,7 @@
 - Stream-end detection: finish_reason recording, suspicious-end auto-retry (once per turn), graceful completion
 - Experience ledger: rule-based turn observation (correction / constraint / preference / pitfall), FTS5 recall with tool, path, kind, confidence, recency and hit weighting, dedupe + supersede lifecycle, per-agent notes; SQLite at `{PEBBLE_HOME:-~/.pebble}/experience.db`
 - Compaction summary: stable five-section handoff format (任务 / 现状 / 决定 / 待办 / 线索), single-pass prompt with no tool calls, format validation with one strict retry and a wrapped fallback
+- Agent prompts: comment hygiene (no dates, no change / incident / refactor notes) and CKB document positioning (present-tense facts, no change narratives)
 - Turn building blocks: `agent_core/chat/usage.py` (pricing, per-call cost, session accumulation), `chat/prompt.py` (system prompt composition), `chat/stream_client.py` (streamed request, retries, context-window handling, chunk accumulation), `chat/tool_cycle.py` (question injection, tool execution, result write-back), `chat/turn_executor.py` (turn preparation: agent, conversation, user message, history, prompt, client, cancel signal)
 - Session persistence: dual-DB (sessions.db for UI state, agent_chat.db for LLM context), transcript JSONL, message-chain tracking
 

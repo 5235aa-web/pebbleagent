@@ -8,6 +8,7 @@ description: "Code knowledge base: detect, build, and maintain a chaptered proje
 > Code knowledge base: detect the project knowledge base at the start of a conversation, build it first if missing, then work.
 > Structure is a directory plus chapter files: read `content.md` first to locate chapters, then read only the chapters you need.
 > Full specification: `CKB_SPEC.md`.
+> **Document positioning**: chapters and `VERSION` are current-state facts (present tense, objective, neutral) — not incident reports, change logs, or modification narratives. Describe what is true now, never the edit that produced it.
 
 ---
 
