@@ -8,7 +8,7 @@
 #   2. Optional dependencies — corresponding features degrade or become unavailable if missing (try/fallback in code)
 #   3. Version pins = versions verified in the current development environment, used as minimum requirements
 #   4. Transitive dependencies (certifi / anyio / pydantic / yarl, etc.) are resolved automatically by pip
-#   5. Minimum Python = 3.11: numpy>=2.4 requires it. Core modules are 3.10-compatible.
+#   5. Minimum Python = 3.11: numpy>=2.4 requires it.
 # ============================================================
 
 # ---------- Core Dependencies (required to run) ----------
@@ -19,18 +19,21 @@ websockets>=16.0
 # LLM API SDK (DeepSeek and other providers; agent_chat_service_v2, etc.)
 openai>=2.43.0
 
-# HTTP client (tool_executor_impl.py)
+# HTTP client (agent_core/tool_impl/web.py)
 httpx>=0.28.1
 
-# Agent YAML config loading (agent_loader.py)
+# Agent YAML config loading (agent_core/agent_loader.py)
 PyYAML>=6.0.3
 
 # ---------- Optional Feature Dependencies ----------
+#
+# The full set is only needed for the OCR/PDF pipeline: easyocr pulls in torch
+# (~2 GB). Backend-only and test runs do not need this section.
 
 # Exact token counting (falls back to len//3 estimation if missing)
 tiktoken>=0.13.0
 
-# MCP HTTP transport (mcp_client.py)
+# MCP HTTP transport (agent_core/mcp/mcp_client.py)
 aiohttp>=3.14.1
 
 # Image / array processing (PDF OCR pipeline; numpy>=2.4 requires Python 3.11+)

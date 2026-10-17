@@ -16,6 +16,7 @@
 | path_whitelist.json | Path whitelist (max 5 entries) | server.py, agent_chat_service_v2._load_path_whitelist | 📦Config |
 | requirements.txt | Python dependency list (18 direct deps in four groups: core 4 / optional 11 / skills 1 / build 2; ">= verified version" format; uninstalled packages annotated in comments; minimum Python 3.11 — numpy>=2.4 requires it, dev environment 3.14) | pip install | 📦Build |
 | ruff.toml | Static analysis gate (rules F + E9: undefined names, unused imports/variables, redefinitions, empty f-strings, syntax errors; style rules off) | ruff check (local + CI) | 📦Build |
+| CONTRIBUTING.md | Contributor guide (requirements, setup, run, pre-PR checks, test conventions, PR rules) | contributors | 📄Doc |
 | start_backend.bat / start_gui.bat | Windows launch scripts | user | 🟡Script |
 | peb_check_holiday.py / peb_check_holiday_env.py / peb_check_pricing_scope.py | Billing-decision checks (holiday main rules 30 cases + isolated env: priority+hot reload+fallback+degradation / peak-scope: all-model time sensitivity + numeric assertions) | user runs manually (python <script>) | 🧪Test |
 | pebble-backend.spec | PyInstaller packaging config (entry run_backend.py; datas bundle skills / agent_core/agents / knowledgesource / config JSONs; output dist/pebble-backend.exe) | build (Tauri sidecar chain, see below) | 📦Build |
@@ -48,6 +49,8 @@ Shell = Tauri 2 (Rust), productName "pebble-agent", identifier com.pebble.agent.
 3. Tauri bundle (`bundle.resources "binaries/*"`, targets:"all") → installer; frontend build = `npm run build` (vue-tsc && vite build)
 
 > ⚠️ The sidecar filename must carry the target-triple suffix for Tauri to recognize it; after backend changes, re-run PyInstaller and copy to binaries/.
+
+**CI (`.github/workflows/checks.yml`)**: two jobs. `python` runs a 3.11 / 3.14 matrix (compileall → ruff F/E9 → billing scripts → `tests/run_all.py`); `frontend` runs once (`npm ci` → vue-tsc → `tests/run_all.mjs`).
 
 ### .pebble/ Auxiliary Directory (diagnostic tools & verification scripts, kept by user decision)
 
