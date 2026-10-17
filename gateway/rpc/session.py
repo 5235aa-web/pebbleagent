@@ -213,7 +213,7 @@ def handle(ctx, method):
             result = manual_compress(
             messages=messages,
             max_tokens=30000,
-            recent_messages=10,
+            recent_messages=2,
             llm_client=client,
             llm_model=model,
             )
@@ -237,6 +237,11 @@ def handle(ctx, method):
                 )
                 if boundary and summary:
                     kept_count = max(0, len(compressed) - 2)  # 减去 boundary 和 summary
+                    kept_agent = max(1, sum(
+                        1 for msg in compressed
+                        if msg.get("role") != "system"
+                        and not msg.get("is_compact_summary")
+                    ))
 
                     # sessions.db: 插入 marker，不删除旧消息
                     saved = srv._session_store.insert_compaction_result(sid, boundary, summary, kept_count)
@@ -253,7 +258,7 @@ def handle(ctx, method):
                             # 注意：不再传 kept_count——agent_chat.db 是精简库（只存 user/assistant），
                             # 用它推算 cutoff 会导致标记范围错误（历史 bug：标记 0 条、上下文不缩小）。
                             # agent_chat 版 insert 内部按"boundary 之前全部标记"语义处理。
-                            ok = history.insert_compaction_result(conv["id"], boundary, summary)
+                            ok = history.insert_compaction_result(conv["id"], boundary, summary, kept_agent)
                             if ok:
                                 logger.info(f"[Server] Compressed session {sid}: synced markers to agent_chat.db")
                             else:

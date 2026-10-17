@@ -35,7 +35,8 @@ The repository also has three billing/holiday regression scripts at the project 
 ### Compaction & billing
 | Test | Covers |
 | --- | --- |
-| `test_context_compaction_keep.py` | dynamic keep-count, tool-pair protection, boundary/summary structure |
+| `test_context_compaction_keep.py` | dynamic keep-count (2 messages keep 1, 3+ keep 2), tool-pair protection, boundary/summary structure |
+| `test_compaction_marker_keep.py` | compaction markers keep the newest messages in the LLM context (single and repeated compaction) |
 | `test_pricing_save.py` | `pricing.save` validation, atomic write, hot reload, unknown-field preservation |
 | `test_pricing_labels.mjs` | pricing panel column labels (source checks) |
 

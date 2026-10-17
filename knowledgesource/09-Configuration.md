@@ -48,7 +48,7 @@ Shell = Tauri 2 (Rust), productName "pebble-agent", identifier com.pebble.agent.
 2. Copy the artifact to `ui-gui-vue3/src-tauri/binaries/pebble-backend-x86_64-pc-windows-msvc.exe` (Tauri sidecar naming: {name}-{target-triple}.exe)
 3. Tauri bundle (`bundle.resources "binaries/*"`, targets:"all") → installer; frontend build = `npm run build` (vue-tsc && vite build)
 
-> ⚠️ The sidecar filename must carry the target-triple suffix for Tauri to recognize it; after backend changes, re-run PyInstaller and copy to binaries/.
+> The sidecar filename carries the target-triple suffix for Tauri to recognize it; after backend changes, re-run PyInstaller and copy to binaries/.
 
 **CI (`.github/workflows/checks.yml`)**: two jobs. `python` runs a 3.11 / 3.14 matrix (compileall → ruff F/E9 → billing scripts → `tests/run_all.py`); `frontend` runs once (`npm ci` → vue-tsc → `tests/run_all.mjs`).
 
@@ -66,7 +66,7 @@ Shell = Tauri 2 (Rust), productName "pebble-agent", identifier com.pebble.agent.
 | _tmp_verify/verify_security_fixes.py | Security regression script (isolated PEBBLE_HOME): WS token/auth helpers / payload limits / file.* path guard / PathBoundaryChecker / unknown-tool mapping / sync permission evaluation / trust granularity / audit checksum / enforcer end-to-end | 🧪Verify |
 | _tmp_verify/check_*.py / investigate_*.py / extract_*.py / *_out.txt / real_messages.json | Investigation helpers and output snapshots (billing checks / interruption probes / event extraction / real message samples) | 🟡Investigation |
 
-> Retention rationale (user-confirmed): these assets are used passively only when diagnosing, cost nothing at rest; rebuilding them after removal would be expensive if an issue recurs, so they are kept wholesale. Companion long-term logs: backend "Stream events dropped" (Chapter 4 ws_server.py) and frontend [WS] lifecycle (Chapter 8 gatewayClient.ts).
+> Retention: these assets are used passively only when diagnosing and cost nothing at rest; they are kept wholesale. Companion long-term logs: backend "Stream events dropped" (Chapter 4 ws_server.py) and frontend [WS] lifecycle (Chapter 8 gatewayClient.ts).
 
 ### Built-in Skills (114 skill directories total)
 

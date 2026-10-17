@@ -41,7 +41,7 @@ def main() -> int:
 
     def run_case(name, msgs, expect_success, expect_keep=None, expect_reason_sub=None):
         print("=== %s (n=%d) ===" % (name, len(msgs)))
-        result = manual_compress(messages=msgs, max_tokens=30000, recent_messages=10, llm_client=None)
+        result = manual_compress(messages=msgs, max_tokens=30000, recent_messages=2, llm_client=None)
         ok = bool(result.get("success"))
         check("success == %s" % expect_success, ok == expect_success,
               "got success=%s reason=%s" % (ok, result.get("reason")))
@@ -71,14 +71,14 @@ def main() -> int:
     # --- Scenario 1: exactly 2 messages -> compress 1, keep 1 ---
     run_case("2 messages", make_msgs(2), True, 1)
 
-    # --- Scenario 2: 5 messages -> compress 1, keep 4 ---
-    run_case("5 messages", make_msgs(5), True, 4)
+    # --- Scenario 2: 5 messages -> compress 3, keep 2 ---
+    run_case("5 messages", make_msgs(5), True, 2)
 
-    # --- Scenario 3: 11 messages -> compress 1, keep 10 ---
-    run_case("11 messages", make_msgs(11), True, 10)
+    # --- Scenario 3: 11 messages -> compress 9, keep 2 ---
+    run_case("11 messages", make_msgs(11), True, 2)
 
-    # --- Scenario 4: 15 messages -> compress 5, keep 10 (unchanged behavior) ---
-    run_case("15 messages", make_msgs(15), True, 10)
+    # --- Scenario 4: 15 messages -> compress 13, keep 2 ---
+    run_case("15 messages", make_msgs(15), True, 2)
 
     # --- Scenario 5: 1 message -> fail ---
     run_case("1 message", make_msgs(1), False, None, "< 2")

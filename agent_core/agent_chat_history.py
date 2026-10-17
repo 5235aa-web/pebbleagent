@@ -8,7 +8,7 @@ Agent Chat History - Agent聊天历史管理
 import sqlite3
 import json
 import os
-import uuid
+import uuid as uuid_lib
 import re
 from typing import Optional, List, Dict, Any
 from pathlib import Path
@@ -219,7 +219,7 @@ def create_agent_conversation(user_id: str, agent_name: str, title: str = None, 
     conn = _connect()
     cursor = conn.cursor()
     
-    conv_uuid = uuid or str(uuid.uuid4())
+    conv_uuid = uuid or str(uuid_lib.uuid4())
     if not title:
         title = f"与 {agent_name} 的对话"
     
@@ -436,7 +436,7 @@ def add_agent_chat_message(
     conn = _connect()
     cursor = conn.cursor()
     if not msg_uuid:
-        msg_uuid = str(uuid.uuid4())
+        msg_uuid = str(uuid_lib.uuid4())
     
     # 计算下一条消息的 sort_order
     cursor.execute(
@@ -557,45 +557,57 @@ def replace_agent_chat_messages(conversation_id: int, new_messages: List[Dict[st
         conn.close()
 
 
-def insert_compaction_result(conversation_id: int, boundary_msg: dict, summary_msg: dict) -> bool:
+def insert_compaction_result(conversation_id: int, boundary_msg: dict, summary_msg: dict,
+                             kept_count: int = 2) -> bool:
     """
-    插入压缩标记和摘要消息，不删除旧消息（压缩标记机制）
+    插入压缩标记和摘要消息，不删除旧消息（压缩标记机制）。
 
-    压缩语义（与 sessions.db 版本一致）：boundary 之前的全部旧消息已被压缩，
-    标记 is_compacted=1（上下文构建跳过）；boundary/summary 追加到消息末尾
-    （is_compacted=0，保留在上下文中）。
-
-    注意：agent_chat.db 是精简库（只保存 user/assistant 消息），与 sessions.db
-    的完整消息集（含 tool）粒度不同，因此不能使用 sessions 的 kept_count 推算
-    cutoff——那会导致标记范围错误（历史 bug：cutoff 被推成 1，实际标记 0 条，
-    压缩后 LLM 上下文完全不缩小）。本实现直接标记"boundary 之前的所有旧消息"，
-    语义天然正确；多次压缩时旧的 boundary/summary 也会被标记跳过，上下文只
-    保留最新一份摘要。
+    kept_count 是保留在上下文中的最近消息条数：至少保留 1 条，且至少压缩 1 条。
+    boundary 之前的旧消息标记 is_compacted=1；boundary/summary 插入到保留区之前，
+    保留区的 sort_order 整体后移 2 位。
     """
     conn = _connect()
     cursor = conn.cursor()
     try:
         cursor.execute("BEGIN")
-        # 1) 压缩边界之前的所有旧消息标记为已压缩（上下文构建跳过）
         cursor.execute(
-            "UPDATE agent_chat_messages SET is_compacted = 1 WHERE conversation_id = ? AND is_compacted = 0",
+            "SELECT COUNT(*) FROM agent_chat_messages WHERE conversation_id = ?",
             (conversation_id,)
         )
-        # 2) boundary/summary 追加到消息末尾
+        total = cursor.fetchone()[0] or 0
+        if total < 2:
+            conn.rollback()
+            return False
+        keep = max(1, min(int(kept_count or 1), total - 1))
         cursor.execute(
-            "SELECT COALESCE(MAX(sort_order), 0) FROM agent_chat_messages WHERE conversation_id = ?",
-            (conversation_id,)
+            "SELECT sort_order FROM agent_chat_messages WHERE conversation_id = ? "
+            "ORDER BY sort_order DESC LIMIT 1 OFFSET ?",
+            (conversation_id, keep - 1)
         )
-        max_order = cursor.fetchone()[0]
-        # 3) 插入边界标记（system）
+        row = cursor.fetchone()
+        if not row:
+            conn.rollback()
+            return False
+        cutoff = row[0] - 1
         cursor.execute(
-            "INSERT INTO agent_chat_messages (conversation_id, role, content, sort_order, is_compacted) VALUES (?, 'system', ?, ?, 0)",
-            (conversation_id, boundary_msg.get("content", ""), max_order + 1)
+            "UPDATE agent_chat_messages SET is_compacted = 1 "
+            "WHERE conversation_id = ? AND sort_order <= ? AND is_compacted = 0",
+            (conversation_id, cutoff)
         )
-        # 4) 插入摘要（user, is_compact_summary）
         cursor.execute(
-            "INSERT INTO agent_chat_messages (conversation_id, role, content, sort_order, is_compacted, is_compact_summary) VALUES (?, 'user', ?, ?, 0, 1)",
-            (conversation_id, summary_msg.get("content", ""), max_order + 2)
+            "UPDATE agent_chat_messages SET sort_order = sort_order + 2 "
+            "WHERE conversation_id = ? AND sort_order > ?",
+            (conversation_id, cutoff)
+        )
+        cursor.execute(
+            "INSERT INTO agent_chat_messages (conversation_id, role, content, sort_order, is_compacted) "
+            "VALUES (?, 'system', ?, ?, 0)",
+            (conversation_id, boundary_msg.get("content", ""), cutoff + 1)
+        )
+        cursor.execute(
+            "INSERT INTO agent_chat_messages (conversation_id, role, content, sort_order, is_compacted, is_compact_summary) "
+            "VALUES (?, 'user', ?, ?, 0, 1)",
+            (conversation_id, summary_msg.get("content", ""), cutoff + 2)
         )
         cursor.execute(
             "UPDATE agent_chat_conversations SET updated_at = CURRENT_TIMESTAMP WHERE id = ?",
