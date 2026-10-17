@@ -44,7 +44,7 @@ tools:
     - lsp_incoming_calls
     - lsp_outgoing_calls
     # User interaction
-    - ask_user_question
+    - clarify
     - usernote_write
     # Tool search and discovery
     - tool_search
@@ -52,7 +52,6 @@ tools:
     # Additional tools
     - powershell
     - notebook_edit
-    - brief
   
 # Agent behavior traits
 behavior:

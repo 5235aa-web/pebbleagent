@@ -1,5 +1,5 @@
 """
-AskUserQuestion工具 - 多选题询问用户
+澄清提问工具 - 多选题询问用户
 
 提供多选题询问用户功能
 支持用户自定义输入回答
@@ -16,15 +16,15 @@ logger = logging.getLogger(__name__)
 
 @dataclass
 class QuestionOption:
-    """问题选项"""
+    """选项"""
     label: str
-    description: str
+    detail: str = ""
     preview: Optional[str] = None
     
     def to_dict(self) -> Dict[str, Any]:
         result = {
             "label": self.label,
-            "description": self.description
+            "detail": self.detail
         }
         if self.preview:
             result["preview"] = self.preview
@@ -34,7 +34,7 @@ class QuestionOption:
     def from_dict(cls, data: Dict[str, Any]) -> "QuestionOption":
         return cls(
             label=data["label"],
-            description=data["description"],
+            detail=data.get("detail", ""),
             preview=data.get("preview")
         )
 
@@ -42,27 +42,27 @@ class QuestionOption:
 @dataclass
 class Question:
     """问题"""
-    question: str
-    header: str
-    options: List[QuestionOption]
-    multi_select: bool = False
+    prompt: str
+    title: str = ""
+    options: List[QuestionOption] = field(default_factory=list)
+    multiple: bool = False
     
     def to_dict(self) -> Dict[str, Any]:
         return {
-            "question": self.question,
-            "header": self.header,
+            "prompt": self.prompt,
+            "title": self.title,
             "options": [o.to_dict() for o in self.options],
-            "multiSelect": self.multi_select
+            "multiple": self.multiple
         }
     
     @classmethod
     def from_dict(cls, data: Dict[str, Any]) -> "Question":
         options = [QuestionOption.from_dict(o) for o in data.get("options", [])]
         return cls(
-            question=data["question"],
-            header=data["header"],
+            prompt=data["prompt"],
+            title=data.get("title", ""),
             options=options,
-            multi_select=data.get("multiSelect", False)
+            multiple=data.get("multiple", False)
         )
 
 
@@ -153,42 +153,37 @@ class QuestionManager:
             cls._answer_event.clear()
 
 
-class AskUserQuestionTool(BaseTool[Dict[str, Any], Dict[str, Any]]):
+class ClarifyTool(BaseTool[Dict[str, Any], Dict[str, Any]]):
     """
-    多选题询问用户工具
+    澄清提问工具
     
-    用于向用户提出多选题问题，支持单选和多选，支持用户自定义输入
+    在动手前向用户确认方向、偏好或取舍，支持单选、多选与自定义回答
     """
     
-    name = "ask_user_question"
-    description = """Use this tool when you need to ask the user questions during execution. This allows you to:
-1. Gather user preferences or requirements
-2. Clarify ambiguous instructions
-3. Get decisions on implementation choices as you work
-4. Offer choices to the user about what direction to take
+    name = "clarify"
+    description = """在动手前向用户确认方向、偏好或取舍。
 
-When to Use This Tool:
-- When the user's request is ambiguous and you need clarification
-- When there are multiple valid approaches and you want user input
-- When you need to confirm important decisions before proceeding
-- When the user might have preferences that would affect your implementation
+适用场景：
+- 需求存在多种合理解读，需要用户确认
+- 存在多个可行方案，取舍需要用户决定
+- 关键操作前需要用户确认
+- 用户的偏好会明显影响实现结果
 
-When NOT to Use This Tool:
-- When the task is clear and straightforward
-- When you can make reasonable assumptions based on context
-- When the decision is trivial and won't significantly impact the outcome
-- When you've already asked similar questions in the current session
+不适用场景：
+- 需求已经明确，可以直接执行
+- 可以基于现有代码或上下文作出合理默认选择
+- 决定无关紧要，不影响结果
+- 本次会话已经问过同类问题
 
-Question Guidelines:
-- Keep questions concise and clear
-- Provide helpful descriptions for each option
-- Limit to 1-4 questions per call to avoid overwhelming the user
-- There should be no 'Other' option - that will be provided automatically
-- Each option should be a distinct, mutually exclusive choice (unless multiSelect is enabled)
+提问约定：
+- 问题简短明确，一次最多 4 个
+- 每个选项给出可读的说明
+- 选项互斥；需要多选时把 multiple 设为 true
+- 不要提供“其他”选项，前端会自动提供自定义输入
 
-User Input:
-- Users can always select "Other" to provide their own custom answer
-- Custom answers are returned alongside the selected options"""
+回答方式：
+- 用户可以选择选项，也可以填写自定义回答
+- 自定义回答与所选选项一起返回"""
     
     input_params = ["questions"]
     requires_permission = False
@@ -211,14 +206,12 @@ User Input:
             if not isinstance(q, dict):
                 raise ValueError(f"question {i} must be a dictionary")
             
-            if "question" not in q:
-                raise ValueError(f"question {i} must have 'question' field")
-            if "header" not in q:
-                raise ValueError(f"question {i} must have 'header' field")
+            if "prompt" not in q:
+                raise ValueError(f"question {i} must have 'prompt' field")
             if "options" not in q:
                 raise ValueError(f"question {i} must have 'options' field")
             
-            q_text = q["question"]
+            q_text = q["prompt"]
             if q_text in question_texts:
                 raise ValueError(f"Duplicate question text: {q_text}")
             question_texts.add(q_text)
@@ -235,8 +228,6 @@ User Input:
                     raise ValueError(f"question {i} option {j} must be a dictionary")
                 if "label" not in opt:
                     raise ValueError(f"question {i} option {j} must have 'label' field")
-                if "description" not in opt:
-                    raise ValueError(f"question {i} option {j} must have 'description' field")
                 
                 label = opt["label"]
                 if label.lower() in ["other", "其他", "其它"]:
@@ -245,9 +236,9 @@ User Input:
                     raise ValueError(f"Duplicate option label in question {i}: {label}")
                 option_labels.add(label)
             
-            header = q.get("header", "")
-            if len(header) > 12:
-                logger.warning(f"Header '{header}' exceeds 12 characters, will be truncated")
+            title = q.get("title", "")
+            if len(title) > 12:
+                logger.warning(f"Title '{title}' exceeds 12 characters, will be truncated")
         
         return {"questions": questions}
     
@@ -283,7 +274,7 @@ User Input:
         
         formatted_answers = {}
         for q in questions:
-            q_text = q.question
+            q_text = q.prompt
             selected = raw_answers.get(q_text, "")
             custom = custom_inputs.get(q_text, "")
             

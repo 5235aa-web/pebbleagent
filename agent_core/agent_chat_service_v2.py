@@ -83,7 +83,9 @@ MODEL_CONTEXT_LIMITS = {
     'mimo': 1_000_000,
     'gpt-4': 128_000,
     'gpt-3.5': 16_000,
-    'claude': 200_000,
+    'sonnet': 200_000,
+    'opus': 200_000,
+    'haiku': 200_000,
     'gemini': 1_000_000,
 }
 

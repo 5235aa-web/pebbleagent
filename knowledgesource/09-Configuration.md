@@ -12,7 +12,7 @@
 | quick_notes.json | Quick notes (cross-session persistent, under ~/.pebble/, follows _DATA_DIR) | server.py (rw), QuickNotes.vue (via WebSocket) | 📦Core |
 | .mcp.json | MCP server config (standard .mcp.json format; 6 servers: github / time / codebase-memory / think-tool / chrome-devtools / blender). blender = uvx mcp-for-blender (PyPI, formerly blender-mcp) → connects to the Blender addon socket (localhost:9876); requires uv + Blender 3.0+ with the MCP addon enabled (addon ships Hyper3D/Hunyuan3D generation + Poly Haven/Poly Pizza free-asset integration). Evaluated Hyper3D Rodin's official remote MCP (api.hyper3d.com/api/mcp via mcp-remote bridge): generation consumes paid credits — user decided against it. **Project-level files require approval**: fingerprint (path + content sha256) recorded in ~/.pebble/mcp_trusted.json; unapproved files are skipped with a log warning; approve via McpPanel or the mcp.trust_project RPC | mcp_config.py, server.py (read) | 📦Config |
 | mcp_install.json | MCP dependency declaration: prerequisites (node / uv check_command + official download links) and servers metadata (each MCP's type/package/requires/description; codebase-memory download points to DeusData Releases; **sha256 required for auto-download: absent = download refused; manual 'path' install unaffected**) | server.py mcp.install_info (read; shutil.which dependency checks), McpPanel.vue (via mcp.list / mcp.install_info RPC) | 📦Config |
-| permission_rules.json | Permission rules (allow/deny/ask; **Bash(cat:*) not in defaults — sensitive-file reads go through ask**) | permission_manager.py | 📦Config |
+| permission_rules.json | Permission rules (mode + allow/deny/ask; syntax `tool:pattern`, e.g. `execute_shell:git *`, `write_file:*.env`) | permission_manager.py | 📦Config |
 | path_whitelist.json | Path whitelist (max 5 entries) | server.py, agent_chat_service_v2._load_path_whitelist | 📦Config |
 | requirements.txt | Python dependency list (18 direct deps in four groups: core 4 / optional 11 / skills 1 / build 2; ">= verified version" format; uninstalled packages annotated in comments) | pip install | 📦Build |
 | start_backend.bat / start_gui.bat | Windows launch scripts | user | 🟡Script |
@@ -20,7 +20,7 @@
 | pebble-backend.spec | PyInstaller packaging config (entry run_backend.py; datas bundle skills / agent_core/agents / knowledgesource / config JSONs; output dist/pebble-backend.exe) | build (Tauri sidecar chain, see below) | 📦Build |
 | run_backend.py | Backend entry point (→ gateway/ws_server.py) | user / Tauri sidecar | 🟡Script |
 | skills_loader.py | Skills loader (skills/ directory scan; YAML frontmatter description, single-line fallback for non-standard files) | list_skills / load_skill / get_skill_names | 🟡Aux |
-| agent_chat.db | Legacy DB (frozen); the current message DB is {PEBBLE_HOME}/agent_chat.db (e.g. %USERPROFILE%\.pebble\) | - | 🗑️Deprecated |
+| agent_chat.db | Frozen DB (unused); the current message DB is {PEBBLE_HOME}/agent_chat.db (e.g. %USERPROFILE%\.pebble\) | - | 🗑️Deprecated |
 
 ### Tauri Desktop Shell & Packaging Pipeline (ui-gui-vue3/src-tauri/)
 

@@ -324,8 +324,7 @@ TOOL_PERMISSION_MAPPING: Dict[str, Tuple[str, Callable[[Dict[str, Any]], str], b
     "load_skill": ("", lambda a: "", False),
     
     # ==================== 用户交互（无需权限检查） ====================
-    "ask_user_question": ("", lambda a: "", False),
-    "brief": ("", lambda a: "", False),
+    "clarify": ("", lambda a: "", False),
     
     # ==================== Todo管理（无需权限检查） ====================
     "todo_write": ("", lambda a: "", False),

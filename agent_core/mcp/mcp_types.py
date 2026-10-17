@@ -18,25 +18,18 @@ from enum import Enum
 
 class ConfigScope(str, Enum):
     """配置作用域"""
-    LOCAL = "local"           # 本地项目配置 (settings.local.json)
-    USER = "user"             # 用户全局配置 (~/.pebble/settings.json)
-    PROJECT = "project"       # 项目配置 (.mcp.json, 从 CWD 向上遍历)
-    DYNAMIC = "dynamic"       # 动态配置 (--mcp-config 或插件注入)
-    ENTERPRISE = "enterprise" # 企业管理配置
-    EXTERNAL = "claudeai"     # 外部连接器（外部配置值兼容）
-    MANAGED = "managed"       # 托管设置
+    LOCAL = "local"           # 项目本地配置
+    USER = "user"             # 用户全局配置
+    PROJECT = "project"       # 项目配置（.mcp.json）
+    DYNAMIC = "dynamic"       # 运行时注入
 
 
 class TransportType(str, Enum):
     """传输类型"""
-    STDIO = "stdio"           # 标准输入/输出（子进程）
-    SSE = "sse"               # Server-Sent Events
-    SSE_IDE = "sse-ide"       # IDE 扩展 SSE
-    HTTP = "http"             # Streamable HTTP
-    WS = "ws"                 # WebSocket
-    WS_IDE = "ws-ide"         # IDE 扩展 WebSocket
-    SDK = "sdk"               # SDK 进程内传输
-    EXTERNAL_PROXY = "claudeai-proxy"  # 外部代理（外部配置值兼容）
+    STDIO = "stdio"
+    SSE = "sse"
+    HTTP = "http"
+    WS = "ws"
 
 
 # ==================== 服务器配置 ====================
@@ -70,25 +63,6 @@ class McpSSEServerConfig:
 
 
 @dataclass
-class McpSSEIDEServerConfig:
-    """IDE SSE 服务器配置"""
-    type: Literal["sse-ide"] = "sse-ide"
-    url: str = ""
-    ide_name: str = ""
-    ide_running_in_windows: Optional[bool] = None
-
-
-@dataclass
-class McpWebSocketIDEServerConfig:
-    """IDE WebSocket 服务器配置"""
-    type: Literal["ws-ide"] = "ws-ide"
-    url: str = ""
-    ide_name: str = ""
-    auth_token: Optional[str] = None
-    ide_running_in_windows: Optional[bool] = None
-
-
-@dataclass
 class McpHTTPServerConfig:
     """HTTP 服务器配置"""
     type: Literal["http"] = "http"
@@ -107,31 +81,12 @@ class McpWebSocketServerConfig:
     headers_helper: Optional[str] = None
 
 
-@dataclass
-class McpSdkServerConfig:
-    """SDK 服务器配置"""
-    type: Literal["sdk"] = "sdk"
-    name: str = ""
-
-
-@dataclass
-class McpProxyServerConfig:
-    """外部代理服务器配置（type 值为外部配置兼容格式）"""
-    type: Literal["claudeai-proxy"] = "claudeai-proxy"
-    url: str = ""
-    id: str = ""
-
-
 # 服务器配置联合类型
 McpServerConfig = Union[
     McpStdioServerConfig,
     McpSSEServerConfig,
-    McpSSEIDEServerConfig,
-    McpWebSocketIDEServerConfig,
     McpHTTPServerConfig,
     McpWebSocketServerConfig,
-    McpSdkServerConfig,
-    McpProxyServerConfig,
 ]
 
 
@@ -152,9 +107,7 @@ class ScopedMcpServerConfig:
     @property
     def name(self) -> str:
         """获取服务器名称"""
-        if isinstance(self.config, McpSdkServerConfig):
-            return self.config.name
-        return ""
+        return getattr(self.config, "name", "") or ""
     
     def to_dict(self) -> Dict[str, Any]:
         """转换为字典"""
@@ -349,7 +302,7 @@ def get_config_type(config: McpServerConfig) -> Optional[str]:
 def is_local_mcp_server(config: ScopedMcpServerConfig) -> bool:
     """检查是否是本地 MCP 服务器"""
     t = get_config_type(config.config)
-    return t is None or t == "stdio" or t == "sdk"
+    return t is None or t == "stdio"
 
 
 def is_remote_mcp_server(config: ScopedMcpServerConfig) -> bool:

@@ -222,7 +222,6 @@ def auto_register_tools():
     # 1) 静态导入：Nuitka 编译后 os.listdir 扫不到 .py，用静态列表兜底
     _STATIC_TOOL_MODULES = [
         "tools.ask_question_tool",
-        "tools.brief_tool",
         "tools.execute_code_tool",
         "tools.file_tools",
         "tools.glob_tool",

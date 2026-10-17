@@ -19,6 +19,6 @@ This knowledge base is the product of the CKB (Code Knowledge Base) mechanism. D
 - **Agent YAML**: `code_agent.yaml` preloads the `ckb` skill
 - **Trigger condition**: on conversation start, detect `knowledgesource/content.md`:
   - Exists → read the index to locate chapters, then read chapter files on demand
-  - Missing → fall back to `PROJECT_GRAPH.md` (legacy single-file format); if neither exists → `ask_user_question` asks the user whether to build the knowledge base
+  - Missing → fall back to `PROJECT_GRAPH.md` (single-file format); if neither exists → `clarify` asks the user whether to build the knowledge base
 - **Build toolchain**: `mcp__codebase_memory__index_repository` (index) → `get_architecture` (architecture) → `trace_path` (relationship tracing) → `glob` + `read_file` (sampling verification)
 - **Build hard constraints**: until the build completes, do not answer task requests, execute code, modify files, or speculate about the project

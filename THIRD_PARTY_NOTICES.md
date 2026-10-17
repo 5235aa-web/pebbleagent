@@ -9,10 +9,10 @@ directories.
 
 | Path | License | Copyright / Source |
 |------|---------|--------------------|
-| skills/canvas-design | Apache-2.0 | Anthropic (official Claude skills collection) |
-| skills/frontend-design | Apache-2.0 | Anthropic (official Claude skills collection) |
-| skills/theme-factory | Apache-2.0 | Anthropic (official Claude skills collection) |
-| skills/web-artifacts-builder | Apache-2.0 | Anthropic (official Claude skills collection) |
+| skills/canvas-design | Apache-2.0 | Anthropic (official Agent Skills collection) |
+| skills/frontend-design | Apache-2.0 | Anthropic (official Agent Skills collection) |
+| skills/theme-factory | Apache-2.0 | Anthropic (official Agent Skills collection) |
+| skills/web-artifacts-builder | Apache-2.0 | Anthropic (official Agent Skills collection) |
 | skills/html-diagram/references/html-effectiveness | Apache-2.0 | Anthropic ("The unreasonable effectiveness of HTML" examples) |
 | skills/huashu-design | MIT | Copyright (c) 2026 alchaincyf (花叔 · 花生) |
 | skills/dream-loop | MIT | Copyright (c) 2026 Anshu Chimala |
@@ -26,9 +26,3 @@ LICENSE.txt).
 skills/canvas-design/canvas-fonts bundles a set of typefaces distributed under
 the SIL Open Font License; the corresponding license files (OFL.txt) are
 included in the directory.
-
-## Design acknowledgements
-
-The agent architecture and developer experience of PebbleAgent were inspired
-by Claude Code (Anthropic) and opencode
-(MIT License, https://github.com/sst/opencode).

@@ -134,13 +134,13 @@ export const useGatewayStore = defineStore('gateway', () => {
       case 'todos.update': { window.dispatchEvent(new CustomEvent('gateway-todos', { detail: payload })); break }
       case 'clarify.request': { const ri = (payload.request_id as string) || ''; const q = (payload.question as string) || ''; const ch = (payload.choices as string[]) || []; // console.log('[gateway] clarify.request q=',q.slice(0,50)) // 调试：如有问题请开启
       // 多问题支持：优先消费完整 questions 数组；缺失时回退单问题字段（旧后端兼容）
-      const qsRaw = (payload.questions as Array<{ question?: string; header?: string; options?: string[] }> | undefined) || [];
+      const qsRaw = (payload.questions as Array<{ prompt?: string; title?: string; options?: Array<string | { label?: string; detail?: string }> }> | undefined) || [];
       const qs = qsRaw.length > 0
-        ? qsRaw.map(x => ({ header: String(x.header || 'QUESTION'), question: String(x.question || ''), options: (x.options || []).map(c => ({ label: String(c), description: '' })) }))
-        : [{ header: 'QUESTION', question: q, options: ch.map(c => ({ label: c, description: '' })) }];
+        ? qsRaw.map(x => ({ title: String(x.title || 'QUESTION'), prompt: String(x.prompt || ''), options: (x.options || []).map(c => typeof c === 'string' ? { label: c, detail: '' } : { label: String(c.label || ''), detail: String(c.detail || '') }) }))
+        : [{ title: 'QUESTION', prompt: q, options: ch.map(c => ({ label: c, detail: '' })) }];
       const smId = agentMsgIdRef.value;
       if (smId && streamingMessage.value) {
-        // 内联渲染：提问元素插入 order 尾部（此刻 order 尾部恰是 ask_user_question 工具卡），
+        // 内联渲染：提问元素插入 order 尾部（此刻 order 尾部恰是 clarify 工具卡），
         // 卡片停驻该位置，后续文本/工具追加在其下方，不再钉在整条消息末尾
         const o = streamRef.value.order;
         o.push({ id: `q_${ri}`, type: 'question', questionId: ri, questions: qs });
@@ -149,7 +149,7 @@ export const useGatewayStore = defineStore('gateway', () => {
         // 兜底：无流式消息时作为独立 agent 消息（executionOrder 内联，content 置空避免问题文本重复显示）
         messages.value.push({ id: nextId(), role: 'agent', content: '', executionOrder: [{ id: `q_${ri}`, type: 'question', questionId: ri, questions: qs }] });
       }
-      pendingClarify.value = { requestId: ri, question: q || qs[0]?.question || '' }; // console.log('[gateway] pendingClarify SET') // 调试
+      pendingClarify.value = { requestId: ri, question: q || qs[0]?.prompt || '' }; // console.log('[gateway] pendingClarify SET') // 调试
       playCompletionSound() // AI 提问提醒：与回复完成提示音共用音效设置（off 时静默）
       break }
       case 'permission.request': { window.dispatchEvent(new CustomEvent('gateway:permission-request', { detail: { payload } })); break }
@@ -213,7 +213,7 @@ export const useGatewayStore = defineStore('gateway', () => {
     if (_done) return; _done = true
     gateway.onEvent(handleEvent)
     gateway.onStatus(isC => { connected.value = isC; if (isC) { window.dispatchEvent(new Event('gateway:connected')); loadInitialSession().catch(console.error); configStore.loadProvidersFromBackend().catch(console.error); if (_streamLostOnDisconnect) { _streamLostOnDisconnect = false; setTimeout(() => { recoverAfterReconnect().catch(console.error) }, 800) } } else if (streaming.value) { _streamLostOnDisconnect = true; failPendingStream('Connection lost') } })
-  // ask_user_question 卡片状态回写：提交/跳过瞬间把卡片 state 置为 answered/skipped。
+  // clarify 卡片状态回写：提交/跳过瞬间把卡片 state 置为 answered/skipped。
   // 卡片载体有两种：executionOrder 内联 question 元素（新路径）+ 消息级 questionCard（旧数据兼容）。
   function markQuestionState(id: string, state: 'answered' | 'skipped') {
     const mark = (m?: Message | null) => {

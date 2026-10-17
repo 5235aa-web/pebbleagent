@@ -6,7 +6,7 @@ The executor is a thin pipeline (policy → permission → snapshot → dispatch
 
 | File | Function | Tag |
 |------|------|------|
-| registry.py | Declarative dispatch table (53 tool names → handler) | 🔴Core |
+| registry.py | Declarative dispatch table (52 tool names → handler) | 🔴Core |
 | filesystem.py | Read/write/edit/search/glob/ls/grep/directory tools | 🔴Core |
 | execution.py | Shell, PowerShell, inline code, subprocess lifecycle | 🔴Core |
 | web.py | Fetch, search, browser navigate/download, network guards | 🔴Core |
@@ -26,13 +26,12 @@ The executor is a thin pipeline (policy → permission → snapshot → dispatch
 | tool_registry.py | Tool registry (singleton) | 🔴Core |
 | file_tools.py | File operation tool set | 🔴Core |
 | todo_tool.py | Todo list management | 🔴Core |
-| ask_question_tool.py | User question tool | 🟡Aux |
+| ask_question_tool.py | Clarify tool (ClarifyTool, question manager) | 🟡Aux |
 | execute_code_tool.py | Code execution tool | 🟡Aux |
 | powershell_tool.py | PowerShell tool (danger_level "high") | 🟡Aux |
 | grep_tool.py | Code search tool | 🟡Aux |
 | glob_tool.py | File matching tool | 🟡Aux |
 | web_fetch_tool.py | HTTP request tool | 🟡Aux |
-| brief_tool.py | Brief reply tool | 🟡Aux |
 | plan_mode_tool.py | Plan mode tool | 🟡Aux |
 | skill_tools.py | Skill tools | 🟡Aux |
 | notebook_edit_tool.py | Notebook editing | 🟡Aux |
@@ -49,7 +48,7 @@ The executor is a thin pipeline (policy → permission → snapshot → dispatch
 | mcp_client.py | MCP stdio client (**placeholder commands (REPLACE_WITH_...) rejected with a clear error, **) | StdioTransport | 🔴Core |
 | mcp_config.py | MCP config management | McpConfigManager | 🟡Aux |
 | mcp_integration.py | MCP tool registration | register_mcp_tools | 🔴Core |
-| mcp_types.py | MCP type definitions | - | 🧪Types |
+| mcp_types.py | MCP types: stdio / sse / http / ws configs, connection states, tool and resource records | McpServerConfig, ScopedMcpServerConfig | 🧪Types |
 
 ### Extension Tools (extensions/tools/)
 
@@ -77,4 +76,3 @@ Custom tools just need to be placed under `extensions/tools/` exposing those 4 a
 
 1. **Tool architecture — four layers**: BaseTool + ToolRegistry + Extensions Loader + MCP (MCP servers defined in the root .mcp.json, 6 of them incl. blender; dependency declarations and the frontend panel use mcp_install.json + the mcp.install_info RPC)
 7. **Todo event path**: `TodoManager._event_callback` is only set inside the LLM stream. When an Agent calls `todo_write` itself, it falls back to `_ws_push_callback`
-20. **brief tool policy **: ① code_agent_prompt.md explicitly forbids calling brief (brief renders inside a tool card — tiny font, no formatting — and is reserved for short user-facing notices, not body text; the ban appears both in the red-line rules section and the output-spec section); ② **mechanism facts (updated)**: with enforce=false, agent YAML tool permissions inject tool schemas in full via get_tools_definition_with_mcp; the `enforce` switch forces filtering (chat_agent enabled: non-whitelisted tool schemas are not uploaded + execution entry interception; see Chapter 5 note #10). code_agent has enforce off and full injection; the prompt ban remains its only soft constraint; ③ for a "hard ban" (model cannot see brief at all): set `enforce: true` + `disallowed: [brief]` in that agent's yaml (or omit brief from the whitelist) (requires backend restart); physical-removal path (7 places): tools/brief_tool.py (delete file), tools/__init__.py (import+__all__), tools/tool_registry.py (_STATIC_TOOL_MODULES), tool_definitions.py (schema block), tool_concurrency.py (WRITE_TOOLS), tool_executor_impl.py (dispatch+_tool_brief implementation), tool_permission.py (permission table); ④ prompt changes take effect after backend restart (agent cache is process-level, no mtime invalidation)

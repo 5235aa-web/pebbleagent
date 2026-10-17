@@ -50,7 +50,7 @@ The repository also has three billing/holiday regression scripts at the project 
 | Test | Covers |
 | --- | --- |
 | `test_thinking_params.py` | thinking toggle/effort (`build_thinking_params`, `_bool`, server expressions) |
-| `test_clarify_dual.py` | `ask_user_question` dual-channel answers + guards |
+| `test_clarify_dual.py` | `clarify` dual-channel answers + guards |
 | `test_log_persistence.py` | log setup idempotency + suspicious stream-end detection |
 
 ## Design conventions
@@ -61,6 +61,6 @@ The repository also has three billing/holiday regression scripts at the project 
   (`new Function` / AST) from the shipped source files, so algorithm drift in the app
   fails the test loudly instead of silently passing a stale copy.
 - **Isolation.** Tests that touch storage set a temporary `PEBBLE_HOME`; tests that go
-  through the permission chain set `bypassPermissions` **in memory only** (never persisted).
+  through the permission chain set `auto` **in memory only** (never persisted).
   No production data is touched.
 - **No network.** All tests run offline.

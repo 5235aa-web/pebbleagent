@@ -11,12 +11,12 @@ sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 
 from tools.tool_registry import ToolRegistry, auto_register_tools
 from tools import (
-    TodoWriteTool, TodoReadTool, TodoManager,
-    AskUserQuestionTool, QuestionManager,
+    TodoListTool, TodoReadTool, TodoManager,
+    ClarifyTool, QuestionManager,
     GrepTool, SearchCodebaseTool,
     GlobTool, LS,
     WebSearchTool,
-    EnterPlanModeTool, ExitPlanModeTool, CreatePlanTool, GetPlanTool,
+    PlanModeEnterTool, PlanModeExitTool, CreatePlanTool, GetPlanTool,
     ToolSearchTool, ListToolsTool
 )
 
@@ -28,16 +28,16 @@ def test_tool_registry():
     print("=" * 60)
     
     tools_to_register = [
-        TodoWriteTool,
+        TodoListTool,
         TodoReadTool,
-        AskUserQuestionTool,
+        ClarifyTool,
         GrepTool,
         SearchCodebaseTool,
         GlobTool,
         LS,
         WebSearchTool,
-        EnterPlanModeTool,
-        ExitPlanModeTool,
+        PlanModeEnterTool,
+        PlanModeExitTool,
         CreatePlanTool,
         GetPlanTool,
         ToolSearchTool,
@@ -56,12 +56,12 @@ def test_tool_registry():
 
 
 async def test_todo_tool():
-    """测试TodoWrite工具"""
+    """测试任务清单工具"""
     print("\n" + "=" * 60)
-    print("测试 TodoWriteTool")
+    print("测试 TodoListTool")
     print("=" * 60)
     
-    tool = TodoWriteTool()
+    tool = TodoListTool()
     
     test_todos = [
         {"id": "1", "content": "测试任务1", "status": "pending", "priority": "high"},
@@ -124,7 +124,7 @@ async def test_plan_mode_tool():
     print("测试 PlanModeTool")
     print("=" * 60)
     
-    enter_tool = EnterPlanModeTool()
+    enter_tool = PlanModeEnterTool()
     result = await enter_tool.execute()
     print(f"进入计划模式: {result.result}")
     
@@ -144,7 +144,7 @@ async def test_plan_mode_tool():
     get_result = await get_tool.execute()
     print(f"获取计划: {get_result.result}")
     
-    exit_tool = ExitPlanModeTool()
+    exit_tool = PlanModeExitTool()
     exit_result = await exit_tool.execute()
     print(f"退出计划模式: {exit_result.result}")
 

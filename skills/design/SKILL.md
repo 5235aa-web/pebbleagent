@@ -30,7 +30,7 @@
 ```
 ① 调用 write_file 保存 HTML 到工作目录
 ② 在消息中输出 @pebble-file: 文件名.html（普通文本，不要用代码块）
-③ 调用 ask_user_question(choices=["接受", "修改"])
+③ 调用 clarify(questions=[{prompt: "是否接受", options: [{label: "接受"}, {label: "修改"}]}])
 ```
 
 🚨 **禁止输出 ```html 代码块**。前端直接读取文件渲染，不需要代码块。`@pebble-file:` 是指令，不是展示内容。
@@ -44,12 +44,12 @@
 1. `read_file` 读取 HTML 文件
 2. 根据评论中的 `selector` 和 `text_snippet` 定位元素
 3. 用 `edit_file`（search_block 模式）逐条精确定位修改
-4. 修改完成后**同一回复中必须再次调用 ask_user_question**
+4. 修改完成后**同一回复中必须再次调用 clarify**
 5. 无限循环直到用户点击「接受」
 
 ### 🔴 修改轮次禁止输出 @pebble-file（违反即失败）
 
-`edit_file` 会触发 `file-change` 事件，现有 HtmlPreview 组件自动重载。**修改轮次中绝对禁止重复输出 @pebble-file**，否则会创建重复的预览组件。修改轮次唯一要做的是调 `ask_user_question`。
+`edit_file` 会触发 `file-change` 事件，现有 HtmlPreview 组件自动重载。**修改轮次中绝对禁止重复输出 @pebble-file**，否则会创建重复的预览组件。修改轮次唯一要做的是调 `clarify`。
 
 ### 🔴🔴🔴 完整性铁律（违反即失败）
 输出的 HTML **必须包含所有 CSS**，不允许省略任何规则。检查清单：
@@ -279,7 +279,7 @@ officecli close report.docx                                 # 保存关闭
 
 ---
 
-## Frontend Design Rules (from GPT-5.5 Codex & Claude Design)
+## Frontend Design Rules (reference: modern coding-agent design guidance)
 
 These rules apply when building HTML pages, web apps, or any visual UI. They are mandatory.
 

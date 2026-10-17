@@ -134,9 +134,8 @@ Three billing/holiday regression scripts (`peb_check_*.py`) sit at the repo root
 
 ## Credits
 
-PebbleAgent's agent architecture and developer experience were inspired by
-Claude Code (Anthropic) and opencode.
-Bundled third-party skills and materials are listed in
+PebbleAgent bundles 114 skills. Third-party skills and materials
+(4 Apache-2.0 skills, 3 MIT skills, 1 reference set) are listed in
 [THIRD_PARTY_NOTICES.md](THIRD_PARTY_NOTICES.md).
 
 ## License

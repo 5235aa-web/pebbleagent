@@ -50,7 +50,7 @@ def main() -> int:
 
     mgr = get_permission_manager()
     mgr.config_path = os.path.join(tempfile.gettempdir(), "pebble_test_rules_minor.json")
-    mgr.context.mode = PermissionMode.BYPASS  # in-memory only
+    mgr.context.mode = PermissionMode.AUTO  # in-memory only
 
     class _T(BaseTool):
         name = "TestTool7a"
@@ -107,7 +107,7 @@ def main() -> int:
     alog.db_path = tmp_audit_db
     alog._init_db()
 
-    resp = handle_request("permission.mode.set", {"mode": "default"}, "2")
+    resp = handle_request("permission.mode.set", {"mode": "manual"}, "2")
     check("7c: mode.set succeeds", resp.get("result", {}).get("ok") is True, f"got {resp}")
 
     conn = sqlite3.connect(tmp_audit_db)
@@ -115,7 +115,7 @@ def main() -> int:
         "SELECT event_type, target FROM permission_audit_log ORDER BY id DESC LIMIT 1"
     ).fetchone()
     conn.close()
-    check("7c: mode change audited", row is not None and row[0] == "mode_changed" and row[1] == "default",
+    check("7c: mode change audited", row is not None and row[0] == "mode_changed" and row[1] == "manual",
           f"row={row}")
 
     # ================= 7d: WS token header preferred =================
@@ -140,13 +140,13 @@ def main() -> int:
     # ================= 7f: rule prefix word boundary =================
     from gateway.permission_manager import PermissionRule, PermissionBehavior
 
-    rule = PermissionRule(tool_name="Bash", rule_content="git:*", behavior=PermissionBehavior.ALLOW)
-    check("7f: 'git status' matches", mgr._match_rule(rule, "Bash", "git status") is True)
-    check("7f: bare 'git' matches", mgr._match_rule(rule, "Bash", "git") is True)
-    check("7f: 'gitk' does NOT match", mgr._match_rule(rule, "Bash", "gitk") is False)
-    check("7f: 'git-secret' does NOT match", mgr._match_rule(rule, "Bash", "git-secret") is False)
+    rule = PermissionRule(tool="execute_shell", pattern="git *", effect=PermissionBehavior.ALLOW)
+    check("7f: 'git status' matches", mgr._match_rule(rule, "execute_shell", "git status") is True)
+    check("7f: bare 'git' matches", mgr._match_rule(rule, "execute_shell", "git") is True)
+    check("7f: 'gitk' does NOT match", mgr._match_rule(rule, "execute_shell", "gitk") is False)
+    check("7f: 'git-secret' does NOT match", mgr._match_rule(rule, "execute_shell", "git-secret") is False)
     check("7f: 'git; rm -rf /' does NOT match (conservative)",
-          mgr._match_rule(rule, "Bash", "git; rm -rf /") is False)
+          mgr._match_rule(rule, "execute_shell", "git; rm -rf /") is False)
 
     print(f"\n{passed} passed, {failed} failed")
     return 1 if failed else 0

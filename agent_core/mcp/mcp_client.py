@@ -35,8 +35,6 @@ from .mcp_types import (
     McpSSEServerConfig,
     McpHTTPServerConfig,
     McpWebSocketServerConfig,
-    McpSdkServerConfig,
-    McpProxyServerConfig,
     McpServerConfig,
     ScopedMcpServerConfig,
     ConnectedMCPServer,
@@ -676,8 +674,6 @@ class McpClient:
             elif config_type == "sse":
                 # SSE 使用 HTTP 传输层（后续可优化为真正的 SSE）
                 await self._connect_http()
-            elif config_type == "sdk":
-                raise NotImplementedError("SDK transport requires the MCP SDK")
             else:
                 raise ValueError(f"Unsupported transport type: {config_type}")
             

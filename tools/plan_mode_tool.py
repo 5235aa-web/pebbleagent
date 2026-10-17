@@ -82,7 +82,7 @@ class PlanModeManager:
         if cls._mode == PlanMode.PLAN:
             return {
                 "success": True,
-                "message": "Already in plan mode",
+                "message": "当前已在计划模式",
                 "mode": cls._mode.value
             }
         
@@ -91,7 +91,7 @@ class PlanModeManager:
         
         return {
             "success": True,
-            "message": "Entered plan mode. You should now focus on exploring the codebase and designing an implementation approach.",
+            "message": "已进入计划模式。先梳理代码与方案，再开始改动。",
             "mode": cls._mode.value
         }
     
@@ -101,7 +101,7 @@ class PlanModeManager:
         if cls._mode == PlanMode.NORMAL:
             return {
                 "success": True,
-                "message": "Already in normal mode",
+                "message": "当前不在计划模式",
                 "mode": cls._mode.value
             }
         
@@ -115,7 +115,7 @@ class PlanModeManager:
         
         return {
             "success": True,
-            "message": "Exited plan mode. You can now proceed with implementation.",
+            "message": "已退出计划模式，可以开始实施。",
             "mode": cls._mode.value,
             "plan": cls._current_plan.to_dict() if cls._current_plan else None
         }
@@ -172,7 +172,7 @@ class PlanModeManager:
         cls._current_plan = None
 
 
-class EnterPlanModeTool(BaseTool[Dict[str, Any], Dict[str, Any]]):
+class PlanModeEnterTool(BaseTool[Dict[str, Any], Dict[str, Any]]):
     """
     进入计划模式工具
     
@@ -212,7 +212,7 @@ The workflow is: enter_plan_mode -> create_plan -> exit_plan_mode -> EXECUTE eac
         return None
 
 
-class ExitPlanModeTool(BaseTool[Dict[str, Any], Dict[str, Any]]):
+class PlanModeExitTool(BaseTool[Dict[str, Any], Dict[str, Any]]):
     """
     退出计划模式工具
     

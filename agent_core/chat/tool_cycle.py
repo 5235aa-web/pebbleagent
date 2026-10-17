@@ -49,7 +49,7 @@ class ToolCycle:
     async def prepare(self, tool_calls: List[dict]) -> AsyncIterator[dict]:
         """Inject question ids and announce questions before execution."""
         for tc in tool_calls:
-            if tc.get("function", {}).get("name", "") != "ask_user_question":
+            if tc.get("function", {}).get("name", "") != "clarify":
                 continue
             raw = tc.get("function", {}).get("arguments", "{}")
             try:

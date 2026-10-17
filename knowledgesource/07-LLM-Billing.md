@@ -29,7 +29,7 @@ if tools:
 - Frontend toggle: the thinking row in the LLM config panel (default on), stored as `thinking_enabled` in llm_providers.json; when off, the reasoning tier is greyed out
 - server.py read: `prov.get("thinking_enabled") is not False` (absent = on, old configs unchanged); saved via `_bool(v, True)` lenient parsing (recognizes bool/"true"/"1"/"yes"/"on")
 - Title generation generate_conversation_title also goes through build_thinking_params (toggle & effort passed in by the caller)
-- Vendor specs (measured): DeepSeek supports none/low/high/max (medium→high server-side mapping); Xiaomi MiMo only low/medium/high (off = thinking:disabled; thinking on by default); the Claude compat layer ignores reasoning_effort (thinking uses budget_tokens); the Gemini compat layer supports reasoning_effort none/minimal/low/medium/high; lenient implementations ignore unknown fields
+- Vendor specs (measured): DeepSeek supports none/low/high/max (medium→high server-side mapping); Xiaomi MiMo only low/medium/high (off = thinking:disabled; thinking on by default); some vendor layers ignore reasoning_effort (thinking uses budget_tokens); the Gemini compat layer supports reasoning_effort none/minimal/low/medium/high; lenient implementations ignore unknown fields
 
 ### Parameter Source Priority
 

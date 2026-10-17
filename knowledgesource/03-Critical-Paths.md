@@ -60,7 +60,7 @@ prompt.rejected → prompt payload exceeded limits
 ```
 Agent generates HTML → write_file(project relative path/xxx.html)
   → outputs @pebble-file: xxx.html (plain text, not a code block)
-  → ask_user_question(choices=["Accept","Modify"])
+  → clarify(questions=[{prompt, options: [接受, 修改]}])
   → chat_stream suspends waiting for user reply
     │
 Frontend: contentParser detects @pebble-file → type='html-file' block
@@ -75,7 +75,7 @@ User: clicks element in iframe → comment popup → save
   → AskQuestionCard "Modify" → gateway store attaches comments → clarify.respond
     │
 Agent: receives comments → read_file → edit_file(search_block) → file modified
-  → ask_user_question again → pendingClarify changes → HtmlPreview re-reads → refresh
+  → clarify again → pendingClarify changes → HtmlPreview re-reads → refresh
   → loop until user clicks "Accept"
 
 Key files: feedbackBridgeContent.ts (inlined CSS/JS), previewBridgeContent.ts (height/capture/theme bridge), comment.ts (Pinia store)

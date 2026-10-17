@@ -1,7 +1,7 @@
 export type TodoStatus = 'pending' | 'in_progress' | 'completed' | 'cancelled'
 export interface TodoItem { id: string; content: string; status: TodoStatus; priority?: 'high' | 'medium' | 'low' }
-export interface QuestionOption { label: string; description: string }
-export interface QuestionItem { question: string; header: string; options: QuestionOption[] }
+export interface QuestionOption { label: string; detail: string }
+export interface QuestionItem { prompt: string; title: string; options: QuestionOption[]; multiple?: boolean }
 export type ReasoningEffort = 'low' | 'medium' | 'high' | 'max'
 export interface LLMProvider { id: string; provider: string; apiKey: string; baseUrl: string; models: string[]; temperature: number; maxTokens: number; topP: number; reasoningEffort?: ReasoningEffort; thinkingEnabled?: boolean }
 export interface AgentInfo { name: string; displayName: string; description: string; modelSource: string }

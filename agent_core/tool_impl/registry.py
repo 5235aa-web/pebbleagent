@@ -9,8 +9,7 @@ from typing import Any, Callable, Dict
 ToolHandler = Callable[[Any, Dict[str, Any], Any], Any]
 
 TOOL_HANDLERS: Dict[str, ToolHandler] = {
-    "ask_user_question": lambda self, args, context: self._tool_ask_user_question(args.get('questions', []), args.get('question_id')),
-    "brief": lambda self, args, context: self._tool_brief(args.get('message', ''), args.get('attachments', []), args.get('status', 'normal')),
+    "clarify": lambda self, args, context: self._tool_clarify(args.get('questions', []), args.get('question_id')),
     "browser_download": lambda self, args, context: self._tool_browser_download(args.get('url', ''), args.get('filename', '')),
     "browser_navigate": lambda self, args, context: self._tool_browser_navigate(args.get('url', ''), args.get('extract_links', False)),
     "copy_file": lambda self, args, context: self._tool_copy_file(args.get('source', ''), args.get('destination', '')),

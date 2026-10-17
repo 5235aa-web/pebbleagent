@@ -1,6 +1,6 @@
 #!/usr/bin/env python
 # -*- coding: utf-8 -*-
-"""ask_user_question multi-question dual-channel (gateway.server._submit_clarify_answer).
+"""clarify multi-question dual-channel (gateway.server._submit_clarify_answer).
 
 Run: python tests/test_clarify_dual.py   (exit 0 = pass)
 """
@@ -62,7 +62,7 @@ def main() -> int:
     _submit_clarify_answer("late", "", {"k2": "v2"})
     check("late submit ignored", QuestionManager._answers == before)
 
-    print("=== Test 5: end-to-end shape (as consumed by _tool_ask_user_question) ===")
+    print("=== Test 5: end-to-end shape (as consumed by _tool_clarify) ===")
     QuestionManager.set_pending_questions({"id": "req-5", "questions": []})
     _submit_clarify_answer("", "req-5", {"Q1": "A1", "Q2": "A2"})
     answers = asyncio.run(QuestionManager.wait_for_answers(timeout=1.0))

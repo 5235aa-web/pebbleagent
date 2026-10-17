@@ -136,9 +136,6 @@ WRITE_TOOLS: Set[str] = {
     # Plan 模式（进入/退出为会话状态变更，归 SIDE_EFFECT_TOOLS）
     "create_plan",
     
-    # Brief 消息
-    "brief",
-    
     # 网络搜索（外部 API 礼貌串行）
     "web_search",
     "browser_navigate",
@@ -148,7 +145,7 @@ WRITE_TOOLS: Set[str] = {
 # 有副作用的工具 - 必须串行执行
 SIDE_EFFECT_TOOLS: Set[str] = {
     # 这些工具会改变系统状态或需要用户交互
-    "ask_user_question",  # 需要等待用户响应
+    "clarify",  # 需要等待用户响应
     "enter_plan_mode",    # 改变会话模式
     "exit_plan_mode",     # 改变会话模式
 }

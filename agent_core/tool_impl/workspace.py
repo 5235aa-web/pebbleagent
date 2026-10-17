@@ -92,22 +92,19 @@ class WorkspaceToolsMixin:
             return f"Error: {str(e)}"
 
 
-    async def _tool_ask_user_question(self, questions: List[Dict[str, Any]], question_id: str = None) -> str:
-        """向用户提出问题"""
+    async def _tool_clarify(self, questions: List[Dict[str, Any]], question_id: str = None) -> str:
+        """向用户提出澄清问题"""
         if not questions:
             return "Error: No questions provided"
         
         if len(questions) < 1 or len(questions) > 4:
             return "Error: Questions must have 1-4 items"
         
-        # 验证问题格式
         for i, q in enumerate(questions):
             if not isinstance(q, dict):
                 return f"Error: Question {i} must be a dictionary"
-            if "question" not in q:
-                return f"Error: Question {i} must have 'question' field"
-            if "header" not in q:
-                return f"Error: Question {i} must have 'header' field"
+            if "prompt" not in q:
+                return f"Error: Question {i} must have 'prompt' field"
             if "options" not in q:
                 return f"Error: Question {i} must have 'options' field"
         
@@ -136,7 +133,7 @@ class WorkspaceToolsMixin:
             }, ensure_ascii=False, indent=2)
         
         except asyncio.TimeoutError:
-            logger.warning("[ToolExecutor] ask_user_question timed out")
+            logger.warning("[ToolExecutor] clarify timed out")
             return json.dumps({
                 "cancelled": True,
                 "message": "Question timed out"
@@ -144,7 +141,7 @@ class WorkspaceToolsMixin:
         except ImportError:
             return "Error: QuestionManager not available"
         except Exception as e:
-            logger.error(f"[ToolExecutor] ask_user_question error: {e}")
+            logger.error(f"[ToolExecutor] clarify error: {e}")
             return f"Error: {str(e)}"
 
 
@@ -201,43 +198,6 @@ class WorkspaceToolsMixin:
             return "Error: skills_loader not available"
         except Exception as e:
             return f"Error: {str(e)}"
-
-
-    async def _tool_brief(self, message: str, attachments: List[str] = None, 
-                          status: str = "normal") -> str:
-        """发送简短消息给用户"""
-        if not message:
-            return "Error: No message provided"
-        
-        if status not in ['normal', 'proactive']:
-            return "Error: status must be 'normal' or 'proactive'"
-        
-        # 处理附件
-        resolved_attachments = []
-        if attachments:
-            for path in attachments:
-                resolved_path = self._resolve_path(path)
-                if os.path.exists(resolved_path):
-                    stat = os.stat(resolved_path)
-                    is_image = os.path.splitext(path)[1].lower() in {'.png', '.jpg', '.jpeg', '.gif', '.bmp', '.webp', '.svg'}
-                    resolved_attachments.append({
-                        'path': resolved_path,
-                        'size': stat.st_size,
-                        'is_image': is_image
-                    })
-        
-        from datetime import datetime
-        result = {
-            'message': message,
-            'attachments': resolved_attachments,
-            'status': status,
-            'sent_at': datetime.now().isoformat()
-        }
-        
-        n = len(resolved_attachments)
-        suffix = f" ({n} attachment{'s' if n != 1 else ''} included)" if n > 0 else ""
-        
-        return f"Message delivered to user successfully. Task completed. No further action needed.{suffix}"
 
 
     async def _tool_enter_plan_mode(self) -> str:

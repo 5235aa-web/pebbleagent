@@ -84,10 +84,10 @@ class TranscriptEntry:
 
 
 @dataclass
-class UserTranscriptEntry(TranscriptEntry):
-    """用户消息转录条目"""
+class UserEntry(TranscriptEntry):
+    """用户消息"""
     type: str = "user"
-    content: Any = None  # str 或 List[Dict]
+    content: Any = None
     is_sidechain: bool = False
     agent_id: Optional[str] = None
     prompt_id: Optional[str] = None
@@ -98,11 +98,11 @@ class UserTranscriptEntry(TranscriptEntry):
 
 
 @dataclass
-class AssistantTranscriptEntry(TranscriptEntry):
-    """助手消息转录条目"""
+class AssistantEntry(TranscriptEntry):
+    """助手消息"""
     type: str = "assistant"
     content: Any = None
-    message_id: Optional[str] = None  # API 返回的消息 ID
+    message_id: Optional[str] = None
     is_sidechain: bool = False
     agent_id: Optional[str] = None
     cwd: Optional[str] = None
@@ -112,8 +112,8 @@ class AssistantTranscriptEntry(TranscriptEntry):
 
 
 @dataclass
-class SystemTranscriptEntry(TranscriptEntry):
-    """系统消息转录条目"""
+class SystemEntry(TranscriptEntry):
+    """系统消息"""
     type: str = "system"
     subtype: Optional[str] = None
     content: Optional[str] = None
@@ -121,8 +121,8 @@ class SystemTranscriptEntry(TranscriptEntry):
 
 
 @dataclass
-class AttachmentTranscriptEntry(TranscriptEntry):
-    """附件消息转录条目"""
+class AttachmentEntry(TranscriptEntry):
+    """附件消息"""
     type: str = "attachment"
     attachment: Optional[Dict[str, Any]] = None
     is_sidechain: bool = False
@@ -130,57 +130,11 @@ class AttachmentTranscriptEntry(TranscriptEntry):
 
 
 @dataclass
-class CompactBoundaryTranscriptEntry(TranscriptEntry):
-    """压缩边界转录条目"""
-    type: str = "system"
-    subtype: str = "compact_boundary"
-    compact_metadata: Optional[Dict[str, Any]] = None
-
-
-@dataclass
-class SummaryTranscriptEntry(TranscriptEntry):
-    """摘要转录条目"""
-    type: str = "summary"
-    summary: Optional[str] = None
-    is_compaction: bool = True
-
-
-@dataclass
-class CustomTitleTranscriptEntry(TranscriptEntry):
-    """自定义标题转录条目"""
-    type: str = "custom-title"
-    custom_title: Optional[str] = None
-
-
-@dataclass
-class TagTranscriptEntry(TranscriptEntry):
-    """标签转录条目"""
-    type: str = "tag"
-    tag: Optional[str] = None
-
-
-@dataclass
-class LastPromptTranscriptEntry(TranscriptEntry):
-    """最后提示转录条目"""
-    type: str = "last-prompt"
-    last_prompt: Optional[str] = None
-
-
-@dataclass
-class FileHistorySnapshotTranscriptEntry(TranscriptEntry):
-    """文件历史快照转录条目"""
-    type: str = "file-history-snapshot"
-    message_id: Optional[str] = None
-    snapshot: Optional[Dict[str, Any]] = None
-    is_snapshot_update: bool = False
-
-
-@dataclass
-class ContentReplacementTranscriptEntry(TranscriptEntry):
-    """内容替换转录条目"""
-    type: str = "content-replacement"
-    replacements: Optional[List[Dict[str, Any]]] = None
-    agent_id: Optional[str] = None
+class NoteEntry(TranscriptEntry):
+    """会话元数据（标题 / 标签 / 最后提示）"""
+    type: str = "note"
+    kind: str = ""
+    value: str = ""
 
 
 # ============================================================================
@@ -603,7 +557,7 @@ class TranscriptManager:
         }
         
         if msg_type == "user":
-            return UserTranscriptEntry(
+            return UserEntry(
                 **common_args,
                 content=msg.get("content"),
                 is_sidechain=is_sidechain,
@@ -615,7 +569,7 @@ class TranscriptManager:
             )
         
         elif msg_type == "assistant":
-            return AssistantTranscriptEntry(
+            return AssistantEntry(
                 **common_args,
                 content=msg.get("content"),
                 message_id=msg.get("message_id"),
@@ -628,7 +582,7 @@ class TranscriptManager:
             )
         
         elif msg_type == "system":
-            return SystemTranscriptEntry(
+            return SystemEntry(
                 **common_args,
                 subtype=msg.get("subtype"),
                 content=msg.get("content"),
@@ -636,7 +590,7 @@ class TranscriptManager:
             )
         
         elif msg_type == "attachment":
-            return AttachmentTranscriptEntry(
+            return AttachmentEntry(
                 **common_args,
                 attachment=msg.get("attachment"),
                 is_sidechain=is_sidechain,
@@ -974,28 +928,28 @@ class TranscriptManager:
         if self._session_id is None:
             return
         
-        # 写入最后提示
         if self._current_session_last_prompt:
-            self._append_entry(LastPromptTranscriptEntry(
+            self._append_entry(NoteEntry(
                 uuid=self._generate_uuid(),
                 session_id=self._session_id,
-                last_prompt=self._current_session_last_prompt
+                kind="last-prompt",
+                value=self._current_session_last_prompt
             ))
-        
-        # 写入自定义标题
+
         if self._current_session_title:
-            self._append_entry(CustomTitleTranscriptEntry(
+            self._append_entry(NoteEntry(
                 uuid=self._generate_uuid(),
                 session_id=self._session_id,
-                custom_title=self._current_session_title
+                kind="title",
+                value=self._current_session_title
             ))
-        
-        # 写入标签
+
         if self._current_session_tag:
-            self._append_entry(TagTranscriptEntry(
+            self._append_entry(NoteEntry(
                 uuid=self._generate_uuid(),
                 session_id=self._session_id,
-                tag=self._current_session_tag
+                kind="tag",
+                value=self._current_session_tag
             ))
     
     def set_session_title(self, title: str) -> None:
@@ -1063,12 +1017,20 @@ class TranscriptManager:
                 
                 entry_type = entry.get("type")
                 
-                if entry_type == "custom-title":
-                    metadata["title"] = entry.get("customTitle")
+                if entry_type == "note":
+                    kind = entry.get("kind")
+                    if kind == "title":
+                        metadata["title"] = entry.get("value")
+                    elif kind == "tag":
+                        metadata["tag"] = entry.get("value")
+                    elif kind == "last-prompt":
+                        metadata["last_prompt"] = entry.get("value")
+                elif entry_type == "custom-title":
+                    metadata["title"] = entry.get("custom_title") or entry.get("customTitle")
                 elif entry_type == "tag":
                     metadata["tag"] = entry.get("tag")
                 elif entry_type == "last-prompt":
-                    metadata["last_prompt"] = entry.get("lastPrompt")
+                    metadata["last_prompt"] = entry.get("last_prompt") or entry.get("lastPrompt")
                 elif entry_type == "agent-name":
                     metadata["agent_name"] = entry.get("agentName")
                 elif entry_type == "agent-color":
@@ -1340,17 +1302,11 @@ __all__ = [
     # 类
     'TranscriptManager',
     'TranscriptEntry',
-    'UserTranscriptEntry',
-    'AssistantTranscriptEntry',
-    'SystemTranscriptEntry',
-    'AttachmentTranscriptEntry',
-    'CompactBoundaryTranscriptEntry',
-    'SummaryTranscriptEntry',
-    'CustomTitleTranscriptEntry',
-    'TagTranscriptEntry',
-    'LastPromptTranscriptEntry',
-    'FileHistorySnapshotTranscriptEntry',
-    'ContentReplacementTranscriptEntry',
+    'UserEntry',
+    'AssistantEntry',
+    'SystemEntry',
+    'AttachmentEntry',
+    'NoteEntry',
     
     # 路径函数
     'get_config_home',

@@ -284,333 +284,58 @@ def estimate_messages_tokens(messages: List[Message]) -> int:
 # 1. 结构化摘要提示词
 # ============================================================================
 
-# 禁止工具调用的前缀
-NO_TOOLS_PREAMBLE = """CRITICAL: Respond with TEXT ONLY. Do NOT call any tools.
+# 压缩摘要：只输出文本，按固定标题交接
 
-- Do NOT use Read, Bash, Grep, Glob, Edit, Write, or ANY other tool.
-- You already have all the context you need in the conversation above.
-- Tool calls will be REJECTED and will waste your only turn — you will fail the task.
-- Your entire response must be plain text: an <analysis> block followed by a <summary> block.
-
+COMPACT_PREAMBLE = """本次回复只输出文本，不要调用任何工具。
+对话中已经包含全部所需信息；工具调用会被拒绝，并占用本次唯一的输出机会。
 """
 
-# 详细分析指令
-DETAILED_ANALYSIS_INSTRUCTION = """Before providing your final summary, wrap your analysis in <analysis> tags to organize your thoughts and ensure you've covered all necessary points. In your analysis process:
-
-1. Chronologically analyze each message and section of the conversation. For each section thoroughly identify:
-   - The user's explicit requests and intents
-   - Your approach to addressing the user's requests
-   - Key decisions, technical concepts and code patterns
-   - Specific details like:
-     - file names
-     - full code snippets
-     - function signatures
-     - file edits
-   - Errors that you ran into and how you fixed them
-   - Pay special attention to specific user feedback that you received, especially if the user told you to do something differently.
-2. Double-check for technical accuracy and completeness, addressing each required element thoroughly."""
-
-# 基础压缩提示词模板
-BASE_COMPACT_PROMPT = f"""Your task is to create a detailed summary of the conversation so far, paying close attention to the user's explicit requests and your previous actions.
-This summary should be thorough in capturing technical details, code patterns, and architectural decisions that would be essential for continuing development work without losing context.
-
-{DETAILED_ANALYSIS_INSTRUCTION}
-
-Output exactly the Markdown structure shown below and keep the section order unchanged. Do not add sections beyond those listed.
-
-## Goal
-- [single-sentence task summary]
-
-## Constraints & Preferences
-- [user constraints, preferences, specs, or "(none)"]
-
-## Progress
-### Done
-- [completed work or "(none)"]
-
-### In Progress
-- [current work or "(none)"]
-
-### Blocked
-- [blockers or "(none)"]
-
-## Key Decisions
-- [decision and why, or "(none)"]
-
-## Next Steps
-- [ordered next actions or "(none)"]
-
-## Critical Context
-- [important technical facts, errors, open questions, or "(none)"]
-
-## Relevant Files
-- [file or directory path: why it matters, or "(none)"]
-
-Rules:
-- Keep every section, even when empty.
-- Use terse bullets, not prose paragraphs.
-- Preserve exact file paths, commands, error strings, and identifiers when known.
-- Do not mention the summary process or that context was compacted.
-- Do not include full code snippets — reference the file path and the nature of the change instead.
-- Summarize the conversation CHRONOLOGICALLY and cover EVERY topic from the earliest messages to the latest: completed tasks, ongoing work, and all significant user requests must all appear in the summary. Never skip early topics just because later messages are fresher.
-
-Here's an example of how your output should be structured:
-
-<example>
-<analysis>
-[Your thought process, ensuring all points are covered thoroughly and accurately]
-</analysis>
-
-<summary>
-## Goal
-Build a dark-mode toggle for the settings page.
-
-## Constraints & Preferences
-- Follow the existing CSS variable pattern in `src/styles/variables.css`
-- No additional npm dependencies
-
-## Progress
-### Done
-- Added `--bg-dark` / `--text-dark` CSS variables to variables.css
-- Created `useDarkMode()` composable in `src/composables/useDarkMode.ts`
-- Wired toggle button in SettingsPage.vue
-
-### In Progress
-- (none)
-
-### Blocked
-- (none)
-
-## Key Decisions
-- Used `prefers-color-scheme` media query as the default, with manual toggle override stored in localStorage — users who never touch the toggle still get the OS default.
-
-## Next Steps
-- Add transition animation on theme switch (0.3s ease on body background-color)
-
-## Critical Context
-- The existing color variables use `--bg-primary` / `--text-primary` naming; dark overrides follow the same convention with `-dark` suffix.
-- localStorage key: `theme-preference`, values: `"light"` | `"dark"` | `"system"`
-
-## Relevant Files
-- src/styles/variables.css: dark CSS variable overrides
-- src/composables/useDarkMode.ts: composable logic (media query + localStorage + reactive state)
-- src/views/SettingsPage.vue: toggle button placement
-</summary>
-</example>
-
-Please provide your summary based on the conversation so far, following this structure and ensuring precision and thoroughness in your response. 
-
-There may be additional summarization instructions provided in the included context. If so, remember to follow these instructions when creating your summary. Examples of instructions include:
-<example>
-## Compact Instructions
-When summarizing the conversation focus on typescript code changes and also remember the mistakes you made and how you fixed them.
-</example>
-
-<example>
-# Summary instructions
-When you are using compact - please focus on test output and code changes. Include file reads verbatim.
-</example>
+COMPACT_METHOD = """整理要求：
+1. 从头到尾按时间顺序梳理整段对话，覆盖每一个话题，不要只写最近的部分。
+2. 保留文件路径、命令、错误原文、函数名与标识符等可核对的信息。
+3. 不复制代码片段，只说明涉及哪个文件、改动属于什么性质。
+4. 不描述摘要过程，不提及上下文被压缩。
+5. 严格使用下面的标题，保持顺序，不增删章节。
 """
 
-# 部分压缩提示词（FROM 方向）
-PARTIAL_COMPACT_FROM_PROMPT = f"""Your task is to create a detailed summary of the RECENT portion of the conversation — the messages that follow earlier retained context. The earlier messages are being kept intact and do NOT need to be summarized. Focus your summary on what was discussed, learned, and accomplished in the recent messages only.
+COMPACT_TEMPLATE = """## 任务
+- 一句话说明当前在做什么。
 
-{DETAILED_ANALYSIS_INSTRUCTION}
+## 现状
+- 已完成：...
+- 进行中：...
+- 阻塞：...
 
-Output exactly the Markdown structure shown below and keep the section order unchanged. Do not add sections beyond those listed.
+## 决定
+- 关键取舍与理由。
 
-## Goal
-- [single-sentence task summary of the recent portion]
+## 待办
+- 按顺序列出下一步。
 
-## Constraints & Preferences
-- [user constraints, preferences, specs, or "(none)"]
-
-## Progress
-### Done
-- [completed work or "(none)"]
-
-### In Progress
-- [current work or "(none)"]
-
-### Blocked
-- [blockers or "(none)"]
-
-## Key Decisions
-- [decision and why, or "(none)"]
-
-## Next Steps
-- [ordered next actions or "(none)"]
-
-## Critical Context
-- [important technical facts, errors, open questions, or "(none)"]
-
-## Relevant Files
-- [file or directory path: why it matters, or "(none)"]
-
-Rules:
-- Keep every section, even when empty.
-- Use terse bullets, not prose paragraphs.
-- Preserve exact file paths, commands, error strings, and identifiers when known.
-- Do not mention the summary process or that context was compacted.
-- Do not include full code snippets — reference the file path and the nature of the change instead.
-- Summarize the conversation CHRONOLOGICALLY and cover EVERY topic from the earliest messages to the latest: completed tasks, ongoing work, and all significant user requests must all appear in the summary. Never skip early topics just because later messages are fresher.
-
-Here's an example of how your output should be structured:
-
-<example>
-<analysis>
-[Your thought process, ensuring all points are covered thoroughly and accurately]
-</analysis>
-
-<summary>
-## Goal
-Refactor the API client to support request retry with exponential backoff.
-
-## Constraints & Preferences
-- Must not introduce new dependencies
-- Retry logic should be opt-in per request
-- Default: 3 retries, 1s base delay
-
-## Progress
-### Done
-- Added `retryCount` and `baseDelay` options to `ApiClientConfig`
-- Implemented `withRetry()` wrapper in `src/api/retry.ts`
-- Wired wrapper into `ApiClient.request()` as an optional middleware
-
-### In Progress
-- (none)
-
-### Blocked
-- (none)
-
-## Key Decisions
-- Used a composable middleware pattern instead of subclassing — keeps the base ApiClient clean and retry logic independently testable.
-
-## Next Steps
-- Add unit tests for timeout vs 5xx retry differentiation
-
-## Critical Context
-- The existing ApiClient already has a `request()` method that returns `Promise<Response>`; the retry wrapper intercepts at that boundary.
-- 5xx and network errors are retried; 4xx are not.
-
-## Relevant Files
-- src/api/retry.ts: new file, retry middleware implementation
-- src/api/client.ts: added middleware chain support
-</summary>
-</example>
-
-Please provide your summary based on the RECENT messages only (after the retained earlier context), following this structure and ensuring precision and thoroughness in your response.
+## 线索
+- 关键文件、命令、错误原文、需要注意的约束。
 """
 
-# 部分压缩提示词（UP_TO 方向）
-PARTIAL_COMPACT_UP_TO_PROMPT = f"""Your task is to create a detailed summary of this conversation. This summary will be placed at the start of a continuing session; newer messages that build on this context will follow after your summary (you do not see them here). Summarize thoroughly so that someone reading only your summary and then the newer messages can fully understand what happened and continue the work.
+COMPACT_TASK_FULL = "把整段对话整理成一份交接摘要，供后续会话直接继续工作。"
+COMPACT_TASK_FROM = "只整理最近一段对话；较早的内容会被原样保留，不需要复述。"
+COMPACT_TASK_UP_TO = "整理当前对话；摘要会放在后续会话的开头，之后的消息不在你的视野内。"
 
-{DETAILED_ANALYSIS_INSTRUCTION}
 
-Output exactly the Markdown structure shown below and keep the section order unchanged. Do not add sections beyond those listed.
+def _build_compact_prompt(task: str, custom_instructions: Optional[str] = None) -> str:
+    prompt = f"{COMPACT_PREAMBLE}\n{task}\n\n{COMPACT_METHOD}\n\n{COMPACT_TEMPLATE}"
+    if custom_instructions and custom_instructions.strip():
+        prompt += f"\n补充要求：\n{custom_instructions}"
+    return prompt
 
-## Goal
-- [single-sentence task summary]
 
-## Constraints & Preferences
-- [user constraints, preferences, specs, or "(none)"]
-
-## Progress
-### Done
-- [completed work or "(none)"]
-
-### In Progress
-- [current work or "(none)"]
-
-### Blocked
-- [blockers or "(none)"]
-
-## Key Decisions
-- [decision and why, or "(none)"]
-
-## Next Steps
-- [ordered next actions or "(none)"]
-
-## Critical Context
-- [important technical facts, errors, open questions, or "(none)"]
-
-## Relevant Files
-- [file or directory path: why it matters, or "(none)"]
-
-Rules:
-- Keep every section, even when empty.
-- Use terse bullets, not prose paragraphs.
-- Preserve exact file paths, commands, error strings, and identifiers when known.
-- Do not mention the summary process or that context was compacted.
-- Do not include full code snippets — reference the file path and the nature of the change instead.
-- Summarize the conversation CHRONOLOGICALLY and cover EVERY topic from the earliest messages to the latest: completed tasks, ongoing work, and all significant user requests must all appear in the summary. Never skip early topics just because later messages are fresher.
-
-Here's an example of how your output should be structured:
-
-<example>
-<analysis>
-[Your thought process, ensuring all points are covered thoroughly and accurately]
-</analysis>
-
-<summary>
-## Goal
-Add user authentication with JWT tokens.
-
-## Constraints & Preferences
-- Must use the existing `fastapi-users` library already in dependencies
-- Token expiry: 24h for access token, 7d for refresh token
-- Passwords hashed with bcrypt
-
-## Progress
-### Done
-- Created `/auth/register` and `/auth/login` endpoints in `api_auth.py`
-- Implemented JWT token creation and validation in `auth/jwt.py`
-- Added `get_current_user` dependency for protected routes
-
-### In Progress
-- (none)
-
-### Blocked
-- (none)
-
-## Key Decisions
-- Refresh tokens stored in DB so they can be revoked individually; access tokens are stateless JWTs.
-
-## Next Steps
-- Add `/auth/refresh` endpoint
-- Write tests for token expiry edge cases
-
-## Critical Context
-- `SECRET_KEY` is loaded from env at import time in `auth/jwt.py`; changing it invalidates all existing tokens.
-- The `User` model already has a `hashed_password` field.
-
-## Relevant Files
-- api_auth.py: register/login endpoints
-- auth/jwt.py: token creation/validation
-- auth/deps.py: `get_current_user` dependency
-</summary>
-</example>
-
-Please provide your summary following this structure, ensuring precision and thoroughness in your response.
-"""
-
-NO_TOOLS_TRAILER = """
-
-REMINDER: Do NOT call any tools. Respond with plain text only — an <analysis> block followed by a <summary> block. Tool calls will be rejected and you will fail the task."""
+BASE_COMPACT_PROMPT = _build_compact_prompt(COMPACT_TASK_FULL)
+PARTIAL_COMPACT_FROM_PROMPT = _build_compact_prompt(COMPACT_TASK_FROM)
+PARTIAL_COMPACT_UP_TO_PROMPT = _build_compact_prompt(COMPACT_TASK_UP_TO)
 
 
 def get_compact_prompt(custom_instructions: Optional[str] = None) -> str:
-    """获取完整的压缩提示词"""
-    prompt = NO_TOOLS_PREAMBLE + BASE_COMPACT_PROMPT
-    
-    # 默认要求中文输出压缩报告
-    prompt += "\n\nIMPORTANT: You MUST output the summary in Chinese (中文). Section content must be in Chinese, but DO NOT translate the section titles — keep them exactly as ## Goal, ## Progress, ## Key Decisions, etc. The titles are machine-readable keys used by the frontend parser."
-    
-    if custom_instructions and custom_instructions.strip():
-        prompt += f"\n\nAdditional Instructions:\n{custom_instructions}"
-    
-    prompt += NO_TOOLS_TRAILER
-    return prompt
+    """获取完整压缩提示词"""
+    return _build_compact_prompt(COMPACT_TASK_FULL, custom_instructions)
 
 
 def get_partial_compact_prompt(
@@ -618,61 +343,16 @@ def get_partial_compact_prompt(
     direction: CompactDirection = CompactDirection.FROM
 ) -> str:
     """获取部分压缩提示词"""
-    template = (
-        PARTIAL_COMPACT_UP_TO_PROMPT 
-        if direction == CompactDirection.UP_TO 
-        else PARTIAL_COMPACT_FROM_PROMPT
-    )
-    prompt = NO_TOOLS_PREAMBLE + template
-    
-    # 默认要求中文输出压缩报告
-    prompt += "\n\nIMPORTANT: You MUST output the summary in Chinese (中文). Section content must be in Chinese, but DO NOT translate the section titles — keep them exactly as ## Goal, ## Progress, ## Key Decisions, etc. The titles are machine-readable keys used by the frontend parser."
-    
-    if custom_instructions and custom_instructions.strip():
-        prompt += f"\n\nAdditional Instructions:\n{custom_instructions}"
-    
-    prompt += NO_TOOLS_TRAILER
-    return prompt
+    task = COMPACT_TASK_UP_TO if direction == CompactDirection.UP_TO else COMPACT_TASK_FROM
+    return _build_compact_prompt(task, custom_instructions)
 
 
 def format_compact_summary(summary: str) -> str:
-    """
-    格式化压缩摘要：
-    1. 移除 <analysis> 草稿块
-    2. 将 <summary> 标签替换为可读的章节标题
-
-    兼容 LLM 输出被 max_tokens 截断的情况（有 <summary> 但无 </summary> 闭合标签，
-    或连标签都没有）：从断点处提取剩余内容兜底，避免摘要丢失。
-    """
-    formatted = summary
-
-    # 移除 analysis 部分
-    formatted = re.sub(r'<analysis>[\s\S]*?</analysis>', '', formatted)
-
-    # 提取并格式化 summary 部分
-    summary_match = re.search(r'<summary>([\s\S]*?)</summary>', formatted)
-    if summary_match:
-        content = summary_match.group(1) or ''
-        # 用 lambda 避免 content 中的 \w \s 等被 re.sub 当成正则转义
-        formatted = re.sub(
-            r'<summary>[\s\S]*?</summary>',
-            lambda _: f'Summary:\n{content.strip()}',
-            formatted
-        )
-    else:
-        # 兼容输出被截断：有 <summary> 开标签但无闭合标签
-        open_match = re.search(r'<summary>\s*([\s\S]*)$', formatted)
-        if open_match and open_match.group(1).strip():
-            formatted = f'Summary:\n{open_match.group(1).strip()}'
-        else:
-            # 连 <summary> 标签都没有：清理残留标签后整体作为摘要
-            cleaned = re.sub(r'</?summary>', '', formatted).strip()
-            if cleaned:
-                formatted = f'Summary:\n{cleaned}'
-
-    # 清理多余空行
+    """清理摘要文本：去掉历史格式遗留的分析块与包裹标签。"""
+    formatted = re.sub(r'<analysis>[\s\S]*?</analysis>', '', summary or '')
+    formatted = re.sub(r'</?summary>', '', formatted)
+    formatted = re.sub(r'^Summary:\s*\n', '', formatted.strip())
     formatted = re.sub(r'\n\n+', '\n\n', formatted)
-
     return formatted.strip()
 
 
@@ -686,26 +366,24 @@ def get_compact_user_summary_message(
     生成压缩后的用户摘要消息
     """
     formatted_summary = format_compact_summary(summary)
-    
-    base_summary = f"""This session is being continued from a previous conversation that ran out of context. The summary below covers the earlier portion of the conversation.
+
+    base_summary = f"""本次会话承接此前的对话，以下是早前内容的交接摘要。
 
 {formatted_summary}"""
-    
+
     if transcript_path:
-        base_summary += f"\n\nIf you need specific details from before compaction (like exact code snippets, error messages, or content you generated), read the full transcript at: {transcript_path}"
-    
+        base_summary += f"\n\n需要早前的完整细节（代码片段、错误原文、生成内容）时，可读取：{transcript_path}"
+
     if recent_messages_preserved:
-        base_summary += "\n\nRecent messages are preserved verbatim."
-    
+        base_summary += "\n\n最近的消息保持原样。"
+
     if suppress_follow_up_questions:
-        continuation = f"""{base_summary}
-Continue the conversation from where it left off without asking the user any further questions. Resume directly — do not acknowledge the summary, do not recap what was happening, do not preface with "I'll continue" or similar. Pick up the last task as if the break never happened."""
-        return continuation
-    
+        return f"""{base_summary}
+直接从上次中断处继续，不要向用户追问，也不要复述摘要或说明自己正在继续。"""
+
     return base_summary
 
 
-# ============================================================================
 # 2. 图片/文档剥离
 # ============================================================================
 
@@ -1241,7 +919,7 @@ def is_prompt_too_long_error(error: Any) -> Tuple[bool, Optional[int], Optional[
             limit = int(match.group(1))
             actual = int(match.group(2))
     
-    # 格式3: Anthropic "prompt is too long: X tokens > Y tokens"
+    # 格式3: 提示词超长（X tokens > Y tokens）
     if limit is None:
         match = re.search(r'prompt is too long:?\s*(\d+)\s*tokens?\s*>\s*(\d+)', error_str)
         if match:
@@ -1524,13 +1202,11 @@ def compact_conversation(
 
 # 必需的摘要段落标题（用于格式校验）
 _REQUIRED_SECTIONS = [
-    '## Goal',
-    '## Constraints',
-    '## Progress',
-    '## Key Decisions',
-    '## Next Steps',
-    '## Critical Context',
-    '## Relevant Files',
+    '## 任务',
+    '## 现状',
+    '## 决定',
+    '## 待办',
+    '## 线索',
 ]
 
 
@@ -1538,15 +1214,11 @@ def _validate_summary_format(summary: str) -> tuple:
     """
     校验 LLM 输出的摘要是否包含必需的段落标题。
     返回 (是否通过, 缺失的标题列表)。
-    至少需要 4/7 个标题匹配才视为通过。
+    至少需要 3/5 个标题匹配才视为通过。
     """
-    # 先剥离 <analysis> 和 <summary> 标签，拿到纯内容
-    content = summary
-    m = re.search(r'<summary>([\s\S]*?)</summary>', summary)
-    if m:
-        content = m.group(1)
-    content = re.sub(r'<analysis>[\s\S]*?</analysis>', '', content)
-    
+    content = re.sub(r'<analysis>[\s\S]*?</analysis>', '', summary or '')
+    content = re.sub(r'</?summary>', '', content)
+
     found = []
     missing = []
     for section in _REQUIRED_SECTIONS:
@@ -1554,9 +1226,8 @@ def _validate_summary_format(summary: str) -> tuple:
             found.append(section)
         else:
             missing.append(section)
-    
-    # 至少需要 4 个（因为 Constraints 和 Critical Context 有时会被合并/省略）
-    return len(found) >= 4, missing
+
+    return len(found) >= 3, missing
 
 
 def _retry_summary_with_strict_prompt(
@@ -1567,59 +1238,31 @@ def _retry_summary_with_strict_prompt(
     custom_instructions=None
 ) -> Optional[str]:
     """用更严格的提示词重试摘要生成"""
-    strict_prefix = """⚠️ CRITICAL FORMAT REQUIREMENT — FAILURE MEANS YOUR OUTPUT IS USELESS:
+    if direction == CompactDirection.FROM:
+        task = COMPACT_TASK_FROM
+    elif direction == CompactDirection.UP_TO:
+        task = COMPACT_TASK_UP_TO
+    else:
+        task = COMPACT_TASK_FULL
 
-You MUST output EXACTLY this structure with EXACTLY these English section titles. The section titles are machine-readable keys parsed by frontend code. If you translate them or change them, the parser will produce an EMPTY result and your summary will be DISCARDED.
+    strict_prefix = (
+        "上一次输出缺少必需标题。本次必须严格使用下列五个标题，标题文字不得改动：\n"
+        "## 任务 / ## 现状 / ## 决定 / ## 待办 / ## 线索\n"
+        "每个标题都必须出现，内容为空时写 (none)。\n"
+    )
+    prompt = f"{strict_prefix}\n{_build_compact_prompt(task, custom_instructions)}"
 
-Output format — COPY THESE EXACT TITLES:
-<analysis>
-[your analysis in Chinese]
-</analysis>
-
-<summary>
-## Goal
-- [one sentence in Chinese]
-
-## Constraints & Preferences
-- [items or (none)]
-
-## Progress
-### Done
-- [items or (none)]
-### In Progress
-- [items or (none)]
-### Blocked
-- [items or (none)]
-
-## Key Decisions
-- [items or (none)]
-
-## Next Steps
-- [items or (none)]
-
-## Critical Context
-- [items or (none)]
-
-## Relevant Files
-- [items or (none)]
-</summary>
-
-DO NOT: translate titles, merge sections, skip sections, or invent new section names.
-EVERY section above MUST appear exactly as shown, even if its content is just "(none)".
-
-"""
-    
     try:
         response = llm_client.chat.completions.create(
             model=llm_model or "gpt-4o-mini",
             messages=[
                 {
                     "role": "user",
-                    "content": f"{strict_prefix}\n\n对话历史：\n{conversation_content}"
+                    "content": f"{prompt}\n\n对话历史：\n{conversation_content}"
                 }
             ],
-            max_tokens=8000,  # 与首轮一致，保证重试时输出空间充足
-            temperature=0.1  # 更低温度，更确定性
+            max_tokens=8000,
+            temperature=0.1
         )
         summary = response.choices[0].message.content
         logger.info(f"[ContextCompressor] Retry summary: {len(summary)} chars")
@@ -1630,43 +1273,26 @@ EVERY section above MUST appear exactly as shown, even if its content is just "(
 
 
 def _force_wrap_summary(raw: str) -> str:
-    """强制包裹：把 LLM 的自由格式输出塞进可解析的结构中"""
-    # 剥离可能存在的标签
-    content = re.sub(r'<analysis>[\s\S]*?</analysis>', '', raw)
-    m = re.search(r'<summary>([\s\S]*?)</summary>', content)
-    if m:
-        content = m.group(1)
-    content = content.strip()
-    
-    # 如果内容已被验证至少有一些标题，直接返回（不应该走到这里）
-    # 否则用强制格式包裹
-    return f"""<summary>
-## Goal
-{content[:500]}
+    """把自由格式输出收敛到固定标题结构"""
+    content = re.sub(r'<analysis>[\s\S]*?</analysis>', '', raw or '')
+    content = re.sub(r'</?summary>', '', content).strip()
+    snippet = content[:800] if content else "(none)"
+    return f"""## 任务
+- {snippet}
 
-## Constraints & Preferences
-(none)
+## 现状
+- 已完成：(none)
+- 进行中：(none)
+- 阻塞：(none)
 
-## Progress
-### Done
-(none)
-### In Progress
-(none)
-### Blocked
-(none)
+## 决定
+- (none)
 
-## Key Decisions
-(none)
+## 待办
+- (none)
 
-## Next Steps
-(none)
-
-## Critical Context
-(none)
-
-## Relevant Files
-(none)
-</summary>"""
+## 线索
+- (none)"""
 
 
 # 摘要输入预算（tokens）——防止长对话全量拼接导致 LLM 只关注尾部 / 请求超限
@@ -1717,7 +1343,7 @@ def generate_structured_summary(
     """
     生成结构化摘要
 
-    使用 9 部分结构化提示词生成高质量摘要。
+    使用固定标题的交接摘要提示词生成高质量摘要。
 
     输入预算控制（input_budget，默认 DEFAULT_SUMMARY_INPUT_BUDGET）：
     - 最新优先裁剪：从最新消息向前累计 token，超出预算的最早消息丢弃并注明
@@ -1897,46 +1523,32 @@ def simple_structured_summary(messages: List[Message], input_budget: Optional[in
 
     goal = _snippet(kept_users[0], 150) if kept_users else "(none)"
 
-    parts = ["<summary>"]
-    parts.append("## Goal")
+    parts = ["## 任务"]
     parts.append(f"- {goal}")
     parts.append("")
-    parts.append("## Constraints & Preferences")
-    parts.append("- (none)")
-    parts.append("")
-    parts.append("## Progress")
-    parts.append("### Done")
+    parts.append("## 现状")
     if tool_names:
-        for tn in tool_names[:15]:
-            parts.append(f"- 使用了工具 {tn}")
+        parts.append("- 已完成：使用了工具 " + ", ".join(tool_names[:15]))
     else:
-        parts.append("- (none)")
-    parts.append("### In Progress")
-    parts.append("- (none)")
-    parts.append("### Blocked")
+        parts.append("- 已完成：(none)")
+    parts.append("- 进行中：(none)")
+    parts.append("- 阻塞：(none)")
+    parts.append("")
+    parts.append("## 决定")
     parts.append("- (none)")
     parts.append("")
-    parts.append("## Key Decisions")
-    parts.append("- (none)")
-    parts.append("")
-    parts.append("## Next Steps")
+    parts.append("## 待办")
     parts.append("- 继续之前的任务")
     parts.append("")
-    parts.append("## Critical Context")
-    parts.append(f"- 对话共 {len(user_texts)} 条用户消息；本次摘要由规则生成（无 LLM 支持）")
+    parts.append("## 线索")
+    parts.append(f"- 对话共 {len(user_texts)} 条用户消息；本摘要由规则生成（无 LLM 支持）")
     for i, t in enumerate(kept_users[:5]):
         parts.append(f"- 用户消息: {_snippet(t, 100)}")
     if dropped_users > 0:
         parts.append(f"- 最旧的 {dropped_users} 条用户消息因预算未纳入，详见完整会话记录")
-    parts.append("")
-    parts.append("## Relevant Files")
     if file_paths:
-        for fp in file_paths[:10]:
-            parts.append(f"- {fp}")
-    else:
-        parts.append("- (none)")
+        parts.append("- 文件: " + ", ".join(file_paths[:10]))
     parts.append("")
-    parts.append("</summary>")
     return "\n".join(parts)
 
 

@@ -1,26 +1,38 @@
-<script setup lang="ts">import{computed}from'vue'
-const p=defineProps<{summary:string}>()
-function pb(text:string):string[]{return text.split('\n').map(l=>l.replace(/^-\s*/,'').trim()).filter(l=>l.length>0&&l!=='(none)')}
-function es(text:string,sh:string):string[]{const r=new RegExp(`###(?!#)\\s*${sh}\\s*\\n([\\s\\S]*?)(?=\\n###(?!#)|$)`, 'i');const m=text.match(r);return m?pb(m[1]):[]}
-const parsed=computed(()=>{let raw=p.summary.replace(/^Summary:\s*\n/,'')
-// 剥离 <summary> 标签（后端可能未格式化）
-raw=raw.replace(/<\/?summary>/g,'').replace(/<analysis>[\s\S]*?<\/analysis>/g,'')
-const s:Record<string,string>={}
-// 匹配 ## Title \n content，同时兼容中文标题作为后备
-const rg=/(?:^|\n)##(?!#) (.+?)\n([\s\S]*?)(?=\n##(?!#) |\n*$)/g
-let m:RegExpExecArray|null
-while((m=rg.exec(raw))!==null)s[m[1].trim()]=m[2].trim()
-// 后备：用中文标题键映射到英文键
-const keyMap:Record<string,string>={'目标':'Goal','约束与偏好':'Constraints','约束':'Constraints','进度':'Progress','关键决策':'Key Decisions','决定':'Key Decisions','后续步骤':'Next Steps','关键上下文':'Critical Context','相关文件':'Relevant Files','文件':'Relevant Files'}
-for(const[cn,en]of Object.entries(keyMap)){if(!s[en]&&s[cn])s[en]=s[cn]}
-const g=(s['Goal']||'').split('\n').map(l=>l.replace(/^-\s*/,'').trim()).filter(Boolean).join(' ')||'(none)';const cs=pb(s['Constraints & Preferences']||s['Constraints']||'');const pr=s['Progress']||'';const dn=es(pr,'Done');const ip=es(pr,'In Progress');const bk=es(pr,'Blocked');const tl=dn.length+ip.length+bk.length;const dc=pb(s['Key Decisions']||s['Decisions']||'');const ns=(s['Next Steps']||'').split('\n').map(l=>l.replace(/^\d+\.\s*/,'').replace(/^-\s*/,'').trim()).filter(l=>l.length>0&&l!=='(none)');const cx=s['Critical Context']||s['CriticalContext']||'(none)';const fs=pb(s['Relevant Files']||s['Files']||s['RelevantFiles']||'');return{Goal:g,Constraints:cs,Progress:{done:dn,inProgress:ip,blocked:bk,total:tl},Decisions:dc,NextSteps:ns,CriticalContext:cx,Files:fs}})
+<script setup lang="ts">
+import { computed } from 'vue'
+const p = defineProps<{ summary: string }>()
+
+function bullets(text: string): string[] {
+  return text.split('\n').map(l => l.replace(/^-\s*/, '').trim()).filter(l => l.length > 0 && l !== '(none)')
+}
+
+function section(text: string, title: string): string {
+  const r = new RegExp(`##(?!#)\\s*${title}\\s*\\n([\\s\\S]*?)(?=\\n##(?!#)|$)`, 'i')
+  const m = text.match(r)
+  return m ? m[1] : ''
+}
+
+const parsed = computed(() => {
+  let raw = p.summary.replace(/^Summary:\s*\n/, '')
+  raw = raw.replace(/<\/?summary>/g, '').replace(/<analysis>[\s\S]*?<\/analysis>/g, '')
+  const task = bullets(section(raw, '任务')).join(' ') || '(none)'
+  const status = bullets(section(raw, '现状'))
+  const pick = (prefix: string) => status
+    .filter(l => l.startsWith(prefix))
+    .map(l => l.replace(new RegExp(`^${prefix}[：:]\\s*`), ''))
+  const done = pick('已完成')
+  const doing = pick('进行中')
+  const blocked = pick('阻塞')
+  const decisions = bullets(section(raw, '决定'))
+  const next = bullets(section(raw, '待办'))
+  const clues = bullets(section(raw, '线索'))
+  return { task, done, doing, blocked, decisions, next, clues }
+})
 </script>
 <template><div class="cs-card"><div class="cs-bar"/><div class="cs-inner">
-<div class="cs-sec static"><div class="cs-hdr static"><span class="cs-icon"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round"><circle cx="12" cy="12" r="10"/><circle cx="12" cy="12" r="6"/><circle cx="12" cy="12" r="2"/></svg></span><span class="cs-title">Goal</span></div><div class="cs-body-wrap static"><div class="cs-body"><div class="cs-goal-area"><div class="cs-goal-text">{{parsed.Goal}}</div></div></div></div></div>
-<div class="cs-sec is-open"><button class="cs-hdr" @click=""><span class="cs-icon"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5"><rect x="3" y="3" width="18" height="18" rx="2"/><path d="M9 9l6 6M15 9l-6 6"/></svg></span><span class="cs-title">Constraints &amp; Preferences</span><span v-if="parsed.Constraints.length" class="cs-meta">{{parsed.Constraints.length}} items</span></button><div class="cs-body-wrap"><div class="cs-body"><template v-if="parsed.Constraints.length>0"><div v-for="(item,i) in parsed.Constraints" :key="i" class="cs-item cs-constraint">{{item}}</div></template><div v-else class="cs-empty">(none)</div></div></div></div>
-<div class="cs-sec static"><div class="cs-hdr static"><span class="cs-icon"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5"><path d="M22 12a10 10 0 11-20 0 10 10 0 0120 0z"/><path d="M12 6v6l4 2"/></svg></span><span class="cs-title">Progress</span></div><div class="cs-body-wrap static"><div class="cs-body"><div class="cs-progress-grid"><div class="cs-progress-item"><div><div class="cs-progress-label"><span class="cs-dot done"/> Done</div><div class="cs-progress-detail"><span v-for="(d,i) in parsed.Progress.done" :key="i">{{d}}</span></div></div><div class="cs-progress-count">{{parsed.Progress.done.length}}</div></div><div class="cs-progress-item"><div><div class="cs-progress-label"><span class="cs-dot ip"/> In Progress</div><div class="cs-progress-detail"><span v-for="(d,i) in parsed.Progress.inProgress" :key="i">{{d}}</span></div></div><div class="cs-progress-count">{{parsed.Progress.inProgress.length}}</div></div><div class="cs-progress-item"><div><div class="cs-progress-label"><span class="cs-dot blk"/> Blocked</div><div class="cs-progress-detail"><span v-for="(d,i) in parsed.Progress.blocked" :key="i">{{d}}</span></div></div><div class="cs-progress-count">{{parsed.Progress.blocked.length}}</div></div></div></div></div></div>
-<div class="cs-sec is-open"><button class="cs-hdr" @click=""><span class="cs-icon"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5"><path d="M9 11l3 3L22 4"/><path d="M21 12v7a2 2 0 01-2 2H5a2 2 0 01-2-2V5a2 2 0 012-2h11"/></svg></span><span class="cs-title">Key Decisions</span><span v-if="parsed.Decisions.length" class="cs-meta">{{parsed.Decisions.length}} items</span></button><div class="cs-body-wrap"><div class="cs-body"><template v-if="parsed.Decisions.length>0"><div v-for="(item,i) in parsed.Decisions" :key="i" class="cs-item cs-decision">{{item}}</div></template><div v-else class="cs-empty">(none)</div></div></div></div>
-<div class="cs-sec is-open"><button class="cs-hdr" @click=""><span class="cs-icon"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5"><line x1="5" y1="12" x2="19" y2="12"/><polyline points="12 5 19 12 12 19"/></svg></span><span class="cs-title">Next Steps</span><span v-if="parsed.NextSteps.length" class="cs-meta">{{parsed.NextSteps.length}} items</span></button><div class="cs-body-wrap"><div class="cs-body"><template v-if="parsed.NextSteps.length>0"><div v-for="(item,i) in parsed.NextSteps" :key="i" class="cs-item cs-next"><span class="cs-num">{{i+1}}</span>{{item}}</div></template><div v-else class="cs-empty">(none)</div></div></div></div>
-<div class="cs-sec is-open"><button class="cs-hdr" @click=""><span class="cs-icon"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5"><path d="M12 22s8-4 8-10V5l-8-3-8 3v7c0 6 8 10 8 10z"/></svg></span><span class="cs-title">Critical Context</span></button><div class="cs-body-wrap"><div class="cs-body"><div v-if="parsed.CriticalContext!=='(none)'" class="cs-context-text">{{parsed.CriticalContext}}</div><div v-else class="cs-empty">(none)</div></div></div></div>
-<div class="cs-sec is-open"><button class="cs-hdr" @click=""><span class="cs-icon"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5"><path d="M13 2H6a2 2 0 00-2 2v16a2 2 0 002 2h12a2 2 0 002-2V9z"/><polyline points="13 2 13 9 20 9"/></svg></span><span class="cs-title">Relevant Files</span><span v-if="parsed.Files.length" class="cs-meta">{{parsed.Files.length}} files</span></button><div class="cs-body-wrap"><div class="cs-body"><template v-if="parsed.Files.length>0"><div v-for="(item,i) in parsed.Files" :key="i" class="cs-item cs-file"><code>{{item}}</code></div></template><div v-else class="cs-empty">(none)</div></div></div></div>
+<div class="cs-sec static"><div class="cs-hdr static"><span class="cs-icon"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round"><circle cx="12" cy="12" r="10"/><circle cx="12" cy="12" r="6"/><circle cx="12" cy="12" r="2"/></svg></span><span class="cs-title">任务</span></div><div class="cs-body-wrap static"><div class="cs-body"><div class="cs-goal-area"><div class="cs-goal-text">{{parsed.task}}</div></div></div></div></div>
+<div class="cs-sec static"><div class="cs-hdr static"><span class="cs-icon"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5"><path d="M22 12a10 10 0 11-20 0 10 10 0 0120 0z"/><path d="M12 6v6l4 2"/></svg></span><span class="cs-title">现状</span></div><div class="cs-body-wrap static"><div class="cs-body"><div class="cs-progress-grid"><div class="cs-progress-item"><div><div class="cs-progress-label"><span class="cs-dot done"/> 已完成</div><div class="cs-progress-detail"><span v-for="(d,i) in parsed.done" :key="i">{{d}}</span></div></div><div class="cs-progress-count">{{parsed.done.length}}</div></div><div class="cs-progress-item"><div><div class="cs-progress-label"><span class="cs-dot ip"/> 进行中</div><div class="cs-progress-detail"><span v-for="(d,i) in parsed.doing" :key="i">{{d}}</span></div></div><div class="cs-progress-count">{{parsed.doing.length}}</div></div><div class="cs-progress-item"><div><div class="cs-progress-label"><span class="cs-dot blk"/> 阻塞</div><div class="cs-progress-detail"><span v-for="(d,i) in parsed.blocked" :key="i">{{d}}</span></div></div><div class="cs-progress-count">{{parsed.blocked.length}}</div></div></div></div></div></div>
+<div class="cs-sec is-open"><button class="cs-hdr" @click=""><span class="cs-icon"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5"><path d="M9 11l3 3L22 4"/><path d="M21 12v7a2 2 0 01-2 2H5a2 2 0 01-2-2V5a2 2 0 012-2h11"/></svg></span><span class="cs-title">决定</span><span v-if="parsed.decisions.length" class="cs-meta">{{parsed.decisions.length}} items</span></button><div class="cs-body-wrap"><div class="cs-body"><template v-if="parsed.decisions.length>0"><div v-for="(item,i) in parsed.decisions" :key="i" class="cs-item cs-decision">{{item}}</div></template><div v-else class="cs-empty">(none)</div></div></div></div>
+<div class="cs-sec is-open"><button class="cs-hdr" @click=""><span class="cs-icon"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5"><line x1="5" y1="12" x2="19" y2="12"/><polyline points="12 5 19 12 12 19"/></svg></span><span class="cs-title">待办</span><span v-if="parsed.next.length" class="cs-meta">{{parsed.next.length}} items</span></button><div class="cs-body-wrap"><div class="cs-body"><template v-if="parsed.next.length>0"><div v-for="(item,i) in parsed.next" :key="i" class="cs-item cs-next"><span class="cs-num">{{i+1}}</span>{{item}}</div></template><div v-else class="cs-empty">(none)</div></div></div></div>
+<div class="cs-sec is-open"><button class="cs-hdr" @click=""><span class="cs-icon"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5"><path d="M12 22s8-4 8-10V5l-8-3-8 3v7c0 6 8 10 8 10z"/></svg></span><span class="cs-title">线索</span><span v-if="parsed.clues.length" class="cs-meta">{{parsed.clues.length}} items</span></button><div class="cs-body-wrap"><div class="cs-body"><template v-if="parsed.clues.length>0"><div v-for="(item,i) in parsed.clues" :key="i" class="cs-item cs-context-text">{{item}}</div></template><div v-else class="cs-empty">(none)</div></div></div></div>
 </div></div></template>

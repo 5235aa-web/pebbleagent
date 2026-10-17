@@ -34,7 +34,6 @@ from .mcp_types import (
     McpSSEServerConfig,
     McpHTTPServerConfig,
     McpWebSocketServerConfig,
-    McpSdkServerConfig,
     McpServerConfig,
     ScopedMcpServerConfig,
     McpJsonConfig,
@@ -213,12 +212,6 @@ def validate_server_config(name: str, config: Any) -> Tuple[Optional[McpServerCo
     elif config_type in ("sse", "http", "ws"):
         if "url" not in config or not config["url"]:
             errors.append(f"URL cannot be empty for {config_type} server")
-    elif config_type == "sdk":
-        if "name" not in config or not config["name"]:
-            errors.append("Name cannot be empty for SDK server")
-    elif config_type == "claudeai-proxy":
-        if "url" not in config or "id" not in config:
-            errors.append("URL and id are required for claudeai-proxy server")
     else:
         errors.append(f"Unsupported server type: {config_type}")
     
@@ -251,11 +244,6 @@ def validate_server_config(name: str, config: Any) -> Tuple[Optional[McpServerCo
                 type="ws",
                 url=config.get("url", ""),
                 headers=config.get("headers"),
-            )
-        elif config_type == "sdk":
-            validated = McpSdkServerConfig(
-                type="sdk",
-                name=config.get("name", ""),
             )
         else:
             return None, errors

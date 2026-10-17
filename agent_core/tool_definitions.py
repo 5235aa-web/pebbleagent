@@ -612,8 +612,8 @@ def get_tools_definition() -> List[Dict[str, Any]]:
         {
             "type": "function",
             "function": {
-                "name": "ask_user_question",
-                "description": "向用户提出多选题问题。需要等待用户响应，必须串行执行。",
+                "name": "clarify",
+                "description": "向用户提出澄清问题（最多 4 个），用于在动手前确认方向或选择。需要等待用户响应，必须串行执行。",
                 "parameters": {
                     "type": "object",
                     "properties": {
@@ -622,21 +622,24 @@ def get_tools_definition() -> List[Dict[str, Any]]:
                             "items": {
                                 "type": "object",
                                 "properties": {
-                                    "question": {"type": "string"},
-                                    "header": {"type": "string"},
+                                    "title": {"type": "string", "description": "短标题，2-8 字"},
+                                    "prompt": {"type": "string", "description": "问题正文"},
                                     "options": {
                                         "type": "array",
                                         "items": {
                                             "type": "object",
                                             "properties": {
-                                                "label": {"type": "string"},
-                                                "description": {"type": "string"}
-                                            }
+                                                "label": {"type": "string", "description": "选项文字"},
+                                                "detail": {"type": "string", "description": "选项说明"}
+                                            },
+                                            "required": ["label"]
                                         }
-                                    }
-                                }
+                                    },
+                                    "multiple": {"type": "boolean", "description": "是否允许多选", "default": False}
+                                },
+                                "required": ["prompt", "options"]
                             },
-                            "description": "问题列表（1-4个）"
+                            "description": "问题列表（1-4 个）"
                         }
                     },
                     "required": ["questions"]
@@ -887,35 +890,6 @@ def get_tools_definition() -> List[Dict[str, Any]]:
                         }
                     },
                     "required": ["name"]
-                }
-            }
-        },
-        # ==================== Brief 消息 ====================
-        {
-            "type": "function",
-            "function": {
-                "name": "brief",
-                "description": "发送简短消息给用户并结束当前任务。这是最终回复工具，调用此工具后不应再调用其他工具。写操作，需要串行执行。",
-                "parameters": {
-                    "type": "object",
-                    "properties": {
-                        "message": {
-                            "type": "string",
-                            "description": "消息内容（支持Markdown）"
-                        },
-                        "attachments": {
-                            "type": "array",
-                            "items": {"type": "string"},
-                            "description": "附件文件路径列表"
-                        },
-                        "status": {
-                            "type": "string",
-                            "enum": ["normal", "proactive"],
-                            "description": "消息状态：normal=回复用户，proactive=主动通知",
-                            "default": "normal"
-                        }
-                    },
-                    "required": ["message"]
                 }
             }
         },

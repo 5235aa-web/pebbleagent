@@ -38,7 +38,7 @@ def main() -> int:
     from gateway.permission_manager import get_permission_manager, PermissionMode
     _mgr = get_permission_manager()
     _mgr.config_path = os.path.join(tempfile.gettempdir(), "pebble_test_permission_rules.json")
-    _mgr.context.mode = PermissionMode.BYPASS
+    _mgr.context.mode = PermissionMode.AUTO
 
     async def run_checks():
         ex = AgentToolExecutorImpl(project_path=ROOT)

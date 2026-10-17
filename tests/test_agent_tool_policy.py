@@ -58,7 +58,7 @@ def main() -> int:
         {"type": "function", "function": {"name": "write_file"}},
         {"type": "function", "function": {"name": "search_files"}},
         {"type": "function", "function": {"name": "edit_file"}},
-        {"type": "function", "function": {"name": "ask_user_question"}},
+        {"type": "function", "function": {"name": "clarify"}},
     ]
     filtered = filter_tools_for_agent(fake_tools, defn)
     names = sorted(t["function"]["name"] for t in filtered)
@@ -107,7 +107,7 @@ def main() -> int:
     )
     missing = {"read_file", "search_files", "edit_file", "write_file"} - set(all_names)
     check("4 target tools exist in full list", not missing, f"missing {missing}")
-    for probe in ["execute_code", "execute_shell", "web_search", "fetch_url", "ask_user_question"]:
+    for probe in ["execute_code", "execute_shell", "web_search", "fetch_url", "clarify"]:
         check(f"full list contains {probe} (will be filtered out)", probe in all_names)
 
     print(f"\nRESULT: {passed} passed, {failed} failed")

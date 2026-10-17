@@ -19,7 +19,7 @@
 | context_compressor.py | Context compaction (incl. summary budget control / truncation fallback); **single authoritative token counter — estimate_tokens (tiktoken + CN/EN-ratio fallback); truncate_to_tokens budget derived from the same ratio** | compact_conversation, manual_compress, generate_structured_summary, format_compact_summary, simple_structured_summary, estimate_tokens | agent_chat_service_v2, server.py | - | 🔴Core |
 | query_state_machine.py | Event & context types (StreamEvent + ToolExecutionEvent + ToolUseBlock + ToolExecutionContext) | agent_chat_service_v2, tool_orchestrator | - | 🟡Aux |
 | extensions_loader.py | Custom tool loading | discover_extension_tools | tool_definitions | extensions/tools/*.py | 🔴Core |
-| transcript_manager.py | Session transcript archive system (42KB): on compaction, write the compacted message segments to a JSONL transcript file (~/.pebble/projects/{project_hash}/{session_id}.jsonl); supports history browsing/session restore/search/message-chain tracking (parentUuid); 11 TranscriptEntry subclasses (user/assistant/system/attachment/compact-boundary/summary/tag/...) | TranscriptManager (singleton), write_session_transcript_segment, insert_message_chain, read_transcript, load_transcript_file, get_messages_after_compact_boundary, get_transcript_path | context_compressor.py, agent_chat_service_v2.py | - | 🟡Aux |
+| transcript_manager.py | Session transcript archive system (42KB): on compaction, write the compacted message segments to a JSONL transcript file (~/.pebble/projects/{project_hash}/{session_id}.jsonl); supports history browsing/session restore/search/message-chain tracking (parentUuid); 5 entry classes (user / assistant / system / attachment / note) | TranscriptManager (singleton), UserEntry, AssistantEntry, SystemEntry, AttachmentEntry, NoteEntry, write_session_transcript_segment, insert_message_chain, read_transcript, load_transcript_file, get_messages_after_compact_boundary, get_transcript_path | context_compressor.py, agent_chat_service_v2.py | - | 🟡Aux |
 | safe_json.py | Safe JSON parsing | safe_json_loads | multiple | - | 🟡Aux |
 | bash_validator.py | Bash command safety validation (19.5KB): six-layer validator — read_only (read-only → parallel-safe) / destructive (blocks rm -rf, dd, mkfs, etc.) / mode (set -e/-u/-x) / sed (-i in-place edits) / path (out-of-bounds path scan) / semantic (intent analysis: read/write/system/network/process); returns BashValidationReport; path extraction covers quoted args (open('/etc/shadow')) and $VAR/${VAR} prefixes; _is_path_allowed uses realpath + commonpath; also applied to _tool_execute_code when language="bash" | BashValidator, BashValidationReport, validate, set_path_whitelist | tool_executor_impl (before _tool_execute_shell, and _tool_execute_code bash branch), permission_enforcer (check_dangerous_command), tool_concurrency (check_bash_safety) | - | 🔴Core |
 | code_network_guardV2.py | Behavior-pattern network guard V2 (anti-crawling, three runtime guards): static scan (loop traversal/pagination/URL follow-up/crawler frameworks/HTTP-library imports/dynamic-import bypass — unlike V1 which banned all HTTP libraries) + three runtime guards: RateLimiter (≤6 req/min per domain), PathDepthGuard (≤3 navigations per turn), DownloadGuard (≤2 files / ≤50MB per turn); the powershell tool is scanned too | scan_code_for_scraping_behavior, RateLimiter, PathDepthGuard, DownloadGuard, get_rate_limiter/get_path_depth_guard/get_download_guard, reset_all_guards | agent_chat_service_v2, tool_executor_impl | - | 🟡Aux |
@@ -40,7 +40,7 @@
 | recall.py | FTS recall + structural weighting (tool/path/kind/confidence/decay/hits), hit accounting | recall, mark_hits | 🔴Core |
 | prompt.py | Ledger prompt rendering (top-N entries, applies-to, evidence) + agent note block | render_entries, render_agent_note | 🟡Aux |
 | lifecycle.py | Dedupe/supersede, confirmation boost, stale retirement | find_similar, supersede, boost_recent, expire_stale | 🟡Aux |
-| migrate.py | One-shot import of legacy Markdown memories and agent-memory notes | migrate_legacy | 🟡Aux |
+| migrate.py | One-shot import of Markdown memory files and agent notes | migrate_legacy | 🟡Aux |
 | __init__.py | Package exports | - | 🟡Aux |
 
 ### agent_core/snapshot/ (7 files)
@@ -51,7 +51,7 @@
 | snapshot_executor.py | Snapshot executor | 🔴Core |
 | snapshot_diff.py | Snapshot diff computation | 🟡Aux |
 | snapshot_undo.py | Snapshot undo | 🟡Aux |
-| snapshot_conflict.py | Conflict handling (**phase-one upgraded — current SHA outside the file's known set (all backup SHA ∪ write-result SHA) → external_modification conflict instead of silent overwrite; legacy records without write-result keep the old will-overwrite behavior**) | 🟡Aux |
+| snapshot_conflict.py | Conflict handling (**phase-one upgraded — current SHA outside the file's known set (all backup SHA ∪ write-result SHA) → external_modification conflict instead of silent overwrite; older records without write-result keep the will-overwrite behavior**) | 🟡Aux |
 | snapshot_cleanup.py | Snapshot cleanup (**count limit removes only the overflow above MAX_SNAPSHOTS; orphan cleanup retains active+reverted ids so UndoEngine backups survive**) | 🟡Aux |
 | snapshot_types.py | Snapshot types (**write_result_sha256 field + DDL**) | 🧪Types |
 

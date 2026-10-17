@@ -1,5 +1,5 @@
 """
-TodoWrite工具 - 任务列表管理
+任务清单工具 - 任务列表管理
 
 提供任务列表管理功能
 支持实时事件推送到前端
@@ -169,7 +169,7 @@ class TodoManager:
                 logger.error(f"[TodoManager] Event callback error: {e}")
 
 
-class TodoWriteTool(BaseTool[Dict[str, Any], Dict[str, Any]]):
+class TodoListTool(BaseTool[Dict[str, Any], Dict[str, Any]]):
     """
     任务列表写入工具
     
@@ -177,25 +177,27 @@ class TodoWriteTool(BaseTool[Dict[str, Any], Dict[str, Any]]):
     """
     
     name = "todo_write"
-    description = """Use this tool to create and manage a structured task list for your current coding session. This helps you track progress, organize complex tasks, and demonstrate thoroughness to the user.
+    description = """维护本次会话的任务清单，让进度对用户可见。
 
-When to Use This Tool:
-- Complex multi-step tasks: When a task requires 3+ distinct steps or actions
-- Non-trivial and complex tasks: Tasks that require careful planning and multiple operations
-- User explicitly requests todo list: When the user directly asks you to use the todo list
-- User provides multiple tasks: When users provide a list of things to be done (numbered or comma-separated)
-- After receiving new instructions: Immediately capture user requirements as todos
-- When starting work on a task: Mark it as in_progress BEFORE beginning work. Ideally, only one todo should be in_progress at a time
-- After completing a task: Mark it as completed and add any new follow-up tasks discovered during implementation
+适用场景：
+- 任务包含三个以上独立步骤
+- 需要先规划再执行的复杂改动
+- 用户一次给出多条待办
+- 收到新要求后，先把要求拆成待办再动手
 
-When NOT to Use This Tool:
-- Single, straightforward tasks: When there is only one trivial task to do
-- Purely conversational or informational exchanges
+不适用场景：
+- 单步即可完成的小改动
+- 纯问答、纯说明类请求
 
-Task States:
-- pending: Task not yet started
-- in_progress: Currently working on (limit to ONE task at a time)
-- completed: Task finished successfully"""
+使用约定：
+- 开始某项任务前把它标为 in_progress，同一时刻只保留一项
+- 完成后立即标为 completed
+- 实现过程中发现的新工作，补充为新的待办
+
+状态取值：
+- pending：尚未开始
+- in_progress：正在处理
+- completed：已经完成"""
     
     input_params = ["todos"]
     requires_permission = False
@@ -281,7 +283,7 @@ Task States:
             "old_todos": [t.to_dict() for t in old_todos],
             "new_todos": [t.to_dict() for t in new_todos],
             "all_completed": all_done,
-            "message": "Todos have been modified successfully. Ensure that you use the todo list to track your progress. Please mark items as completed as you work through them."
+            "message": "任务清单已更新。继续按清单推进，完成一项就标记一项。"
         }
     
     def _extract_content(self, input_data: Dict[str, Any]) -> Optional[str]:
@@ -297,7 +299,7 @@ class TodoReadTool(BaseTool[Dict[str, Any], Dict[str, Any]]):
     """
     
     name = "todo_read"
-    description = "Read the current todo list for the session"
+    description = "读取当前会话的任务清单"
     input_params = []
     requires_permission = False
     danger_level = "low"

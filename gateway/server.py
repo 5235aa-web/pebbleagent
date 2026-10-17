@@ -430,7 +430,7 @@ def _ensure_service() -> AgentChatServiceV2:
 
 
 def _submit_clarify_answer(answer: str, request_id: str = "", answers: dict = None):
-    """提交用户对 ask_question 的回答到 QuestionManager
+    """提交用户对 clarify 的回答到 QuestionManager
 
     多问题支持：
     - 新通道：前端传 answers 对象 {问题文本: 答案}（多问题卡片），直接透传；
@@ -1018,17 +1018,20 @@ def handle_request(method: str, params: dict, rid: str) -> Optional[dict]:
             return {"id": rid, "result": {"mode": mode}}
         except Exception as e:
             logger.warning(f"[Server] permission.mode.get error: {e}")
-            return {"id": rid, "result": {"mode": "default"}}
+            return {"id": rid, "result": {"mode": "manual"}}
 
     if method == "permission.mode.set":
         """设置权限模式"""
         try:
-            from gateway.permission_manager import get_permission_manager, PermissionMode
-            mode_str = params.get("mode", "default")
-            mode = PermissionMode(mode_str)
+            from gateway.permission_manager import get_permission_manager, PermissionMode, _LEGACY_MODES
+            mode_str = params.get("mode", "manual")
+            mode = _LEGACY_MODES.get(mode_str)
+            if mode is None:
+                mode = PermissionMode(mode_str)
+            mode_str = mode.value
             mgr = get_permission_manager()
             mgr.set_mode(mode)
-            # 模式切换写审计（bypass/autoAllow 等高危切换可追溯）
+            # 模式切换写审计（auto/locked 等高危切换可追溯）
             try:
                 from gateway.permission_audit import get_audit_logger, AuditEvent, AuditEventType
                 get_audit_logger().log_event(AuditEvent(
@@ -2254,14 +2257,18 @@ def handle_prompt_submit(
                         qs = questions if isinstance(questions, list) else [questions]
                         # 多问题支持：发送完整问题列表；单问题字段保留向后兼容
                         q_full = [{
-                            "question": q.get("question", "") if isinstance(q, dict) else str(q),
-                            "header": (q.get("header", "QUESTION") if isinstance(q, dict) else "QUESTION"),
-                            "options": [c.get("label", str(c)) if isinstance(c, dict) else str(c) for c in (q.get("options", []) if isinstance(q, dict) else [])],
+                            "prompt": q.get("prompt", "") if isinstance(q, dict) else str(q),
+                            "title": (q.get("title", "QUESTION") if isinstance(q, dict) else "QUESTION"),
+                            "options": [
+                                {"label": c.get("label", ""), "detail": c.get("detail", "")} if isinstance(c, dict) else {"label": str(c), "detail": ""}
+                                for c in (q.get("options", []) if isinstance(q, dict) else [])
+                            ],
+                            "multiple": bool(q.get("multiple", False)) if isinstance(q, dict) else False,
                         } for q in qs]
                         write_event("clarify.request", {
                             "request_id": event.get("question_id", str(uuid.uuid4())),
-                            "question": q_full[0]["question"],  # 兼容旧前端
-                            "choices": q_full[0]["options"],    # 兼容旧前端
+                            "question": q_full[0]["prompt"],  # 兼容旧前端
+                            "choices": [o["label"] for o in q_full[0]["options"]],    # 兼容旧前端
                             "questions": q_full,                # 新：完整问题列表
                         })
                 elif event_type == "cancelled":

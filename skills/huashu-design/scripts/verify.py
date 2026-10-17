@@ -1,6 +1,6 @@
 #!/usr/bin/env python3
 """
-verify.py — Playwright封装，用于验证claude-design产出的HTML
+verify.py — Playwright 封装，用于验证设计产出的 HTML
 
 Usage:
     python verify.py path/to/design.html                    # 基础：打开+截图+抓控制台错误
