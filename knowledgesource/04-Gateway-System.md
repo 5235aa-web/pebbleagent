@@ -35,4 +35,6 @@
 | config | get / set |
 | other | setup.status / complete.slash / slash.exec / command.dispatch / clarify.respond |
 
+> Single-file revert (`session.file_revert`): records are matched by normalized absolute path equality. One click reverts the newest active snapshot of that file and returns `remaining` (active snapshots left for the file). A failed restore leaves the record active and returns the failure message. The RPC runs in the thread pool. `session.file_changes` returns `active_count` per file.
+
 > Event types (WS push) are not in this table: message.delta / thinking.delta / tool.* / clarify.request / permission.request / todos.update etc. — see Path 3 in Chapter 3.

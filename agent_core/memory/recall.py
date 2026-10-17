@@ -24,8 +24,8 @@ HALF_LIFE_DAYS = 90.0
 
 
 def _relevance(rank: float) -> float:
-    """把 bm25 的负分映射到 0..1。"""
-    return 1.0 / (1.0 + math.exp(-(rank / 3.0) + 1.0))
+    """把 bm25 的负分（越相关越负）映射到 0..1。"""
+    return 1.0 / (1.0 + math.exp(rank / 3.0 + 1.0))
 
 
 def _load_json(raw: str, fallback: Any) -> Any:

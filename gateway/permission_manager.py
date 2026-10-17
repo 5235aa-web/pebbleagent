@@ -103,7 +103,7 @@ class PermissionManager:
         "todo_read", "todo_write", "get_plan", "create_plan",
         "enter_plan_mode", "exit_plan_mode",
         "list_skills", "load_skill", "tool_search", "list_tools",
-        "clarify", "usernote_write",
+        "clarify",
         "get_env_var", "get_system_info", "list_processes",
         "execute_shell:git *", "execute_shell:ls", "execute_shell:dir",
         "execute_shell:python --version", "execute_shell:node --version",

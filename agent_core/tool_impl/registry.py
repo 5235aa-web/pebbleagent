@@ -21,6 +21,7 @@ TOOL_HANDLERS: Dict[str, ToolHandler] = {
     "execute_code": lambda self, args, context: self._tool_execute_code(args.get('code', ''), args.get('language', 'python'), context),
     "execute_shell": lambda self, args, context: self._tool_execute_shell(args.get('command', ''), args.get('timeout', 60), context),
     "exit_plan_mode": lambda self, args, context: self._tool_exit_plan_mode(args.get('plan_title'), args.get('plan_description'), args.get('steps', [])),
+    "experience_write": lambda self, args, context: self._tool_experience_write(args.get('statement', ''), args.get('kind', 'preference'), args.get('rationale', ''), args.get('scope', 'project'), args.get('keywords'), context),
     "fetch_url": lambda self, args, context: self._tool_fetch_url(args.get('url', ''), args.get('timeout', 30)),
     "find_files": lambda self, args, context: self._tool_find_files(args.get('directory', ''), args.get('pattern', ''), args.get('max_depth')),
     "get_env_var": lambda self, args, context: self._tool_get_env_var(args.get('name', '')),
@@ -58,6 +59,5 @@ TOOL_HANDLERS: Dict[str, ToolHandler] = {
     "todo_read": lambda self, args, context: self._tool_todo_read(),
     "todo_write": lambda self, args, context: self._tool_todo_write(args.get('todos', [])),
     "tool_search": lambda self, args, context: self._tool_tool_search(args.get('query', ''), args.get('max_results', 5)),
-    "usernote_write": lambda self, args, context: self._tool_usernote_write(args.get('content', '')),
     "write_file": lambda self, args, context: self._tool_write_file(args.get('file_path', ''), args.get('content', ''), args.get('mode', 'write')),
 }

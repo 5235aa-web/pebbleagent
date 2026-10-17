@@ -1,5 +1,5 @@
 {
-  "mode": "manual",
+  "mode": "auto",
   "allow": [
     "read_file",
     "read_pdf",
@@ -25,7 +25,6 @@
     "tool_search",
     "list_tools",
     "clarify",
-    "usernote_write",
     "get_env_var",
     "get_system_info",
     "list_processes",

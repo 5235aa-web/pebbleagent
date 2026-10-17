@@ -13,7 +13,7 @@
 - Streaming chat loop with tool orchestration: parallel read-only batches, serial side-effect batches, concurrency semaphore, cancellation; per-round usage accounting from the stream consumer's captured usage chunk
 - Context assembly: system prompt + project path + user note + recalled experience entries + agent note + skills; token accounting via `context_compressor.estimate_tokens` (tiktoken with CN/EN ratio fallback)
 - Stream-end detection: finish_reason recording, suspicious-end auto-retry (once per turn), graceful completion
-- Experience ledger: rule-based turn observation (correction / constraint / preference / pitfall), FTS5 recall with tool, path, kind, confidence, recency and hit weighting, dedupe + supersede lifecycle, per-agent notes; SQLite at `{PEBBLE_HOME:-~/.pebble}/experience.db`
+- Experience ledger: rule-based turn observation (correction / constraint / preference / pitfall), FTS5 recall with tool, path, kind, confidence, recency and hit weighting, dedupe + supersede lifecycle, per-agent notes; SQLite at `{PEBBLE_HOME:-~/.pebble}/experience.db`; agent-facing `experience_write` tool (kind / scope / keywords)
 - Compaction summary: stable five-section handoff format (任务 / 现状 / 决定 / 待办 / 线索), single-pass prompt with no tool calls, format validation with one strict retry and a wrapped fallback
 - Agent prompts: comment hygiene (no dates, no change / incident / refactor notes) and CKB document positioning (present-tense facts, no change narratives)
 - Turn building blocks: `agent_core/chat/usage.py` (pricing, per-call cost, session accumulation), `chat/prompt.py` (system prompt composition), `chat/stream_client.py` (streamed request, retries, context-window handling, chunk accumulation), `chat/tool_cycle.py` (question injection, tool execution, result write-back), `chat/turn_executor.py` (turn preparation: agent, conversation, user message, history, prompt, client, cancel signal)
@@ -33,7 +33,7 @@
 - Shell validation: BashValidator (read-only / destructive / mode / sed / path / semantic), PowerShellValidator (destructive patterns + path boundary), code destructive scan, network behaviour guards (rate / navigation / download counters scoped per session via contextvar)
 - Permission chain: modes (manual / auto / readonly / locked), allow / deny / ask rules with `tool:pattern` syntax, path whitelist, project boundary checks, per-(session, permission_type) trust, inline-code escalation, fail-closed on module errors
 - Audit: permission decisions persisted with chained SHA256 checksum (v3) and write-time secret masking
-- Snapshots: write-ahead file snapshots, revert with external-modification detection, undo support
+- Snapshots: write-ahead file snapshots; single-file revert matches records by normalized absolute path, reverts one version per click and reports `remaining`; a failed restore leaves the record active; the RPC runs in the thread pool; external-modification detection; undo support
 
 ## Gateway
 
@@ -72,7 +72,7 @@
 
 ## Verification
 
-- `tests/run_all.py` — Python suites (tool policy, orchestration, permissions, permission chain e2e, audit, snapshots, compaction, pricing, skills, experience ledger, RPC smoke, guard scope, transcript manager, MCP registry, LSP framing, chat_stream e2e, gateway facade, grep tool async, tool registry autoregister, revert batch)
+- `tests/run_all.py` — Python suites (tool policy, orchestration, permissions, permission chain e2e, audit, snapshots, compaction, pricing, skills, experience ledger, RPC smoke, guard scope, transcript manager, MCP registry, LSP framing, chat_stream e2e, gateway facade, grep tool async, tool registry autoregister, revert batch, revert single)
 - `ruff check` — static analysis gate (F + E9) over `agent_core`, `gateway`, `tools`, `tests` and root scripts
 - `tests/run_all.mjs` — frontend logic suites (fold algorithm, WS recovery, UI formulas, time grouping)
 - CI: `.github/workflows/checks.yml` (python job: compileall, ruff, Python suites on a 3.11 / 3.14 matrix; frontend job: vue-tsc, Node suites)

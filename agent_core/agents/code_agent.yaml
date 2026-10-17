@@ -45,7 +45,7 @@ tools:
     - lsp_outgoing_calls
     # User interaction
     - clarify
-    - usernote_write
+    - experience_write
     # Tool search and discovery
     - tool_search
     - list_tools

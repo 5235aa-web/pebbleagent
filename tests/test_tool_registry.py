@@ -41,7 +41,7 @@ EXPECTED = {
     "git_diff", "fetch_url", "browser_navigate", "browser_download",
     "get_env_var", "set_env_var", "get_system_info", "list_processes",
     "kill_process", "todo_write", "todo_read", "clarify",
-    "usernote_write", "list_skills", "load_skill", "enter_plan_mode",
+    "experience_write", "list_skills", "load_skill", "enter_plan_mode",
     "exit_plan_mode", "create_plan", "get_plan", "tool_search", "list_tools",
     "lsp_go_to_definition", "lsp_find_references", "lsp_hover",
     "lsp_document_symbol", "lsp_workspace_symbol", "lsp_go_to_implementation",

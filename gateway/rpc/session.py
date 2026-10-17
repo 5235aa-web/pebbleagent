@@ -315,6 +315,12 @@ def handle(ctx, method):
             if not records:
                 return {"id": rid, "result": {"files": [], "total_files": 0, "total_additions": 0, "total_deletions": 0}}
             actual_project = getattr(manager, 'project_path', project_path)
+            # 每个文件当前可回退的版本数（活跃快照条数）
+            active_counts = {}
+            for r in records:
+                if r.revert_status == 'active':
+                    key = srv._resolve_snapshot_path(r.relative_path, actual_project)
+                    active_counts[key] = active_counts.get(key, 0) + 1
             diff_result = DiffEngine.compute_diff(records, actual_project)
             files_out = []
             total_add = 0
@@ -324,12 +330,14 @@ def handle(ctx, method):
                 del_count = sum(1 for h in ch.get('hunks', []) for l in h.get('lines', []) if l.get('prefix') == '-')
                 total_add += add_count
                 total_del += del_count
+                file_key = srv._resolve_snapshot_path(ch['file'], actual_project)
                 files_out.append({
                 "relative_path": ch['file'],
                 "status": ch['status'],
                 "message": ch.get('message', ''),
                 "added_lines": add_count,
                 "removed_lines": del_count,
+                "active_count": active_counts.get(file_key, 1),
                 })
             # 按路径排序
             files_out.sort(key=lambda f: f['relative_path'])
@@ -380,25 +388,15 @@ def handle(ctx, method):
                 return {"id": rid, "result": {"file": raw_path, "status": "error", "hunks": [], "message": "Snapshot manager not available"}}
             # 使用 manager 实例的 project_path，保证与快照记录一致
             actual_project = getattr(manager, 'project_path', project_path)
-            # 取所有活跃记录，用归一化路径匹配
+            # 取所有活跃记录，只做完整路径相等匹配
             all_records = manager.query_all_active()
-            target_path = srv._norm_path(raw_path)
-            matched = []
-            for r in all_records:
-                nr = srv._norm_path(r.relative_path)
-                na = srv._norm_path(r.absolute_path)
-                if (nr == target_path or na == target_path or
-                    target_path in nr or nr in target_path or
-                    os.path.basename(nr) == os.path.basename(target_path)):
-                    matched.append(r)
+            target_abs = srv._resolve_snapshot_path(raw_path, actual_project)
+            matched = [r for r in all_records if srv._snapshot_record_matches(r, target_abs, actual_project)]
             if not matched:
                 return {"id": rid, "result": {"file": raw_path, "status": "noop", "hunks": [], "message": "No snapshots found for this file"}}
             diff_result = DiffEngine.compute_diff(matched, actual_project)
             for ch in diff_result.get('changes', []):
-                norm_file = srv._norm_path(ch['file'])
-                norm_basename = os.path.basename(norm_file) if norm_file else ''
-                if (norm_file == target_path or target_path in norm_file or
-                        norm_file in target_path or norm_basename == os.path.basename(target_path)):
+                if srv._snapshot_path_equal(ch['file'], target_abs, actual_project):
                     return {"id": rid, "result": ch}
             return {"id": rid, "result": {"file": raw_path, "status": "noop", "hunks": [], "message": "No diff available from compute_diff"}}
         except Exception as e:
@@ -420,28 +418,37 @@ def handle(ctx, method):
             manager = get_snapshot_manager(sid, project_path)
             if not manager:
                 return {"id": rid, "error": {"code": -32000, "message": "Snapshot manager not available"}}
-            all_records = manager.query_all_active()
-            target_path = srv._norm_path(raw_path)
-            records = [r for r in all_records if srv._norm_path(r.relative_path) == target_path or
-            srv._norm_path(r.absolute_path) == target_path or
-            target_path in srv._norm_path(r.relative_path)]
-            target = None
-            for r in records:
-                if r.revert_status == 'active':
-                    target = r
-                    break
-            if not target:
-                return {"id": rid, "result": {"success": False, "message": "已撤销或找不到快照记录"}}
+            actual_project = getattr(manager, 'project_path', project_path)
+            target_abs = srv._resolve_snapshot_path(raw_path, actual_project)
             executor = RevertExecutor(manager)
-            manager.mark_records_as_reverting([target.record_id])
-            result = executor._restore_single_file(target)
-            if result.status == "success":
+            # 同一文件的回退串行执行，避免并发点击时重复恢复同一条记录
+            with manager._file_revert_lock:
+                all_records = manager.query_all_active()
+                records = [r for r in all_records if srv._snapshot_record_matches(r, target_abs, actual_project)]
+                target = None
+                for r in records:
+                    if r.revert_status == 'active':
+                        target = r
+                        break
+                if not target:
+                    return {"id": rid, "result": {"success": False, "message": "已撤销或找不到快照记录"}}
+                manager.mark_records_as_reverting([target.record_id])
+                try:
+                    result = executor._restore_single_file(target)
+                except Exception as restore_error:
+                    manager.mark_records_as_active([target.record_id])
+                    logger.error(f"[Server] session.file_revert restore failed: {restore_error}")
+                    return {"id": rid, "result": {"success": False, "message": f"回退失败: {restore_error}"}}
+                if result.status != "success":
+                    # 恢复失败：把记录放回活跃状态，允许用户重试
+                    manager.mark_records_as_active([target.record_id])
+                    return {"id": rid, "result": {"success": False, "message": result.message}}
                 manager.mark_records_as_reverted([target.record_id], sid + "_manual")
-                # 统计该文件剩余活跃快照数
-                remaining = sum(1 for r in records if r.record_id != target.record_id and r.revert_status == 'active')
+                remaining = sum(
+                    1 for r in manager.query_all_active()
+                    if srv._snapshot_record_matches(r, target_abs, actual_project)
+                )
                 return {"id": rid, "result": {"success": True, "message": result.message, "remaining": remaining}}
-            else:
-                return {"id": rid, "result": {"success": False, "message": result.message}}
         except Exception as e:
             logger.error(f"[Server] session.file_revert failed: {e}")
             return {"id": rid, "error": {"code": -32000, "message": str(e)}}

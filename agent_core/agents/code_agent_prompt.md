@@ -258,20 +258,12 @@ Plan mode is a **plan-only, no-execution** mode. The correct flow is:
 
 ### User interaction
 - `clarify` - Ask the user multiple-choice questions to clarify requirements or get choices
-- `usernote_write` - Read or modify the user note (usernote)
+- `experience_write` - Record a durable lesson in the experience ledger
 
-### User note (usernote)
-usernote is a cross-session persistent notepad for important context, decisions, and to-dos.
+### Experience ledger (experience_write)
+The experience ledger is a cross-session store of lessons: corrections, constraints, preferences, pitfalls, recipes, references. The system automatically detects lessons from each turn and injects the relevant ones into your system prompt under `<experience-ledger>`.
 
-**The note content is automatically injected into your system prompt at the start of every conversation**, so you are always aware of its existence and content.
-
-**File path**: `usernote.json` (read or write always uses this path)
-
-**Rules:**
-1. When the user says "make a note", "remember this", "write it to the note", etc., call the `usernote_write` tool.
-2. When the user asks to modify the note content, call the `usernote_write` tool to update it.
-3. Writing overwrites the entire content, so if only part is changed, first assemble the old content with the new modifications before writing.
-4. Do not guess the note content — obtain it via the `<usernote>` tag.
+**Use `experience_write` when** the user explicitly asks you to remember a lesson or confirms a rule that should survive future sessions. One statement per call, concrete and searchable. `scope` defaults to `project`; use `global` only for rules that apply to every project.
 
 ---
 

@@ -1,31 +1,38 @@
 <script setup lang="ts">import{ref,computed}from'vue';import{useGatewayStore}from'../stores/gateway';import{useConfigStore}from'../stores/config';import type{FileChangeItem,DiffHunk}from'../types/agentChat'
 const g=useGatewayStore();const cfg=useConfigStore();const po=ref(false);const rf=ref<Set<string>>(new Set())
 const ac=computed(()=>g.fileChanges.filter(f=>!f.reverted));const tc=computed(()=>ac.value.length)
+const tv=computed(()=>ac.value.reduce((s,f)=>s+(f.activeCount??1),0))
+const notice=ref<{text:string;kind:'success'|'error'}|null>(null);let noticeTimer:number|null=null
+function showNotice(text:string,kind:'success'|'error'){notice.value={text,kind};if(noticeTimer!==null)window.clearTimeout(noticeTimer);noticeTimer=window.setTimeout(()=>{notice.value=null;noticeTimer=null},kind==='error'?6000:3000)}
+function patchItem(id:string,patch:Partial<FileChangeItem>){g.fileChanges=g.fileChanges.map(f=>f.id===id?{...f,...patch}:f)}
+async function acceptAll(){if(!g.sessionId)return;try{await g.request('session.file_accept',{session_id:g.sessionId});g.fileChanges=[];po.value=false;showNotice('All changes accepted','success')}catch(e){showNotice('Accept failed: '+(e instanceof Error?e.message:String(e)),'error')}}
 function ol(t:string):string{switch(t){case'create':return'NEW';case'delete':return'DEL';case'modify':return'MOD';default:return t.toUpperCase()}}
 function oc(t:string):string{switch(t){case'create':return'var(--success)';case'delete':return'var(--error)';case'modify':return'var(--accent)';default:return'var(--muted)'}}
 async function te(item:FileChangeItem){if(item.expanded){g.fileChanges=g.fileChanges.map(f=>f.id===item.id?{...f,expanded:false}:f);return};g.fileChanges=g.fileChanges.map(f=>f.id===item.id?{...f,expanded:true,loadingDiff:true}:f);try{const r=await g.request<any>('session.file_diff',{session_id:g.sessionId,relative_path:item.relativePath,project_path:cfg.projectPath});if(r?.hunks?.length>0){const ac=r.hunks.reduce((s:number,h:DiffHunk)=>s+h.lines.filter((l:any)=>l.prefix==='+').length,0);const dc=r.hunks.reduce((s:number,h:DiffHunk)=>s+h.lines.filter((l:any)=>l.prefix==='-').length,0);g.fileChanges=g.fileChanges.map(f=>f.id===item.id?{...f,loadingDiff:false,status:r.status,hunks:r.hunks,addedLines:ac,removedLines:dc}:f)}else{g.fileChanges=g.fileChanges.map(f=>f.id===item.id?{...f,loadingDiff:false,status:'error',hunks:[]}:f)}}catch{g.fileChanges=g.fileChanges.map(f=>f.id===item.id?{...f,loadingDiff:false,status:'error',hunks:[]}:f)}}
-async function hr(item:FileChangeItem){rf.value=new Set(rf.value).add(item.id);try{const r=await g.request<any>('session.file_revert',{session_id:g.sessionId,relative_path:item.relativePath});if(r?.success){if(r.remaining===0){g.fileChanges=g.fileChanges.filter(f=>f.id!==item.id)}else{g.fileChanges=g.fileChanges.map(f=>f.id===item.id?{...f,expanded:false,hunks:undefined,addedLines:undefined,removedLines:undefined}:f)}}else{g.fileChanges=g.fileChanges.filter(f=>f.id!==item.id)}}catch{}finally{const nx=new Set(rf.value);nx.delete(item.id);rf.value=nx}}
+async function hr(item:FileChangeItem){if(rf.value.has(item.id))return;rf.value=new Set(rf.value).add(item.id);patchItem(item.id,{revertError:undefined});try{const r=await g.request<any>('session.file_revert',{session_id:g.sessionId,relative_path:item.relativePath});if(r?.success){const remaining=typeof r.remaining==='number'?r.remaining:0;if(remaining<=0){g.fileChanges=g.fileChanges.filter(f=>f.id!==item.id);showNotice('Reverted '+item.relativePath+' to session start','success')}else{patchItem(item.id,{activeCount:remaining,expanded:false,hunks:undefined,addedLines:undefined,removedLines:undefined});showNotice('Reverted 1 step · '+remaining+' version'+(remaining===1?'':'s')+' left','success')}}else{const msg=(r?.message as string)||'Revert failed';patchItem(item.id,{revertError:msg});showNotice('Revert failed: '+msg,'error')}}catch(e){const msg=e instanceof Error?e.message:String(e);patchItem(item.id,{revertError:msg});showNotice('Revert failed: '+msg,'error')}finally{const nx=new Set(rf.value);nx.delete(item.id);rf.value=nx}}
 </script>
 <template>
   <div v-if="tc>0||po" class="file-changes-panel">
     <div class="fc-bar" :class="{'fc-bar-open':po}" @click="po=!po">
       <span class="fc-bar-icon"><svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><polyline :points="po?'6 9 12 15 18 9':'9 18 15 12 9 6'"/></svg></span>
-      <span v-if="tc>0" class="fc-bar-text"><span class="fc-bar-count">{{tc}}</span> files changed</span>
+      <span v-if="tc>0" class="fc-bar-text"><span class="fc-bar-count">{{tc}}</span> files changed<span v-if="tv>tc" class="fc-bar-versions"> · {{tv}} versions</span></span>
       <span v-else class="fc-bar-text fc-bar-text-dim">No file changes</span>
       <template v-if="po&&tc>0"><span class="fc-bar-hint">Click a file to expand the diff; click ↺ to revert</span>
-        <button class="fc-accept-btn" @click.stop="async()=>{if(g.sessionId)try{await g.request('session.file_accept',{session_id:g.sessionId})}catch{};g.fileChanges=[];po=false}"><svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><polyline points="20 6 9 17 4 12"/></svg><span>Accept</span></button>
+        <button class="fc-accept-btn" @click.stop="acceptAll"><svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><polyline points="20 6 9 17 4 12"/></svg><span>Accept</span></button>
       </template>
     </div>
+    <div v-if="notice" class="fc-notice" :class="notice.kind==='error'?'fc-notice-error':'fc-notice-success'">{{notice.text}}</div>
     <div v-if="po" class="fc-list">
       <div v-if="ac.length===0" class="fc-empty">No file changes in this session</div>
       <div v-for="item in ac" :key="item.id" class="fc-item" :class="{'fc-item-expanded':item.expanded}">
         <div class="fc-item-row" @click="te(item)">
           <span class="fc-item-icon"><svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M14 2H6a2 2 0 00-2 2v16a2 2 0 002 2h12a2 2 0 002-2V8z"/><polyline points="14 2 14 8 20 8"/></svg></span>
           <span class="fc-item-path">{{item.relativePath}}</span><span class="fc-item-op" :style="{color:oc(item.operationType)}">{{ol(item.operationType)}}</span>
-          <span v-if="item.addedLines!==undefined||item.removedLines!==undefined" class="fc-item-stats"><span v-if="item.addedLines&&item.addedLines>0" class="fc-stat-add">+{{item.addedLines}}</span><span v-if="item.removedLines&&item.removedLines>0" class="fc-stat-del">-{{item.removedLines}}</span></span>
+          <span v-if="(item.activeCount??1)>1" class="fc-item-versions">{{item.activeCount}} versions</span><span v-if="item.addedLines!==undefined||item.removedLines!==undefined" class="fc-item-stats"><span v-if="item.addedLines&&item.addedLines>0" class="fc-stat-add">+{{item.addedLines}}</span><span v-if="item.removedLines&&item.removedLines>0" class="fc-stat-del">-{{item.removedLines}}</span></span>
           <span class="fc-item-expand-icon"><svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><polyline :points="item.expanded?'6 9 12 15 18 9':'9 18 15 12 9 6'"/></svg></span>
-          <button class="fc-revert-btn" :disabled="rf.has(item.id)" @click="(e:MouseEvent)=>{e.stopPropagation();hr(item)}"><svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><polyline points="1 4 1 10 7 10"/><path d="M3.51 15a9 9 0 1 0 2.13-9.36L1 10"/></svg><span>Revert</span></button>
+          <button class="fc-revert-btn" :disabled="rf.has(item.id)" @click="(e:MouseEvent)=>{e.stopPropagation();hr(item)}"><svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><polyline points="1 4 1 10 7 10"/><path d="M3.51 15a9 9 0 1 0 2.13-9.36L1 10"/></svg><span>{{rf.has(item.id)?'Reverting...':'Revert'}}</span></button>
         </div>
+        <div v-if="item.revertError" class="fc-item-error">{{item.revertError}}</div>
         <div v-if="item.expanded" class="fc-diff">
           <div v-if="item.loadingDiff" class="fc-diff-loading">Loading diff...</div>
           <template v-else-if="item.hunks&&item.hunks.length>0">
@@ -49,7 +56,11 @@ async function hr(item:FileChangeItem){rf.value=new Set(rf.value).add(item.id);t
 .fc-bar-text{font-size:12px;font-weight:500}
 .fc-bar-text-dim{opacity:.5}
 .fc-bar-count{color:var(--accent);font-weight:700}
+.fc-bar-versions{color:var(--muted);font-weight:400}
 .fc-bar-hint{margin-left:auto;font-size:10px;opacity:.4}
+.fc-notice{padding:5px 12px;font-size:10px;border-bottom:1px solid var(--border-subtle)}
+.fc-notice-success{color:var(--success);background:rgba(123,201,107,.08)}
+.fc-notice-error{color:var(--error);background:rgba(239,83,80,.08)}
 .fc-list{max-height:360px;overflow-y:auto;padding:4px 8px 8px}
 .fc-empty{padding:16px;text-align:center;color:var(--muted);font-size:10px;opacity:.6}
 .fc-item{border-radius:4px;margin-bottom:2px;transition:background .12s}
@@ -60,6 +71,8 @@ async function hr(item:FileChangeItem){rf.value=new Set(rf.value).add(item.id);t
 .fc-item-path{flex:1;font-size:11px;color:var(--text);overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
 .fc-item-op{font-size:10px;font-weight:700;flex-shrink:0;letter-spacing:.5px}
 .fc-item-stats{display:flex;gap:4px;flex-shrink:0;font-size:10px;font-weight:600}
+.fc-item-versions{font-size:10px;color:var(--muted);border:1px solid var(--border-subtle);border-radius:8px;padding:0 5px;flex-shrink:0;line-height:1.6}
+.fc-item-error{padding:3px 8px 5px 28px;font-size:10px;color:var(--error);background:rgba(239,83,80,.08);border-radius:0 0 4px 4px;word-break:break-word}
 .fc-stat-add{color:var(--success)}
 .fc-stat-del{color:var(--error)}
 .fc-item-expand-icon{display:flex;align-items:center;color:var(--muted);flex-shrink:0}

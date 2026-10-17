@@ -127,18 +127,35 @@ class WorkspaceToolsMixin:
             return f"Error: {str(e)}"
 
 
-    async def _tool_usernote_write(self, content: str) -> str:
-        """写入用户便签"""
+    async def _tool_experience_write(self, statement: str, kind: str = "preference",
+                                     rationale: str = "", scope: str = "project",
+                                     keywords: list = None, context=None) -> str:
+        """写入一条经验到经验账本（跨会话检索并注入系统提示词）"""
         try:
-            import os as _uos
-            _data_home = _uos.environ.get("PEBBLE_HOME") or _uos.path.join(_uos.path.expanduser("~"), ".pebble")
-            _uos.makedirs(_data_home, exist_ok=True)
-            _un_path = _uos.path.join(_data_home, "usernote.json")
-            with open(_un_path, "w", encoding="utf-8") as _f:
-                from datetime import datetime
-                json.dump({"content": content, "updated_at": datetime.now().isoformat()}, _f, ensure_ascii=False)
-            return f"usernote 已更新 ({len(content)} 字符)"
+            from ..memory import get_ledger
+            from ..memory.ledger import VALID_KINDS
+            text = (statement or "").strip()
+            if not text:
+                return "Error: statement is required"
+            if kind not in VALID_KINDS:
+                return f"Error: kind must be one of {', '.join(VALID_KINDS)}"
+            ledger = get_ledger()
+            ledger.set_project(getattr(context, "project_path", "") or self._current_project_path)
+            agent_type = getattr(context, "agent_name", "") if context else ""
+            entry = ledger.create(
+                kind=kind,
+                statement=text,
+                rationale=(rationale or "").strip(),
+                applies_to={"keywords": [k for k in (keywords or []) if isinstance(k, str)]},
+                confidence=0.8,
+                scope=scope,
+                agent_type=agent_type or None,
+            )
+            if not entry:
+                return "Experience already recorded (duplicate or reinforced)"
+            return f"Recorded experience {entry['id']} ({entry['kind']}, {entry['scope']})"
         except Exception as e:
+            logger.error(f"[ToolExecutor] experience_write error: {e}")
             return f"Error: {str(e)}"
 
 

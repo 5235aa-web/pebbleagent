@@ -20,7 +20,7 @@ os.environ["PEBBLE_HOME"] = TMP
 os.environ["PEBBLE_CONFIG_DIR"] = TMP
 os.environ["PEBBLE_MEMORY_DB"] = os.path.join(TMP, "experience.db")
 
-from agent_core.memory import ExperienceLedger, migrate_legacy  # noqa: E402
+from agent_core.memory import ExperienceLedger, migrate_legacy, get_ledger  # noqa: E402
 from agent_core.memory import signals  # noqa: E402
 
 passed = 0
@@ -159,6 +159,18 @@ def main() -> int:
     check("migration maps kind", migrated and migrated[0]["kind"] == "correction", f"got {migrated}")
     check("migration keeps statement", migrated and "emoji" in migrated[0]["statement"])
     check("migration is one-shot", migrate_legacy(legacy_ledger.db) == 0)
+
+    from types import SimpleNamespace
+    import asyncio
+    from agent_core.tool_executor_impl import AgentToolExecutorImpl
+    tool_project = os.path.join(TMP, "project")
+    executor = AgentToolExecutorImpl(project_path=tool_project)
+    ctx = SimpleNamespace(project_path=tool_project, agent_name="code_agent")
+    tool_result = asyncio.run(executor._tool_experience_write(
+        "Ledger writes must be searchable by keyword", "preference", "", "project", ["ledger"], ctx))
+    check("tool write records entry", "Recorded experience" in tool_result, tool_result)
+    tool_hits = get_ledger().recall("searchable")
+    check("tool write is recallable", any("searchable" in h.get("statement", "") for h in tool_hits), len(tool_hits))
 
     shutil.rmtree(TMP, ignore_errors=True)
     print()

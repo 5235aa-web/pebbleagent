@@ -81,7 +81,19 @@ Agent: receives comments → read_file → edit_file(search_block) → file modi
 Key files: feedbackBridgeContent.ts (inlined CSS/JS), previewBridgeContent.ts (height/capture/theme bridge), comment.ts (Pinia store)
 Backend addition: server.py file.read_text method (project-boundary/whitelist guard)
 Security note: preview runs sandboxed without allow-same-origin — the host and the preview communicate only via postMessage (source-checked); PNG capture executes inside the iframe and returns a dataURL
-Note: the _os variable trap — file.read_text executes before file.read_base64's "import os as _os", so a top-level import os must be used
+Note: file.read_text uses the module-level `os` import; file.read_base64 binds `os` locally as `_os`.
+```
+
+### Path 5: File Snapshot → Single-File Revert
+
+```
+1. Write tool (write_file / edit_file / delete_file / move_file) → SnapshotManager.create_snapshot before execution
+2. FileChangesPanel.vue → session.file_changes → per-file active_count
+3. Revert click → session.file_revert {session_id, relative_path}
+4. gateway/rpc/session.py → normalized absolute path match → newest active record
+5. RevertExecutor._restore_single_file → atomic copy + SHA256 verification
+6. success → mark_records_as_reverted → remaining returned → row shows remaining versions
+7. failure → mark_records_as_active → error message returned → row keeps the record
 ```
 
 ### Debugging Guide: HTML Rendering Issues

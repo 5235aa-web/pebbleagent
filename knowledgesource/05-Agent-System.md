@@ -47,8 +47,8 @@
 
 | File | Function | Tag |
 |------|------|------|
-| snapshot_manager.py | Snapshot manager (**write_result_sha256 column + ALTER migration; record_write_result called after write tools; collect_known_sha256 for revert conflict detection; copy_file resolution**) | 🔴Core |
-| snapshot_executor.py | Snapshot executor | 🔴Core |
+| snapshot_manager.py | Snapshot manager (**write_result_sha256 column + ALTER migration; record_write_result called after write tools; collect_known_sha256 for revert conflict detection; copy_file resolution; `mark_records_as_active` returns a failed revert record to active; `_file_revert_lock` serializes single-file reverts**) | 🔴Core |
+| snapshot_executor.py | Snapshot executor (single-file restore from backup with atomic copy + SHA256 verification; batch restore with conflict policy) | 🔴Core |
 | snapshot_diff.py | Snapshot diff computation | 🟡Aux |
 | snapshot_undo.py | Snapshot undo | 🟡Aux |
 | snapshot_conflict.py | Conflict handling (**current SHA outside the file's known set (all backup SHA ∪ write-result SHA) → external_modification conflict rather than silent overwrite; records without write-result use the will-overwrite behavior**) | 🟡Aux |

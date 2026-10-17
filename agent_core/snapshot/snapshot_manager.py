@@ -123,6 +123,8 @@ class SnapshotManager:
         self._db.execute("PRAGMA journal_mode=WAL")
         self._db.execute("PRAGMA foreign_keys=ON")
         self._db_lock = threading.Lock()
+        # 单文件回退串行锁：查记录、标记、恢复、落状态在同一临界区内完成
+        self._file_revert_lock = threading.Lock()
 
         # 初始化表
         self._init_tables()
@@ -783,6 +785,16 @@ class SnapshotManager:
                    reverted_at = ?, revert_id = ?
                    WHERE record_id = ? AND session_uuid = ?""",
                 (time.time(), revert_id, rid, self.session_uuid)
+            )
+
+    def mark_records_as_active(self, record_ids: List[str]):
+        """把记录恢复为活跃状态（回退失败时回滚 reverting 标记，允许重试）"""
+        for rid in record_ids:
+            self._db_execute(
+                """UPDATE file_snapshots SET revert_status = 'active',
+                   reverted_at = NULL, revert_id = NULL
+                   WHERE record_id = ? AND session_uuid = ?""",
+                (rid, self.session_uuid)
             )
 
     def mark_as_reverting(self, snapshot_ids: List[str]):

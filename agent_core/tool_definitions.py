@@ -1230,17 +1230,36 @@ def get_tools_definition() -> List[Dict[str, Any]]:
         {
             "type": "function",
             "function": {
-                "name": "usernote_write",
-                "description": "读取或修改用户便签 (usernote) 的内容。usernote 是用户用来记录重要上下文、决策、待办事项的便签。调用此工具时会覆盖全部内容。如果不确定当前内容，先读文件。",
+                "name": "experience_write",
+                "description": "写入一条经验到经验账本 (experience ledger)。经验账本跨会话保存，系统会在后续对话中按相关性自动检索并注入。用于用户明确要求记住某个做法、纠正、约束或坑。",
                 "parameters": {
                     "type": "object",
                     "properties": {
-                        "content": {
+                        "statement": {
                             "type": "string",
-                            "description": "便签的完整新内容。会完全替换旧内容。"
+                            "description": "一句话经验结论"
+                        },
+                        "kind": {
+                            "type": "string",
+                            "enum": ["correction", "constraint", "preference", "pitfall", "recipe", "reference"],
+                            "description": "经验类型，默认 preference"
+                        },
+                        "rationale": {
+                            "type": "string",
+                            "description": "为什么（可选）"
+                        },
+                        "scope": {
+                            "type": "string",
+                            "enum": ["project", "global"],
+                            "description": "作用域，默认 project；跨项目通用经验用 global"
+                        },
+                        "keywords": {
+                            "type": "array",
+                            "items": {"type": "string"},
+                            "description": "检索关键词（可选）"
                         }
                     },
-                    "required": ["content"]
+                    "required": ["statement"]
                 }
             }
         },

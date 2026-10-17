@@ -547,9 +547,34 @@ def _save_quick_notes(notes: list) -> None:
         json.dump({"notes": notes, "updated_at": datetime.now().isoformat()}, f, ensure_ascii=False)
 
 
-# ── 辅助：路径归一化（统一正斜杠、去除首尾空格） ──
-def _norm_path(p: str) -> str:
-    return p.strip().replace('\\', '/').lower()
+# ── 辅助：快照路径精确匹配 ──
+# 快照记录的 relative_path 相对项目根，absolute_path 为绝对路径。
+# 匹配只做归一化后的完整路径相等，不做子串或文件名比较，避免 config 与
+# config.json、a/utils.py 与 b/utils.py 这类路径互相命中。
+def _resolve_snapshot_path(p: str, project_path: str = "") -> str:
+    raw = (p or "").strip()
+    if not raw:
+        return ""
+    if not os.path.isabs(raw) and project_path:
+        raw = os.path.join(project_path, raw)
+    try:
+        resolved = os.path.abspath(raw)
+    except (OSError, ValueError):
+        return ""
+    return os.path.normcase(os.path.normpath(resolved)).replace("\\", "/")
+
+
+def _snapshot_path_equal(p: str, target_abs: str, project_path: str = "") -> bool:
+    if not p or not target_abs:
+        return False
+    return _resolve_snapshot_path(p, project_path) == target_abs
+
+
+def _snapshot_record_matches(record, target_abs: str, project_path: str = "") -> bool:
+    return (
+        _snapshot_path_equal(getattr(record, "absolute_path", "") or "", target_abs, project_path)
+        or _snapshot_path_equal(getattr(record, "relative_path", "") or "", target_abs, project_path)
+    )
 
 
 def handle_request(method: str, params: dict, rid: str) -> Optional[dict]:
@@ -676,8 +701,26 @@ def handle_prompt_submit(
                                 args = json.loads(tool_input) if tool_input else {}
                                 file_path = (args.get("file_path") or args.get("path") or args.get("source") or "").replace("\\", "/")
                                 if file_path:
-                                    logger.info(f"[file.change] sid={sid} tool={tool_name} path={file_path!r}")
-                                    write_event("file.change", {"relative_path": file_path, "operation_type": tool_name.replace("_file", ""), "tool_name": tool_name, "tool_id": tool_id})
+                                    # 以快照记录为准取相对路径和可回退版本数，避免工具参数
+                                    # 传绝对路径时前端出现重复行或版本数错误
+                                    rel_path = file_path
+                                    active_count = 0
+                                    try:
+                                        from agent_core.snapshot.snapshot_manager import get_snapshot_manager
+                                        _proj = _session_project_paths.get(sid, str(_PROJECT_ROOT))
+                                        _mgr = get_snapshot_manager(sid, _proj)
+                                        if _mgr:
+                                            _proj = getattr(_mgr, 'project_path', _proj)
+                                            _target = _resolve_snapshot_path(file_path, _proj)
+                                            _recs = [r for r in _mgr.query_all_active()
+                                                     if _snapshot_record_matches(r, _target, _proj)]
+                                            if _recs:
+                                                rel_path = _recs[0].relative_path
+                                                active_count = sum(1 for r in _recs if r.revert_status == 'active')
+                                    except Exception as _se:
+                                        logger.warning(f"[file.change] snapshot lookup failed: {_se}")
+                                    logger.info(f"[file.change] sid={sid} tool={tool_name} path={rel_path!r} versions={active_count}")
+                                    write_event("file.change", {"relative_path": rel_path, "active_count": active_count, "operation_type": tool_name.replace("_file", ""), "tool_name": tool_name, "tool_id": tool_id})
                             except Exception as e:
                                 logger.warning(f"[file.change] failed: {e}")
                 elif event_type == "todo_update":

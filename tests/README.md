@@ -73,6 +73,7 @@ The repository also has three billing/holiday regression scripts at the project 
 | `test_grep_tool_async.py` | GrepTool async subprocess path (asyncio import, real search) |
 | `test_tool_registry_autoregister.py` | module scan registration (BaseTool subclasses, SimpleTool excluded) |
 | `test_revert_batch.py` | `restore_batch` conflict policy (abort / skip_conflicts) |
+| `test_revert_single.py` | single-file revert: exact path matching, failure rollback, remaining count |
 
 ## Design conventions
 
