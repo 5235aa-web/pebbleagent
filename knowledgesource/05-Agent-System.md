@@ -66,6 +66,14 @@ Each agent YAML defines: tools permission (**the `enforce` switch can force it: 
 
 ⚙️ Current state: **chat_agent has enforce=true (only read_file / search_files / edit_file / write_file; MCP tools are filtered too)**; the allowed lists of code/analysis/article remain declarative (enforce off, full injection unaffected).
 
+### Prompt structure and its contract test
+
+`code_agent_prompt.md` is the code agent's full system prompt. Sections in file order: CKB mechanism (detection, on-demand reading, build-mode constraints, build exemptions, MCP fallback, incremental sync), tool restriction order (`powershell` / `execute_code` as last resort, gated on three sufficiency conditions), supreme principle, tool-name rules, language policy (reply in the user's language), life-or-death rules (tool calling, tool-name integrity, output-execution consistency, iteration completion, truthfulness), general rules (file reading, failure-retry with backoff and a 60s budget, file operations, code editing), available tools, core responsibilities, general workflow (task list, clarification, review, code writing, debugging phases, LSP checks with a compile-based fallback), general techniques, output specifications.
+
+Severity wording: 13 headings carry the `[MUST]` suffix — CKB build-mode constraints, supreme principle, output-execution consistency, truthfulness, general rules, task-list updates, requirement clarification, requirement review, code quality, handoff document, HTML comment loop, debugging process, LSP checks. No other severity vocabulary exists: `(must)`, `(mandatory rule)`, `(important!)`, and `(violation = failure)` do not occur anywhere in the file.
+
+`tests/test_code_agent_prompt_contract.py` pins the prompt to the runtime: required sections present, every tool named in the prompt granted by the YAML allowlist or owned by an MCP server in `.mcp.json`, no ghost entry in the allowlist, no forced single-language rule, no ambiguous severity marker, the `[MUST]` heading count fixed at 13, and the CKB exemptions / MCP fallback / retry budget still documented. The tool universe is `agent_core/tool_definitions.py` ∪ static `name = "..."` declarations under `tools/` ∪ the runtime `ToolRegistry`; the static scan is what keeps the check alive under the CI dependency set, which omits the heavy optional imports.
+
 ### Notes
 
 5. **Single-agent architecture — there is no sub-agent orchestration.** Agent switching is handled by the `_current_agent` global in server.py; there is no multi-agent routing or delegation layer
