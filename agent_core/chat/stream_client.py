@@ -73,6 +73,7 @@ class StreamConsumer:
         self.finish_reason: Optional[str] = None
         self.tool_calls_chunks: Dict[int, dict] = {}
         self.interrupted = False
+        self.usage = None
         self.chunk_count = 0
         self.tool_call_chunk_count = 0
         self._chunk_type: Optional[str] = None
@@ -94,6 +95,9 @@ class StreamConsumer:
         try:
             async for chunk in stream:
                 self.chunk_count += 1
+                chunk_usage = getattr(chunk, "usage", None)
+                if chunk_usage:
+                    self.usage = chunk_usage
                 if self.cancel_event.is_set():
                     logger.info(f"[Stream] Cancel detected at chunk #{self.chunk_count}")
                     self.interrupted = True

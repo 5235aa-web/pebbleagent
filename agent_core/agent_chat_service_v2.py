@@ -1117,13 +1117,13 @@ class AgentChatServiceV2:
                     break
                 
                 # ========== 捕获 usage 并计费（仅使用 API 原始 token 值） ==========
-                if hasattr(chunk, 'usage') and chunk.usage:
+                if consumer.usage:
                     try:
-                        cost_info = self._calculate_cost(use_model, chunk.usage)
+                        cost_info = self._calculate_cost(use_model, consumer.usage)
                         if cost_info:
                             session_usage = self._accumulate_cost(conversation_uuid, cost_info, model_name=use_model)
                             # 环显示用完整 prompt_tokens（已含缓存），面板用 cost_info.input_tokens（非缓存输入）
-                            latest_input = getattr(chunk.usage, 'prompt_tokens', 0)
+                            latest_input = getattr(consumer.usage, 'prompt_tokens', 0)
                             
                             yield {
                                 "type": "usage",

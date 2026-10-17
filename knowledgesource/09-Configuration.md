@@ -20,7 +20,7 @@
 | pebble-backend.spec | PyInstaller packaging config (entry run_backend.py; datas bundle skills / agent_core/agents / knowledgesource / config JSONs; output dist/pebble-backend.exe) | build (Tauri sidecar chain, see below) | 📦Build |
 | run_backend.py | Backend entry point (→ gateway/ws_server.py) | user / Tauri sidecar | 🟡Script |
 | skills_loader.py | Skills loader (skills/ directory scan; YAML frontmatter description, single-line fallback for non-standard files) | list_skills / load_skill / get_skill_names | 🟡Aux |
-| agent_chat.db | Frozen DB (unused); the current message DB is {PEBBLE_HOME}/agent_chat.db (e.g. %USERPROFILE%\.pebble\) | - | 🗑️Deprecated |
+| agent_chat.db | Unused DB file; the current message DB is {PEBBLE_HOME}/agent_chat.db (e.g. %USERPROFILE%\.pebble\) | - | 🗑️Deprecated |
 
 ### Tauri Desktop Shell & Packaging Pipeline (ui-gui-vue3/src-tauri/)
 
@@ -50,7 +50,7 @@ Shell = Tauri 2 (Rust), productName "pebble-agent", identifier com.pebble.agent.
 
 ### .pebble/ Auxiliary Directory (diagnostic tools & verification scripts, kept by user decision)
 
-`.pebble/` is the in-project runtime-data directory (snapshots / truncation archives / _tmp_* investigation artifacts). `_tmp_verify/` accumulated diagnostic tools and verification scripts from past investigations and fixes — **low frequency, zero cost, high diagnostic value; the user has confirmed keeping them all** (reuse directly for future troubleshooting, do not clean up):
+`.pebble/` is the in-project runtime-data directory (snapshots / truncation archives / _tmp_* investigation artifacts). `_tmp_verify/` holds diagnostic tools and verification scripts — **low frequency, zero cost, high diagnostic value; kept by user decision** (reuse for troubleshooting, do not clean up):
 
 | File | Purpose | Tag |
 |------|------|------|
@@ -58,7 +58,7 @@ Shell = Tauri 2 (Rust), productName "pebble-agent", identifier com.pebble.agent.
 | _tmp_verify/measure_mem.py | WebView2 memory-growth measurement (90s window; filters msedgewebview2 processes by com.pebble.agent, reports per-PID delta and MB/min growth) | 🟡Diag |
 | _tmp_verify/inspect_db.py | Quick agent_chat.db inspection (table schema + conversation data-volume ranking) | 🟡Diag |
 | _tmp_verify/storage_perf.html | localStorage performance test page (read/parse/write timings for a ~7.8M-char conversation cache; diagnosing write jank) | 🟡Diag |
-| _tmp_verify/verify_*.mjs / verify_*.py | Regression scripts from past fixes (rendering performance / WS recovery / thinking toggle / price panel / input resize / jump-folding / agent tool whitelist etc., re-runnable) | 🧪Verify |
+| _tmp_verify/verify_*.mjs / verify_*.py | Regression scripts (rendering performance / WS recovery / thinking toggle / price panel / input resize / jump-folding / agent tool whitelist etc., re-runnable) | 🧪Verify |
 | _tmp_verify/verify_security_fixes.py | Security regression script (isolated PEBBLE_HOME): WS token/auth helpers / payload limits / file.* path guard / PathBoundaryChecker / unknown-tool mapping / sync permission evaluation / trust granularity / audit checksum / enforcer end-to-end | 🧪Verify |
 | _tmp_verify/check_*.py / investigate_*.py / extract_*.py / *_out.txt / real_messages.json | Investigation helpers and output snapshots (billing checks / interruption probes / event extraction / real message samples) | 🟡Investigation |
 

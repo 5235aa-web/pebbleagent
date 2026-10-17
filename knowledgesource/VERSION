@@ -10,7 +10,7 @@
 
 ## Agent runtime
 
-- Streaming chat loop with tool orchestration: parallel read-only batches, serial side-effect batches, concurrency semaphore, cancellation
+- Streaming chat loop with tool orchestration: parallel read-only batches, serial side-effect batches, concurrency semaphore, cancellation; per-round usage accounting from the stream consumer's captured usage chunk
 - Context assembly: system prompt + project path + user note + recalled experience entries + agent note + skills; token accounting via `context_compressor.estimate_tokens` (tiktoken with CN/EN ratio fallback)
 - Stream-end detection: finish_reason recording, suspicious-end auto-retry (once per turn), graceful completion
 - Experience ledger: rule-based turn observation (correction / constraint / preference / pitfall), FTS5 recall with tool, path, kind, confidence, recency and hit weighting, dedupe + supersede lifecycle, per-agent notes; SQLite at `{PEBBLE_HOME:-~/.pebble}/experience.db`
@@ -66,6 +66,6 @@
 
 ## Verification
 
-- `tests/run_all.py` — Python suites (tool policy, orchestration, permissions, permission chain e2e, audit, snapshots, compaction, pricing, skills, experience ledger, RPC smoke, guard scope, transcript manager, MCP registry, LSP framing)
+- `tests/run_all.py` — Python suites (tool policy, orchestration, permissions, permission chain e2e, audit, snapshots, compaction, pricing, skills, experience ledger, RPC smoke, guard scope, transcript manager, MCP registry, LSP framing, chat_stream e2e)
 - `tests/run_all.mjs` — frontend logic suites (fold algorithm, WS recovery, UI formulas, time grouping)
 - CI: `.github/workflows/checks.yml` (compileall, Python suites, vue-tsc)

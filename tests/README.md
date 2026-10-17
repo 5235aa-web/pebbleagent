@@ -53,6 +53,11 @@ The repository also has three billing/holiday regression scripts at the project 
 | `test_clarify_dual.py` | `clarify` dual-channel answers + guards |
 | `test_log_persistence.py` | log setup idempotency + suspicious stream-end detection |
 
+### Chat loop
+| Test | Covers |
+| --- | --- |
+| `test_chat_stream_e2e.py` | real `chat_stream` loop against a fake client: single turn, tool round, cancel, suspicious retry, usage accounting |
+
 ### Storage, guards & protocols
 | Test | Covers |
 | --- | --- |
