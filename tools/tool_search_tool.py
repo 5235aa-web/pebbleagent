@@ -3,8 +3,8 @@ ToolSearch工具 - 工具搜索
 
 提供工具搜索和发现功能
 """
-from .base_tool import BaseTool, ToolResult, ToolStatus
-from typing import Dict, Any, Optional, List
+from .base_tool import BaseTool
+from typing import Dict, Any, Optional
 import logging
 import re
 

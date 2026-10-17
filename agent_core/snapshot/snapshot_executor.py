@@ -12,20 +12,16 @@ snapshot_executor.py — SSE 流式回退执行引擎
 
 from __future__ import annotations
 
-import asyncio
 import json
 import logging
 import os
 import time
-from typing import Optional, Dict, List, Any, AsyncGenerator
+from typing import Dict, List, Any, AsyncGenerator
 
 from .snapshot_types import (
     FileSnapshotRecord,
     RevertOperation,
     RevertFileResult,
-    FileConflict,
-    REVERT_STATUS_VALUES,
-    REVERT_STRATEGY_VALUES,
 )
 from .snapshot_manager import SnapshotManager
 from .snapshot_conflict import ConflictDetector
@@ -239,6 +235,39 @@ class RevertExecutor:
                 })
 
     # ── 阶段一: 验证 ────────────────────────────────────────────
+
+    def restore_batch(self, message_id: int, conflict_strategy: str = "abort") -> Dict[str, Any]:
+        """同步批量回退（session.file_revert_all）：按策略处理冲突。"""
+        records = self._manager.query_by_message(message_id)
+        if not records:
+            return {"success": False, "message": "No snapshots found for this message",
+                    "restored": 0, "skipped": 0, "failed": 0}
+        deduped = self._deduplicate_files(records)
+        report = ConflictDetector(self._manager).detect(message_id)
+        conflict_paths = {
+            c.get("relative_path", c.get("file", ""))
+            for c in report.get("conflicts", [])
+        }
+        if report.get("has_conflicts") and conflict_strategy == "abort":
+            return {"success": False,
+                    "message": f"{report.get('conflict_count', len(conflict_paths))} file conflicts detected, aborted",
+                    "conflicts": report.get("conflicts", []),
+                    "restored": 0, "skipped": 0, "failed": 0}
+        restored = skipped = failed = 0
+        for record in deduped:
+            if record.relative_path in conflict_paths and conflict_strategy == "skip_conflicts":
+                skipped += 1
+                continue
+            self._manager.mark_records_as_reverting([record.record_id])
+            res = self._restore_single_file(record)
+            if res.status == "success":
+                self._manager.mark_records_as_reverted([record.record_id], self._manager.session_uuid + "_batch")
+                restored += 1
+            else:
+                failed += 1
+        return {"success": failed == 0, "restored": restored, "skipped": skipped,
+                "failed": failed,
+                "message": f"Restored {restored} files, skipped {skipped}, failed {failed}"}
 
     def _validate_and_collect(
         self, message_id: int, operation: RevertOperation

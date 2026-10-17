@@ -24,24 +24,12 @@ import subprocess
 import sys
 import threading
 import time
-import uuid
-from dataclasses import dataclass, field
 from typing import Dict, List, Optional, Any, Tuple, Union
 
 from .mcp_types import (
-    ConfigScope,
-    TransportType,
-    McpStdioServerConfig,
-    McpSSEServerConfig,
-    McpHTTPServerConfig,
-    McpWebSocketServerConfig,
-    McpServerConfig,
     ScopedMcpServerConfig,
     ConnectedMCPServer,
     FailedMCPServer,
-    NeedsAuthMCPServer,
-    PendingMCPServer,
-    DisabledMCPServer,
     MCPServerConnection,
     ServerResource,
     SerializedMCPTool,
@@ -407,7 +395,7 @@ class StdioTransport:
         except asyncio.TimeoutError:
             self._pending_requests.pop(request_id, None)
             raise
-        except Exception as e:
+        except Exception:
             self._pending_requests.pop(request_id, None)
             raise
         finally:
@@ -599,7 +587,7 @@ class HttpTransport:
                 self.url,
                 json=notification,
                 timeout=aiohttp.ClientTimeout(total=10)
-            ) as response:
+            ):
                 pass  # 通知不关心响应
         except Exception as e:
             logger.debug(f"[MCP HTTP] Notification failed: {e}")
@@ -774,7 +762,7 @@ class McpClient:
     async def list_tools(self) -> List[SerializedMCPTool]:
         """获取工具列表"""
         if not self._transport:
-            logger.debug(f"[MCP] list_tools skipped: no transport")
+            logger.debug("[MCP] list_tools skipped: no transport")
             return []
         # 只要服务器连接成功，就尝试获取工具（不完全依赖 capabilities 声明）
         # 因为有些 MCP 服务器声明 "tools": {} 但实际有工具

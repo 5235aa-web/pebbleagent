@@ -34,7 +34,6 @@ def main() -> int:
             failed += 1
             print(f"[FAIL] {name} {detail}")
 
-    import agent_core.tool_executor_impl as tei
     from agent_core.tool_executor_impl import (
         _sanitize_download_filename,
         AgentToolExecutorImpl,

@@ -9,14 +9,10 @@ snapshot_cleanup.py — 磁盘空间管理与过期清理
 
 from __future__ import annotations
 
-import asyncio
 import logging
 import os
 import shutil
-import time
-from typing import Optional
 
-from .snapshot_types import FileSnapshotRecord
 from .snapshot_manager import SnapshotManager
 
 logger = logging.getLogger(__name__)

@@ -4,7 +4,7 @@
 提供多选题询问用户功能
 支持用户自定义输入回答
 """
-from .base_tool import BaseTool, ToolResult, ToolStatus
+from .base_tool import BaseTool
 from typing import Dict, Any, Optional, List
 from dataclasses import dataclass, field
 import logging

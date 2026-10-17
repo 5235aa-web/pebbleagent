@@ -1,6 +1,5 @@
 """Session, project-scoped file, and snapshot RPCs."""
 
-import asyncio
 import logging
 import os
 import time
@@ -464,32 +463,7 @@ def handle(ctx, method):
             if not manager:
                 return {"id": rid, "error": {"code": -32000, "message": "Snapshot manager not available"}}
             executor = RevertExecutor(manager)
-            # 直接执行回退（同步模式）
-            records = manager.query_by_message(message_id)
-            if not records:
-                return {"id": rid, "result": {"success": False, "message": "No snapshots found for this message"}}
-            # 去重
-            seen = {}
-            for r in records:
-                if r.relative_path not in seen:
-                    seen[r.relative_path] = r
-            unique = list(seen.values())
-            restored = 0
-            failed = 0
-            for record in unique:
-                manager.mark_records_as_reverting([record.record_id])
-                res = executor._restore_single_file(record)
-                if res.status == "success":
-                    manager.mark_records_as_reverted([record.record_id], sid + "_batch")
-                    restored += 1
-                else:
-                    failed += 1
-            return {"id": rid, "result": {
-            "success": failed == 0,
-            "restored": restored,
-            "failed": failed,
-            "message": f"Restored {restored} files, {failed} failed"
-            }}
+            return {"id": rid, "result": executor.restore_batch(message_id, conflict_strategy)}
         except Exception as e:
             logger.error(f"[Server] session.file_revert_all failed: {e}")
             return {"id": rid, "error": {"code": -32000, "message": str(e)}}

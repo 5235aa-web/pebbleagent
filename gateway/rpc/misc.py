@@ -1,7 +1,6 @@
 """Agent, note, message, export, and completion RPCs."""
 
 import logging
-import uuid
 
 logger = logging.getLogger(__name__)
 
@@ -63,7 +62,7 @@ def handle(ctx, method):
     if method == "command.dispatch":
         name = params.get("name", "")
         if name == "model":
-            return {"id": rid, "result": {"type": "exec", "output": f"use /model to open config panel"}}
+            return {"id": rid, "result": {"type": "exec", "output": "use /model to open config panel"}}
         return {"id": rid, "result": {"type": "exec", "output": f"unknown command: {name}"}}
 
     if method == "agent.list":

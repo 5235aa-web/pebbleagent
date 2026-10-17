@@ -1,31 +1,13 @@
 """Todo, notes, questions, plans, skills and tool discovery."""
 
 import asyncio
-import base64
 import json
 import logging
-import os
 import re
-import shutil
-import signal
-import subprocess
-import sys
-import time
 import uuid
-from pathlib import Path
-from typing import Any, Dict, List, Optional, Tuple
+from typing import Any, Dict, List
 
-import httpx
 
-from ..truncation_manager import truncate_output
-from ..code_network_guardV2 import (
-    scan_code_for_scraping_behavior,
-    get_rate_limiter,
-    get_path_depth_guard,
-    get_download_guard,
-    reset_all_guards,
-)
-from ..code_destructive_guard import scan_code_for_destructive_behavior
 
 logger = logging.getLogger(__name__)
 
@@ -203,7 +185,7 @@ class WorkspaceToolsMixin:
     async def _tool_enter_plan_mode(self) -> str:
         """进入计划模式"""
         try:
-            from tools.plan_mode_tool import PlanModeManager, PlanMode
+            from tools.plan_mode_tool import PlanModeManager
             
             result = PlanModeManager.enter_plan_mode()
             return json.dumps(result, ensure_ascii=False, indent=2)
@@ -296,7 +278,6 @@ class WorkspaceToolsMixin:
         if not query:
             return "Error: No query provided"
         
-        import re
         
         try:
             from tools.tool_registry import ToolRegistry

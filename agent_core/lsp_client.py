@@ -24,11 +24,9 @@ import subprocess
 import sys
 import threading
 import time
-import uuid
 from dataclasses import dataclass, field
-from pathlib import Path
 from typing import (
-    Any, Callable, Coroutine, Dict, List, Optional, Set, Tuple, Union,
+    Any, Callable, Dict, List, Optional,
 )
 from urllib.parse import quote, unquote
 
@@ -395,7 +393,7 @@ class LspMessageReader:
                     key, value = line_str.split(':', 1)
                     headers[key.strip().lower()] = value.strip()
             except UnicodeDecodeError:
-                logger.warning(f"[LspReader] Failed to decode header line")
+                logger.warning("[LspReader] Failed to decode header line")
         
         # 获取 Content-Length
         content_length_str = headers.get('content-length', '0')
@@ -453,8 +451,6 @@ def find_available_lsp_server() -> Optional[Dict[str, Any]]:
                 return npx_candidate
         
         elif server_type == "python":
-            check_cmd = candidate.get("check_command", [])
-            
             if shutil.which(command_name):
                 logger.info(f"[LspDiscovery] Found LSP server: {display_name} at {shutil.which(command_name)}")
                 return candidate

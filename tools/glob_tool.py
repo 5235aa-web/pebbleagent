@@ -3,7 +3,7 @@ Glob工具 - 文件名模式匹配
 
 提供文件名模式匹配功能
 """
-from .base_tool import BaseTool, ToolResult, ToolStatus
+from .base_tool import BaseTool
 from typing import Dict, Any, Optional, List
 import logging
 import os

@@ -4,6 +4,7 @@
 
 Run: python tests/test_mcp_registry.py   (exit 0 = pass)
 """
+import asyncio
 import os
 import sys
 
@@ -14,6 +15,7 @@ sys.stdout.reconfigure(encoding="utf-8", errors="replace")
 
 from agent_core.mcp.mcp_client import parse_mcp_tool_name
 from agent_core.mcp.mcp_manager import get_mcp_manager
+from agent_core.tool_impl.mcp_bridge import McpToolsMixin
 
 passed = 0
 failed = 0
@@ -46,6 +48,12 @@ def main() -> int:
     check("state tools list", isinstance(state.tools, list), type(state.tools).__name__)
     check("state resources dict", isinstance(state.resources, dict), type(state.resources).__name__)
     check("all tools openai shape", isinstance(mgr.get_all_tools(), list))
+
+    class _Dummy(McpToolsMixin):
+        pass
+
+    res = asyncio.run(_Dummy()._execute_mcp_tool("mcp__none__server", {}))
+    check("mcp execute resolves factory", "not defined" not in str(res).lower(), str(res)[:120])
 
     print(f"\nRESULT: PASS={passed} FAIL={failed}")
     return 0 if failed == 0 else 1

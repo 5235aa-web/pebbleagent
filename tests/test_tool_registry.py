@@ -7,7 +7,6 @@ reachable, and the legacy dispatch surface must stay complete.
 
 Run: python tests/test_tool_registry.py   (exit 0 = pass)
 """
-import asyncio
 import inspect
 import os
 import sys

@@ -3,7 +3,7 @@ Jupyter Notebook 编辑工具
 
 编辑 .ipynb 文件中的单元格
 """
-from .base_tool import BaseTool, ToolResult, ToolStatus
+from .base_tool import BaseTool
 from typing import Dict, Any, Optional, List
 import logging
 import json
@@ -183,7 +183,7 @@ class NotebookEditTool(BaseTool[Dict[str, Any], str]):
     
     def _delete_cell(self, notebook: dict, cells: List, cell_index: int, notebook_path: str) -> str:
         """删除单元格"""
-        deleted_cell = cells.pop(cell_index)
+        cells.pop(cell_index)
         self._save_notebook(notebook, notebook_path)
         return f"Deleted cell {cell_index} from {notebook_path}"
     

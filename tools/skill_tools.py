@@ -3,8 +3,8 @@
 
 提供技能加载和列表功能
 """
-from .base_tool import BaseTool, ToolResult, ToolStatus
-from typing import Dict, Any, Optional
+from .base_tool import BaseTool
+from typing import Dict, Any
 import logging
 
 logger = logging.getLogger(__name__)

@@ -19,16 +19,12 @@ import logging
 import os
 import shutil
 import sys
-import time
 from typing import Dict, List, Optional, Any, Callable
-from collections import defaultdict
 
 from .mcp_types import (
-    ConfigScope,
     MCPServerConnection,
     ConnectedMCPServer,
     FailedMCPServer,
-    NeedsAuthMCPServer,
     PendingMCPServer,
     DisabledMCPServer,
     ScopedMcpServerConfig,
@@ -37,11 +33,9 @@ from .mcp_types import (
     ServerResource,
     MCPCliState,
     is_local_mcp_server,
-    is_remote_mcp_server,
 )
 from .mcp_config import (
     get_mcp_config_manager,
-    get_all_mcp_configs,
     is_mcp_server_disabled,
     set_mcp_server_enabled,
 )
@@ -51,8 +45,6 @@ from .mcp_client import (
     fetch_tools_for_client,
     fetch_resources_for_client,
     fetch_commands_for_client,
-    get_mcp_tools_commands_and_resources,
-    build_mcp_tool_name,
 )
 
 logger = logging.getLogger(__name__)

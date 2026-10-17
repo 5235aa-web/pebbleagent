@@ -4,13 +4,12 @@
 提供任务列表管理功能
 支持实时事件推送到前端
 """
-from .base_tool import BaseTool, ToolResult, ToolStatus
+from .base_tool import BaseTool
 from typing import Dict, Any, Optional, List, Callable
 from dataclasses import dataclass, field
 from enum import Enum
 import logging
 import time
-import json
 
 logger = logging.getLogger(__name__)
 

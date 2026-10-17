@@ -29,14 +29,12 @@ from copy import deepcopy
 
 from .mcp_types import (
     ConfigScope,
-    TransportType,
     McpStdioServerConfig,
     McpSSEServerConfig,
     McpHTTPServerConfig,
     McpWebSocketServerConfig,
     McpServerConfig,
     ScopedMcpServerConfig,
-    McpJsonConfig,
     get_config_type,
 )
 
@@ -392,7 +390,7 @@ class McpConfigManager:
                         )
                     elif errors:
                         logger.warning(f"Invalid local MCP config '{name}': {errors}")
-        except Exception as e:
+        except Exception:
             pass  # 本地配置不存在是正常的
         
         return servers

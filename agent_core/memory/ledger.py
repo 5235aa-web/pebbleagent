@@ -6,7 +6,7 @@ import json
 import logging
 import time
 import uuid
-from typing import Any, Dict, Iterable, List, Optional, Sequence
+from typing import Any, Dict, List, Optional, Sequence
 
 from . import lifecycle, recall as recall_mod, signals
 from .prompt import render_agent_note, render_entries

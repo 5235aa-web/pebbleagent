@@ -3,13 +3,12 @@ PlanMode工具 - 计划模式管理
 
 提供计划模式（进入/退出/创建/查看计划）
 """
-from .base_tool import BaseTool, ToolResult, ToolStatus
+from .base_tool import BaseTool
 from typing import Dict, Any, Optional, List
 from dataclasses import dataclass, field
 from enum import Enum
 import logging
 import time
-import os
 
 logger = logging.getLogger(__name__)
 

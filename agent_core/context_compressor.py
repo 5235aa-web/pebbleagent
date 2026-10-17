@@ -13,19 +13,15 @@ import logging
 import re
 import uuid
 import json
-import os
 import time
-from typing import List, Dict, Any, Optional, Tuple, Set, Callable
+from typing import List, Dict, Any, Optional, Tuple, Set
 from dataclasses import dataclass, field
 from enum import Enum
 from datetime import datetime
-import copy
 
 # 导入 Transcript 管理器
 from .transcript_manager import (
     get_transcript_manager,
-    get_transcript_path,
-    TranscriptManager,
 )
 
 logger = logging.getLogger(__name__)

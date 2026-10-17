@@ -10,9 +10,6 @@ MCP Integration - MCP 与现有系统的集成
 """
 
 import asyncio
-import json
-import asyncio
-import json
 import logging
 import time
 from typing import Dict, List, Any, Optional
@@ -24,9 +21,7 @@ from .mcp_client import (
     ensure_connected_client,
 )
 from .mcp_types import (
-    ConnectedMCPServer,
     SerializedMCPTool,
-    MCPServerConnection,
 )
 
 logger = logging.getLogger(__name__)
@@ -195,6 +190,8 @@ class McpToolExecutorFactory:
             alt = server_name.replace('_', '-')
             if alt != server_name:
                 server = self._manager.get_connected_client(alt)
+        if not server:
+            return f"Error: MCP server '{server_name}' is not connected"
         
         try:
             # 确保连接

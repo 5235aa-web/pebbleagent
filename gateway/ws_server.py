@@ -13,13 +13,10 @@ import os
 import secrets
 import sys
 import threading
-import time
-import uuid
 from typing import Any, Optional
 from urllib.parse import parse_qs, urlparse
 
 import websockets
-from websockets.server import WebSocketServer
 
 sys.path.insert(0, os.path.join(os.path.dirname(__file__), ".."))
 

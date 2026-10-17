@@ -54,6 +54,7 @@
 ## Configuration
 
 - `requirements.txt` — Python 3.11+ (numpy>=2.4 floor; dev environment 3.14), core / optional / skills / build groups
+- `ruff.toml` — static analysis gate (rules F + E9); CI installs ruff 0.17.1 and runs it after compileall
 - `llm_providers.json` — providers, keys, models, reasoning effort
 - `permission_rules.json` / `path_whitelist.json` — permission policy
 - `model_pricing.json` / `cn_holidays.json` — billing table with peak/off-peak tiers and holiday data (hot reload)
@@ -66,6 +67,7 @@
 
 ## Verification
 
-- `tests/run_all.py` — Python suites (tool policy, orchestration, permissions, permission chain e2e, audit, snapshots, compaction, pricing, skills, experience ledger, RPC smoke, guard scope, transcript manager, MCP registry, LSP framing, chat_stream e2e)
+- `tests/run_all.py` — Python suites (tool policy, orchestration, permissions, permission chain e2e, audit, snapshots, compaction, pricing, skills, experience ledger, RPC smoke, guard scope, transcript manager, MCP registry, LSP framing, chat_stream e2e, gateway facade, grep tool async, tool registry autoregister, revert batch)
+- `ruff check` — static analysis gate (F + E9) over `agent_core`, `gateway`, `tools`, `tests` and root scripts
 - `tests/run_all.mjs` — frontend logic suites (fold algorithm, WS recovery, UI formulas, time grouping)
 - CI: `.github/workflows/checks.yml` (compileall, Python suites, vue-tsc)

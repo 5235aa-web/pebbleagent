@@ -3,11 +3,10 @@
 
 提供代码执行能力，支持多种编程语言
 """
-from .base_tool import BaseTool, ToolResult, ToolStatus
+from .base_tool import BaseTool
 from typing import Dict, Any, Optional
 import logging
 import asyncio
-import subprocess
 import tempfile
 import os
 import sys

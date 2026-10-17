@@ -17,10 +17,9 @@ import asyncio
 import json
 import time
 import uuid
-from dataclasses import dataclass, field
+from dataclasses import dataclass
 from typing import (
-    List, Dict, Any, Optional, AsyncGenerator, 
-    Callable, Awaitable, Tuple
+    List, Dict, Any, Optional, AsyncGenerator
 )
 from abc import ABC, abstractmethod
 import logging
@@ -31,9 +30,7 @@ from .query_state_machine import (
     ToolExecutionContext,
 )
 from .tool_concurrency import (
-    is_concurrency_safe,
     partition_tool_calls,
-    ToolCallBatch,
     get_max_concurrency,
 )
 

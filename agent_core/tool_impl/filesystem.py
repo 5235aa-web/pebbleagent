@@ -1,31 +1,17 @@
 """Filesystem, search and repository tools."""
 
 import asyncio
-import base64
 import json
 import logging
 import os
 import re
 import shutil
-import signal
 import subprocess
-import sys
 import time
-import uuid
-from pathlib import Path
-from typing import Any, Dict, List, Optional, Tuple
+from typing import List
 
-import httpx
 
 from ..truncation_manager import truncate_output
-from ..code_network_guardV2 import (
-    scan_code_for_scraping_behavior,
-    get_rate_limiter,
-    get_path_depth_guard,
-    get_download_guard,
-    reset_all_guards,
-)
-from ..code_destructive_guard import scan_code_for_destructive_behavior
 
 logger = logging.getLogger(__name__)
 
@@ -162,7 +148,7 @@ class FileToolsMixin:
         if is_sensitive:
             audit_logger = self._enforcer._get_audit_logger()
             if audit_logger:
-                from gateway.permission_audit import AuditEvent, AuditEventType, AuditDecisionSource
+                from gateway.permission_audit import AuditEvent, AuditEventType
                 audit_logger.log_event(
                     AuditEvent(
                         event_type=AuditEventType.PERMISSION_CHECK.value,
@@ -304,7 +290,6 @@ class FileToolsMixin:
                     return "Error: line_number required for replace"
                 if content is None:
                     return "Error: content required for replace"
-                old_content = lines[line_number - 1].rstrip('\n') if line_number - 1 < len(lines) else "(空)"
                 if end_line:
                     lines[line_number - 1:end_line] = [content + '\n']
                     description = f"替换第 {line_number}-{end_line} 行"
@@ -693,7 +678,6 @@ class FileToolsMixin:
         if not path:
             return "Error: No path provided"
         
-        import shutil
         
         resolved_path = self._resolve_path(path)
         
@@ -719,7 +703,6 @@ class FileToolsMixin:
         if not source or not destination:
             return "Error: Source and destination paths required"
         
-        import shutil
         
         resolved_source = self._resolve_path(source)
         resolved_destination = self._resolve_path(destination)
@@ -742,7 +725,6 @@ class FileToolsMixin:
         if not source or not destination:
             return "Error: Source and destination paths required"
         
-        import shutil
         
         resolved_source = self._resolve_path(source)
         resolved_destination = self._resolve_path(destination)
@@ -1025,7 +1007,6 @@ class FileToolsMixin:
         if not file_path or not pattern:
             return "Error: file_path and pattern required"
         
-        import re
         
         resolved_path = self._resolve_path(file_path)
         
@@ -1093,7 +1074,6 @@ class FileToolsMixin:
                            file_pattern: str, max_seconds: float, max_results: int) -> str:
         """search_files 同步实现（在线程池中运行，不阻塞事件循环）"""
         import fnmatch
-        import re
 
         start_time = time.monotonic()
         deadline = start_time + max_seconds

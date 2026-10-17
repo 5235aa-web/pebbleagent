@@ -10,7 +10,7 @@ MCP Types - MCP 类型定义
 """
 
 from dataclasses import dataclass, field
-from typing import Dict, List, Optional, Any, Union, Literal, Callable, Awaitable
+from typing import Dict, List, Optional, Any, Union, Literal
 from enum import Enum
 
 

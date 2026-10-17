@@ -8,8 +8,8 @@ WebSearch工具 - 前端中介浏览器搜索模式
 
 关键约束：用户主动触发 + 单次使用，禁止一切遍历/批量行为。
 """
-from .base_tool import BaseTool, ToolResult, ToolStatus
-from typing import Dict, Any, Optional, List
+from .base_tool import BaseTool
+from typing import Dict, Any, Optional
 import logging
 
 logger = logging.getLogger(__name__)

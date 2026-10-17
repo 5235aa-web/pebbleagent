@@ -10,7 +10,7 @@ from enum import Enum
 from typing import Dict, List, Optional, Set, Callable, Awaitable
 from dataclasses import dataclass, field
 import uuid
-from typing import Dict, List, Optional, Set, Any
+from typing import Any
 
 logger = logging.getLogger(__name__)
 
@@ -128,7 +128,7 @@ class PermissionService:
         for ws in self._ws_connections:
             try:
                 await ws.send_text(json.dumps(message))
-            except Exception as e:
+            except Exception:
                 disconnected.add(ws)
 
         # 清理断开的连接

@@ -15,6 +15,7 @@
 | permission_rules.json | Permission rules (mode + allow/deny/ask; syntax `tool:pattern`, e.g. `execute_shell:git *`, `write_file:*.env`) | permission_manager.py | 📦Config |
 | path_whitelist.json | Path whitelist (max 5 entries) | server.py, agent_chat_service_v2._load_path_whitelist | 📦Config |
 | requirements.txt | Python dependency list (18 direct deps in four groups: core 4 / optional 11 / skills 1 / build 2; ">= verified version" format; uninstalled packages annotated in comments; minimum Python 3.11 — numpy>=2.4 requires it, dev environment 3.14) | pip install | 📦Build |
+| ruff.toml | Static analysis gate (rules F + E9: undefined names, unused imports/variables, redefinitions, empty f-strings, syntax errors; style rules off) | ruff check (local + CI) | 📦Build |
 | start_backend.bat / start_gui.bat | Windows launch scripts | user | 🟡Script |
 | peb_check_holiday.py / peb_check_holiday_env.py / peb_check_pricing_scope.py | Billing-decision checks (holiday main rules 30 cases + isolated env: priority+hot reload+fallback+degradation / peak-scope: all-model time sensitivity + numeric assertions) | user runs manually (python <script>) | 🧪Test |
 | pebble-backend.spec | PyInstaller packaging config (entry run_backend.py; datas bundle skills / agent_core/agents / knowledgesource / config JSONs; output dist/pebble-backend.exe) | build (Tauri sidecar chain, see below) | 📦Build |

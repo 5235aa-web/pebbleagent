@@ -14,7 +14,7 @@ The executor is a thin pipeline (policy → permission → snapshot → dispatch
 | system.py | Env vars, system info, processes, git status/log/diff | 🟡Aux |
 | workspace.py | Todo, notes, questions, plans, skills, tool discovery | 🟡Aux |
 | lsp.py | Language-server code intelligence (9 tools + formatters) | 🟡Aux |
-| mcp_bridge.py | MCP tool routing | 🟡Aux |
+| mcp_bridge.py | MCP tool routing (executor factory + ToolExecutionContext imported; unconnected server returns an error string) | 🟡Aux |
 
 `agent_core/tool_executor_impl.py` is the facade: mixin composition + the execution pipeline.
 
@@ -23,13 +23,13 @@ The executor is a thin pipeline (policy → permission → snapshot → dispatch
 | File | Function | Tag |
 |------|------|------|
 | base_tool.py | Unified tool base class + ToolRegistry (**permission-manager ImportError denies — fail-closed**; **all tool execution goes through the permission layer regardless of thread**) | 🔴Core |
-| tool_registry.py | Tool registry (singleton) | 🔴Core |
+| tool_registry.py | Tool registry (singleton; auto_register_from_module scans a module and registers BaseTool subclasses, SimpleTool excluded) | 🔴Core |
 | file_tools.py | File operation tool set | 🔴Core |
 | todo_tool.py | Todo list management | 🔴Core |
 | ask_question_tool.py | Clarify tool (ClarifyTool, question manager) | 🟡Aux |
 | execute_code_tool.py | Code execution tool | 🟡Aux |
 | powershell_tool.py | PowerShell tool (danger_level "high") | 🟡Aux |
-| grep_tool.py | Code search tool | 🟡Aux |
+| grep_tool.py | Code search tool (async subprocess, cancel polling, process-tree termination) | 🟡Aux |
 | glob_tool.py | File matching tool | 🟡Aux |
 | web_fetch_tool.py | HTTP request tool | 🟡Aux |
 | plan_mode_tool.py | Plan mode tool | 🟡Aux |
@@ -47,7 +47,7 @@ The executor is a thin pipeline (policy → permission → snapshot → dispatch
 | mcp_manager.py | MCP connection management | McpManager | 🔴Core |
 | mcp_client.py | MCP stdio client (**placeholder commands (REPLACE_WITH_...) rejected with a clear error, **) | StdioTransport | 🔴Core |
 | mcp_config.py | MCP config management | McpConfigManager | 🟡Aux |
-| mcp_integration.py | MCP tool registration | register_mcp_tools | 🔴Core |
+| mcp_integration.py | MCP tool registration and execution (missing server returns an error string) | register_mcp_tools, McpToolExecutorFactory | 🔴Core |
 | mcp_types.py | MCP types: stdio / sse / http / ws configs, connection states, tool and resource records | McpServerConfig, ScopedMcpServerConfig | 🧪Types |
 
 ### Extension Tools (extensions/tools/)

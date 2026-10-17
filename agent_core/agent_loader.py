@@ -5,9 +5,8 @@ Agent YAML Loader - Agent定义YAML加载器
 """
 
 import yaml
-import os
 from pathlib import Path
-from typing import Dict, List, Optional, Any, Union
+from typing import Dict, List, Optional, Any
 from dataclasses import dataclass, field
 import logging
 

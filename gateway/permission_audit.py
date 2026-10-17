@@ -22,7 +22,7 @@ import threading
 from datetime import datetime
 from typing import Optional, List, Dict, Any
 from pathlib import Path
-from dataclasses import dataclass, field, asdict
+from dataclasses import dataclass
 from enum import Enum
 import hashlib
 

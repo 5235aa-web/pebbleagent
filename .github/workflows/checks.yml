@@ -27,6 +27,11 @@ jobs:
       - name: Syntax check (compileall)
         run: python -m compileall -q agent_core gateway tools tests run_backend.py skills_loader.py peb_check_holiday.py peb_check_holiday_env.py peb_check_pricing_scope.py
 
+      - name: Static analysis (ruff)
+        run: |
+          pip install ruff==0.17.1
+          ruff check agent_core gateway tools tests run_backend.py skills_loader.py peb_check_holiday.py peb_check_holiday_env.py peb_check_pricing_scope.py
+
       - name: Billing & holiday regression checks
         run: |
           python peb_check_holiday.py

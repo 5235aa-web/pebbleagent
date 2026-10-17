@@ -25,16 +25,13 @@ import sqlite3
 import threading
 import time
 import uuid
-from typing import Optional, Dict, List, Any, Set
+from typing import Optional, Dict, List, Any
 
 from .snapshot_types import (
     FileSnapshotRecord,
-    FileConflict,
+    RevertOperation,
     FILE_SNAPSHOTS_TABLE_DDL,
     FILE_SNAPSHOTS_INDEXES_DDL,
-    OPERATION_TYPE_VALUES,
-    REVERT_STATUS_VALUES,
-    CONFLICT_TYPE_VALUES,
 )
 
 logger = logging.getLogger(__name__)

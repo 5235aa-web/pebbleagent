@@ -1,31 +1,11 @@
 """PDF reading and OCR."""
 
 import asyncio
-import base64
-import json
 import logging
 import os
-import re
-import shutil
-import signal
-import subprocess
-import sys
-import time
-import uuid
-from pathlib import Path
-from typing import Any, Dict, List, Optional, Tuple
+from typing import List, Optional
 
-import httpx
 
-from ..truncation_manager import truncate_output
-from ..code_network_guardV2 import (
-    scan_code_for_scraping_behavior,
-    get_rate_limiter,
-    get_path_depth_guard,
-    get_download_guard,
-    reset_all_guards,
-)
-from ..code_destructive_guard import scan_code_for_destructive_behavior
 
 logger = logging.getLogger(__name__)
 

@@ -14,8 +14,6 @@ import json
 import os
 import re
 from typing import Tuple, Optional, Dict, Any, Callable, List
-from dataclasses import dataclass
-from enum import Enum
 import logging
 
 logger = logging.getLogger(__name__)
@@ -465,10 +463,9 @@ def get_tool_permission_info(tool_name: str, args: Dict[str, Any]) -> Permission
     
     # 兼容新旧格式
     if len(mapping_entry) == 3:
-        perm_type_str, content_extractor, needs_path_check = mapping_entry
+        perm_type_str, content_extractor, _ = mapping_entry
     else:
         perm_type_str, content_extractor = mapping_entry
-        needs_path_check = False
     
     # 空权限类型表示无需权限检查
     if not perm_type_str:
@@ -477,24 +474,6 @@ def get_tool_permission_info(tool_name: str, args: Dict[str, Any]) -> Permission
             reason="Tool does not require permission check",
             decision_source="no_restriction"
         )
-    
-    # 获取权限类型枚举
-    PermissionType = _get_permission_type_enum()
-    
-    # 将字符串转换为枚举
-    perm_type_map = {
-        "FILE_READ": PermissionType.FILE_READ,
-        "FILE_WRITE": PermissionType.FILE_WRITE,
-        "FILE_DELETE": PermissionType.FILE_DELETE,
-        "EXEC_COMMAND": PermissionType.EXEC_COMMAND,
-        "NETWORK_FETCH": PermissionType.NETWORK_FETCH,
-        "APP_LAUNCH": PermissionType.APP_LAUNCH,
-        "CLIPBOARD_READ": PermissionType.CLIPBOARD_READ,
-        "CLIPBOARD_WRITE": PermissionType.CLIPBOARD_WRITE,
-        "SCREENSHOT": PermissionType.SCREENSHOT,
-    }
-    
-    perm_type = perm_type_map.get(perm_type_str)
     
     # 提取内容
     try:

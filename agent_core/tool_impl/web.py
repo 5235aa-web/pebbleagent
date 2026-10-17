@@ -1,31 +1,19 @@
 """Network fetch, search and browser tools."""
 
 import asyncio
-import base64
-import json
 import logging
 import os
 import re
-import shutil
-import signal
-import subprocess
-import sys
-import time
-import uuid
-from pathlib import Path
-from typing import Any, Dict, List, Optional, Tuple
+from typing import List
 
 import httpx
 
 from ..truncation_manager import truncate_output
 from ..code_network_guardV2 import (
-    scan_code_for_scraping_behavior,
     get_rate_limiter,
     get_path_depth_guard,
     get_download_guard,
-    reset_all_guards,
 )
-from ..code_destructive_guard import scan_code_for_destructive_behavior
 
 logger = logging.getLogger(__name__)
 
@@ -73,7 +61,6 @@ def _parse_bing_search_results(html: str) -> list:
     3. 通用链接提取（tilk 类 / 任意 <a> 过滤）
     4. 文本正则回退（从纯文本中提取「标题 - 描述」对）
     """
-    import re
     from html.parser import HTMLParser
     results = []
     seen_urls = set()
@@ -255,7 +242,6 @@ class WebToolsMixin:
                     headers={"User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36"}
                 )
                 raw_text = resp.text
-                content_type = resp.headers.get("content-type", "")
         except Exception as e:
             return f"Error: Failed to fetch URL: {e}"
         
@@ -331,7 +317,7 @@ class WebToolsMixin:
                     title = r.get("title", "").strip()
                     snippet = r.get("snippet", "").strip()
                     result_url = r.get("url", "")
-                    output_parts.append(f"")
+                    output_parts.append("")
                     output_parts.append(f"{i}. **{title}**")
                     if snippet:
                         output_parts.append(f"   {snippet}")
@@ -390,9 +376,9 @@ class WebToolsMixin:
             truncated, _ = truncate_output(clean_text)
             output_parts = [
                 f"## URL: {url}",
-                f"(Fetched via httpx)",
-                f"",
-                f"### Page Content:",
+                "(Fetched via httpx)",
+                "",
+                "### Page Content:",
                 truncated
             ]
             return "\n".join(output_parts)

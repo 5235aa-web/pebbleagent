@@ -14,7 +14,7 @@ logger = logging.getLogger("gateway")
 
 sys.path.insert(0, os.path.join(os.path.dirname(__file__), ".."))
 
-from .server import handle_request, handle_prompt_submit, _session_store
+from .server import handle_request, handle_prompt_submit
 
 _stdout_lock = threading.Lock()
 

@@ -1,31 +1,11 @@
 """Language-server code intelligence tools."""
 
 import asyncio
-import base64
-import json
 import logging
 import os
-import re
-import shutil
-import signal
-import subprocess
-import sys
-import time
-import uuid
-from pathlib import Path
-from typing import Any, Dict, List, Optional, Tuple
+from typing import Any, Dict, List, Optional
 
-import httpx
 
-from ..truncation_manager import truncate_output
-from ..code_network_guardV2 import (
-    scan_code_for_scraping_behavior,
-    get_rate_limiter,
-    get_path_depth_guard,
-    get_download_guard,
-    reset_all_guards,
-)
-from ..code_destructive_guard import scan_code_for_destructive_behavior
 
 logger = logging.getLogger(__name__)
 
@@ -51,7 +31,7 @@ class LspToolsMixin:
             return ""
         
         try:
-            from ..lsp_client import get_lsp_client, ensure_lsp_initialized
+            from ..lsp_client import ensure_lsp_initialized
             client = await ensure_lsp_initialized(self._current_project_path)
             if client is None:
                 return ""
@@ -83,7 +63,7 @@ class LspToolsMixin:
             return _lsp_client
         
         try:
-            from ..lsp_client import LspClient, get_lsp_client
+            from ..lsp_client import get_lsp_client
             
             _lsp_client = get_lsp_client()
             
@@ -271,7 +251,7 @@ class LspToolsMixin:
                     return "项目中未找到任何符号。可能 LSP 服务器尚未完成项目索引。"
             
             return self._format_lsp_symbols(
-                f"工作区符号搜索" + (f" (查询: '{query}')" if query else ""),
+                "工作区符号搜索" + (f" (查询: '{query}')" if query else ""),
                 symbols,
                 self._current_project_path
             )
@@ -356,7 +336,7 @@ class LspToolsMixin:
         try:
             calls = await client.incoming_calls(resolved, line, character)
             if not calls:
-                return f"未找到传入调用（没有其他函数调用此函数）。"
+                return "未找到传入调用（没有其他函数调用此函数）。"
             
             return self._format_lsp_call_hierarchy_calls("传入调用", calls, self._current_project_path, direction="incoming")
         except ConnectionError as e:
@@ -385,7 +365,7 @@ class LspToolsMixin:
         try:
             calls = await client.outgoing_calls(resolved, line, character)
             if not calls:
-                return f"未找到传出调用（此函数不调用任何其他函数）。"
+                return "未找到传出调用（此函数不调用任何其他函数）。"
             
             return self._format_lsp_call_hierarchy_calls("传出调用", calls, self._current_project_path, direction="outgoing")
         except ConnectionError as e:
@@ -412,7 +392,7 @@ class LspToolsMixin:
         self, label: str, locations: List[Any], project_path: str
     ) -> str:
         """格式化 LSP 位置列表"""
-        from ..lsp_client import LspLocation, uri_to_relative_path
+        from ..lsp_client import uri_to_relative_path
         
         if not locations:
             return f"未找到{label}。可能光标不处于符号上，或 LSP 服务器尚未完成索引。"
@@ -444,10 +424,10 @@ class LspToolsMixin:
         self, label: str, symbols: List[Any], project_path: str
     ) -> str:
         """格式化 LSP 符号列表"""
-        from ..lsp_client import LspSymbolInfo, uri_to_relative_path
+        from ..lsp_client import uri_to_relative_path
         
         if not symbols:
-            return f"未找到符号。"
+            return "未找到符号。"
         
         # 按文件分组
         by_file: Dict[str, List[Any]] = {}
@@ -484,7 +464,7 @@ class LspToolsMixin:
         self, label: str, items: List[Any], project_path: str
     ) -> str:
         """格式化调用层次入口项"""
-        from ..lsp_client import LspCallHierarchyItem, uri_to_relative_path
+        from ..lsp_client import uri_to_relative_path
         
         if not items:
             return "未找到调用层次项。"
@@ -517,7 +497,7 @@ class LspToolsMixin:
         self, label: str, calls: List[Any], project_path: str, direction: str
     ) -> str:
         """格式化调用层次调用关系"""
-        from ..lsp_client import LspCallHierarchyCall, LspCallHierarchyItem, uri_to_relative_path
+        from ..lsp_client import uri_to_relative_path
         
         if not calls:
             return f"未找到{label}。"

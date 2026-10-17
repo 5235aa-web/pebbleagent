@@ -12,8 +12,7 @@ snapshot_conflict.py — 三阶段冲突检测引擎
 from __future__ import annotations
 
 import os
-import time
-from typing import Dict, List, Any, Optional
+from typing import Dict, List, Any
 
 from .snapshot_types import FileSnapshotRecord, FileConflict
 from .snapshot_manager import SnapshotManager
@@ -217,7 +216,6 @@ class ConflictDetector:
             )
 
             source_missing = not os.path.isfile(source_record.absolute_path)
-            dest_exists = os.path.isfile(counterpart_abs)
 
             if source_missing and not dest_record:
                 result = {

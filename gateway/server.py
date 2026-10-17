@@ -277,7 +277,7 @@ def _install_download_server(server_name: str, entry: dict) -> str:
 
 
 # Loaded here and reached by gateway/rpc handlers as srv.<name>.
-from .config import load_llm_config, load_tools_info, load_skills_info
+from .config import load_llm_config, load_tools_info, load_skills_info  # noqa: F401
 from .session import SessionStore
 from .rpc import RpcContext, dispatch
 
@@ -286,8 +286,8 @@ logger = logging.getLogger(__name__)
 sys.path.insert(0, os.path.join(os.path.dirname(__file__), ".."))
 
 # Also reached by gateway/rpc handlers as srv.<name>.
-from agent_core.agent_chat_service_v2 import AgentChatServiceV2, current_pricing_period, get_cn_holidays_payload
-from agent_core.agent_loader import list_available_agents_from_yaml
+from agent_core.agent_chat_service_v2 import AgentChatServiceV2, current_pricing_period, get_cn_holidays_payload  # noqa: F401
+from agent_core.agent_loader import list_available_agents_from_yaml  # noqa: F401
 
 _PROJECT_ROOT = Path(__file__).resolve().parent.parent
 _DATA_HOME = os.environ.get("PEBBLE_HOME") or os.path.join(Path.home(), ".pebble")

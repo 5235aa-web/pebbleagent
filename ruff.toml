@@ -1,0 +1,7 @@
+# Static analysis gate: error-class rules only.
+# F = pyflakes (undefined names, unused imports/variables, redefinitions, empty f-strings)
+# E9 = syntax errors. Style rules stay off to keep the signal high.
+target-version = "py311"
+
+[lint]
+select = ["F", "E9"]

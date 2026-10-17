@@ -147,7 +147,6 @@ def scan_code_for_scraping_behavior(code: str, language: str = "python") -> Tupl
         return False, []
     
     detected = []
-    code_lower = code.lower()
     
     # 1. 检测 HTTP 库导入（封堵 execute_code 绕过）
     for pattern, desc in CODE_HTTP_LIB_PATTERNS:

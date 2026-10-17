@@ -15,6 +15,9 @@ node tests/run_all.mjs
 # A single test
 python tests/test_agent_tool_policy.py
 node tests/test_fold_algo.mjs
+
+# Static analysis gate (rules F + E9, configured in ruff.toml)
+ruff check agent_core gateway tools tests
 ```
 
 The repository also has three billing/holiday regression scripts at the project root
@@ -57,6 +60,7 @@ The repository also has three billing/holiday regression scripts at the project 
 | Test | Covers |
 | --- | --- |
 | `test_chat_stream_e2e.py` | real `chat_stream` loop against a fake client: single turn, tool round, cancel, suspicious retry, usage accounting |
+| `test_gateway_facade.py` | every `srv.<name>` used by rpc handlers exists in `gateway/server.py` |
 
 ### Storage, guards & protocols
 | Test | Covers |
@@ -64,8 +68,11 @@ The repository also has three billing/holiday regression scripts at the project 
 | `test_transcript_manager.py` | transcript write/read/search/delete under a temporary `PEBBLE_HOME` |
 | `test_guard_scope.py` | per-session rate/navigation/download counters, scoped reset, asyncio task isolation |
 | `test_permission_e2e.py` | rule parsing, allow/deny/ask, manual/auto/readonly/locked, persisted mode |
-| `test_mcp_registry.py` | MCP tool naming, name parsing, lookup, state shape |
+| `test_mcp_registry.py` | MCP tool naming, name parsing, lookup, state shape, executor factory resolution |
 | `test_lsp_framing.py` | LSP Content-Length framing, invalid length/JSON, closed stream |
+| `test_grep_tool_async.py` | GrepTool async subprocess path (asyncio import, real search) |
+| `test_tool_registry_autoregister.py` | module scan registration (BaseTool subclasses, SimpleTool excluded) |
+| `test_revert_batch.py` | `restore_batch` conflict policy (abort / skip_conflicts) |
 
 ## Design conventions
 

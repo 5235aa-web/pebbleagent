@@ -11,7 +11,7 @@ from __future__ import annotations
 
 import difflib
 import os
-from typing import Dict, List, Any, Optional, Tuple
+from typing import Dict, List, Any, Optional
 
 from .snapshot_types import FileSnapshotRecord
 

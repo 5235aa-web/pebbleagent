@@ -6,7 +6,6 @@
 from typing import Dict, Type, List, Optional, Any, Callable
 from .base_tool import BaseTool, ToolResult, ToolStatus
 import logging
-import asyncio
 
 logger = logging.getLogger(__name__)
 
@@ -187,6 +186,7 @@ class ToolRegistry:
         """
         import importlib
         import inspect
+        from .base_tool import SimpleTool
         
         try:
             module = importlib.import_module(module_name)

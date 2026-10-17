@@ -8,14 +8,14 @@ Grep工具 - 文件内容搜索
 - 轮询检查取消信号
 - 支持进程树终止
 """
-from .base_tool import BaseTool, ToolResult, ToolStatus
-from typing import Dict, Any, Optional, List
+from .base_tool import BaseTool
+from typing import Dict, Any, Optional
+import asyncio
 import logging
 import os
 import subprocess
 import re
 import threading
-import time
 import signal
 import sys
 
@@ -27,19 +27,12 @@ DEFAULT_GREP_TIMEOUT = 30  # 默认超时时间（秒）
 
 def _get_cancel_signal() -> Optional[threading.Event]:
     """
-    获取当前子agent的取消信号
+    获取当前子agent的取消信号（由调用方通过 _cancel_signal 参数传入）
     
     Returns:
         threading.Event 或 None
     """
-    try:
-        # 尝试从 agent_executor 获取当前取消信号
-        from agent_core.agent_executor import AgentExecutor
-        # 使用线程本地存储获取当前执行器
-        # 这是一个简化的实现，实际可能需要更复杂的上下文传递
-        return None  # 暂时返回 None，后续通过参数传递
-    except ImportError:
-        return None
+    return None
 
 
 def _kill_process_tree(proc: subprocess.Popen):

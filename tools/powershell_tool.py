@@ -3,12 +3,11 @@ PowerShell 执行工具
 
 Windows 原生 PowerShell 命令执行，替代 bash/execute_shell
 """
-from .base_tool import BaseTool, ToolResult, ToolStatus
+from .base_tool import BaseTool
 from typing import Dict, Any, Optional
 import logging
 import asyncio
 import subprocess
-import sys
 import os
 
 logger = logging.getLogger(__name__)

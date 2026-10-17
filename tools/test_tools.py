@@ -9,11 +9,9 @@ import os
 
 sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 
-from tools.tool_registry import ToolRegistry, auto_register_tools
+from tools.tool_registry import ToolRegistry
 from tools import (
-    TodoListTool, TodoReadTool, TodoManager,
-    ClarifyTool, QuestionManager,
-    GrepTool, SearchCodebaseTool,
+    TodoListTool, TodoReadTool, ClarifyTool, GrepTool, SearchCodebaseTool,
     GlobTool, LS,
     WebSearchTool,
     PlanModeEnterTool, PlanModeExitTool, CreatePlanTool, GetPlanTool,

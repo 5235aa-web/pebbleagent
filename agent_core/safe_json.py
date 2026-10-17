@@ -7,7 +7,7 @@ Safe JSON - 安全的 JSON 解析工具
 
 import json
 import re
-from typing import Any, Optional
+from typing import Any
 
 # 非法转义字符正则：匹配 \ 后面跟非 JSON 合法转义字符
 # JSON 合法转义：\" \\ \/ \b \f \n \r \t \uXXXX
@@ -38,14 +38,14 @@ def safe_json_loads(s: str, default: Any = None) -> Any:
     # 第一次尝试：直接解析
     try:
         return json.loads(s)
-    except json.JSONDecodeError as e:
+    except json.JSONDecodeError:
         pass
     
     # 第二次尝试：修复非法转义字符
     try:
         fixed = _ILLEGAL_ESCAPE_PATTERN.sub(r'\\\\\1', s)
         return json.loads(fixed)
-    except json.JSONDecodeError as e:
+    except json.JSONDecodeError:
         pass
     
     # 第三次尝试：更激进的修复（处理双重转义等情况）

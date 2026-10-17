@@ -27,25 +27,13 @@ import asyncio
 import logging
 import json
 import uuid
-import time
 import os
 from datetime import datetime, timezone, timedelta
 from typing import List, Dict, Any, Optional, AsyncGenerator
 from openai import AsyncOpenAI
 
-from .query_state_machine import ToolExecutionContext
-from .tool_orchestrator import (
-    ToolExecutor,
-    ToolExecutionResult,
-    ToolExecutionUpdate,
-)
-from .tool_concurrency import (
-    is_concurrency_safe,
-    partition_tool_calls,
-    ToolCallBatch,
-)
 
-from .agent_loader import get_cached_agent, get_agent_system_prompt, filter_tools_for_agent, list_available_agents_from_yaml
+from .agent_loader import get_cached_agent, filter_tools_for_agent, list_available_agents_from_yaml
 from .context_compressor import (
     # Token 计数（tiktoken + 中英文比例降级）
     estimate_tokens,
@@ -53,8 +41,6 @@ from .context_compressor import (
 # 导入 Transcript 管理器
 from .transcript_manager import (
     get_transcript_manager,
-    get_transcript_path,
-    TranscriptManager,
 )
 from . import agent_chat_history as history
 
@@ -67,9 +53,7 @@ from .tool_executor_impl import AgentToolExecutorImpl
 # MCP 管理器（延迟导入，避免循环依赖）
 _mcp_manager = None
 
-from .safe_json import safe_json_loads, safe_json_dumps
 from .chat.usage import UsageTracker
-from .chat.prompt import compose_system_prompt
 from .chat.stream_client import StreamConsumer, open_stream
 from .chat.tool_cycle import ToolCycle
 from .chat.turn_executor import TurnState, prepare_turn
@@ -986,8 +970,6 @@ class AgentChatServiceV2:
         agent_def = state.agent_def
         conversation_id = state.conversation_id
         messages = state.messages
-        context_messages = state.context_messages
-        llm_config = state.llm_config
         use_model = state.use_model
         final_temperature = state.final_temperature
         final_top_p = state.final_top_p
@@ -1020,7 +1002,7 @@ class AgentChatServiceV2:
             suspicious_retry_done = False  # C: 每回合最多自动重试一次（可疑结束检测）
             in_suspicious_retry = False  # 当前 iteration 是否为可疑重试轮（API 兜底保护窗口）
             
-            logger.info(f"[AgentChatServiceV2] Starting state machine loop (unlimited iterations)")
+            logger.info("[AgentChatServiceV2] Starting state machine loop (unlimited iterations)")
             
             # ========== while(true) 主循环 ==========
             iteration = 0
@@ -1041,7 +1023,6 @@ class AgentChatServiceV2:
                 reasoning_text = ""  # 思考模式下的推理内容
                 finish_reason = None  # B: 本轮流的结束方式（stop/length/tool_calls/None=异常缺失）
                 tool_calls_chunks = {}
-                iteration_start_order_index = len(execution_order)
 
                 # 统一上下文口径：历史轮的 tool 输出与 DB 重载路径一致地
                 # 截断到 MAX_TOOL_OUTPUT_CONTEXT_CHARS；当前轮结果在 append 时保持全文
@@ -1174,7 +1155,7 @@ class AgentChatServiceV2:
                             f"[AgentChatServiceV2] Suspicious stream end persisted after retry "
                             f"(finish_reason={finish_reason}) - accepting as complete"
                         )
-                    logger.info(f"[AgentChatServiceV2] No tool calls, task completed")
+                    logger.info("[AgentChatServiceV2] No tool calls, task completed")
                     break
                 
                 # ========== 执行工具（智能并发） ==========

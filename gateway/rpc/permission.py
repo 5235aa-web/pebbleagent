@@ -1,6 +1,5 @@
 """Permission and path-whitelist RPCs."""
 
-import asyncio
 import json
 import logging
 import os
@@ -55,7 +54,6 @@ def handle(ctx, method):
                 json.dump(data, f, ensure_ascii=False, indent=2)
             # 同步推送给运行中的工具执行器
             try:
-                from agent_core.tool_executor_impl import PermissionEnforcer
                 svc = srv._ensure_service()
                 svc._load_path_whitelist()
             except Exception:
