@@ -116,8 +116,20 @@ def main() -> int:
     check("save: 'false' -> False", _bool({"thinking_enabled": "false"}.get("thinking_enabled"), True) is False)
     check("save: garbage -> True (conservative default on)", _bool({"thinking_enabled": "xx"}.get("thinking_enabled"), True) is True)
 
-    with open(server_path, "r", encoding="utf-8-sig") as f:
-        server_src = f.read()
+    def read_gateway_source():
+        """server.py plus its RPC domain modules (handlers moved out of the entry file)."""
+        parts = []
+        rpc_dir = os.path.join(ROOT, "gateway", "rpc")
+        rels = ["gateway/server.py"] + [
+            os.path.join("gateway", "rpc", n)
+            for n in sorted(os.listdir(rpc_dir)) if n.endswith(".py")
+        ]
+        for rel in rels:
+            with open(os.path.join(ROOT, rel), "r", encoding="utf-8-sig") as f:
+                parts.append(f.read())
+        return "\n".join(parts)
+
+    server_src = read_gateway_source()
     check("source: model.options output field", '"thinking_enabled": p.get("thinking_enabled") is not False' in server_src)
     check("source: prompt_submit read field", 'thinking_enabled = prov.get("thinking_enabled") is not False' in server_src)
     check("source: save persists field", '_bool(provider_data.get("thinking_enabled"), True)' in server_src)

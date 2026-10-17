@@ -37,6 +37,7 @@
 ## Gateway
 
 - WebSocket auth (token file + query parameter), Origin checks, payload limits, connection cap
+- RPC dispatch: `gateway/rpc/` domain handlers (session, mcp, file, model, memory, permission, project, config, misc) behind a prefix router; `handle_request` builds an `RpcContext` and delegates
 - `file.*` RPC family with project-boundary guard; `permission.*` family with sync evaluation; `session.*`, `project.*`, `memory.*`, `mcp.*`, `pricing.*`
 - MCP lifecycle: auto-install (sha256-verified), project-level approval, background initialization, per-server runtime state
 
@@ -63,6 +64,6 @@
 
 ## Verification
 
-- `tests/run_all.py` — Python suites (tool policy, orchestration, permissions, audit, snapshots, compaction, pricing, skills, experience ledger)
+- `tests/run_all.py` — Python suites (tool policy, orchestration, permissions, audit, snapshots, compaction, pricing, skills, experience ledger, RPC smoke)
 - `tests/run_all.mjs` — frontend logic suites (fold algorithm, WS recovery, UI formulas, time grouping)
 - CI: `.github/workflows/checks.yml` (compileall, Python suites, vue-tsc)

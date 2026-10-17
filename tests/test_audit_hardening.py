@@ -113,12 +113,21 @@ def main() -> int:
         with open(os.path.join(ROOT, path), "r", encoding="utf-8") as f:
             return f.read()
 
+    def read_gateway():
+        """server.py plus its RPC domain modules (handlers moved out of the entry file)."""
+        parts = [read("gateway/server.py")]
+        rpc_dir = os.path.join(ROOT, "gateway", "rpc")
+        for name in sorted(os.listdir(rpc_dir)):
+            if name.endswith(".py"):
+                parts.append(read(os.path.join("gateway", "rpc", name)))
+        return "\n".join(parts)
+
     check("static: enforcer calls log_permission_check",
           "log_permission_check(" in read("agent_core/permission_enforcer.py"))
     check("static: startup integrity check wired in ws_server",
           "_verify_audit_integrity_background" in read("gateway/ws_server.py"))
     check("static: audit verify RPC present",
-          'method == "permission.audit.verify"' in read("gateway/server.py"))
+          'method == "permission.audit.verify"' in read_gateway())
     check("static: masking applied in log_event",
           "self._mask_sensitive(event.content)" in read("gateway/permission_audit.py"))
 

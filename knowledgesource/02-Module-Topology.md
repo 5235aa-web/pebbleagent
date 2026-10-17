@@ -17,7 +17,8 @@
               agent_core/tool_orchestrator.py, agent_core/tool_executor_impl.py
               agent_core/query_state_machine.py, agent_core/memory/, agent_core/snapshot/
                  ↑ call
-[Gateway]     gateway/server.py (JSON-RPC 90KB), gateway/ws_server.py, gateway/config.py
+[Gateway]     gateway/server.py (entry: prompt pipeline + RPC dispatch), gateway/rpc/ (domain handlers)
+              gateway/ws_server.py, gateway/config.py
               gateway/log_setup.py (unified logging), permission_manager.py, permission_service.py, permission_audit.py
                  ↑ call
 [Frontend]    ui-gui-vue3/src/stores/gateway.ts (WebSocket), config.ts (config)
@@ -31,7 +32,8 @@
 | Module | Layer | Callers | Callees |
 |------|-----|--------|---------|
 | ws_server.py | Gateway | - | server.py |
-| server.py | Gateway | ws_server.py, entry.py | agent_chat_service_v2, session, config |
+| server.py | Gateway | ws_server.py, entry.py | agent_chat_service_v2, session, config, rpc/ |
+| rpc/ | Gateway | server.py | agent_chat_service_v2, session, memory, mcp |
 | session.py | Data (sessions.db: session CRUD + project_path multi-project ownership + compaction flags) | create(project_path), list(limit, project_path) (incl. last_message_at = latest message time), delete, delete_message, adopt_unassigned, unassigned_count | server.py | sessions.db | 📦Data |
 | agent_chat_history.py | Data | agent_chat_service_v2 | agent_chat.db |
 | **agent_chat_service_v2.py** | 🔴Core | server.py → chat_stream | OpenAI SDK, tool_orchestrator, agent_chat_history, agent_loader, context_compressor, memory |
