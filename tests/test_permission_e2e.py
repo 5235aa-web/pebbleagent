@@ -37,7 +37,7 @@ def main() -> int:
         json.dump({
             "mode": "manual",
             "allow": ["read_file", "web_search:*docs.python.org*"],
-            "deny": ["execute_code:rm -rf*"],
+            "deny": ["execute_code:rm -rf*", "read_file:*.secret"],
             "ask": ["write_file"],
         }, f)
 
@@ -46,6 +46,9 @@ def main() -> int:
 
     ok, why = pm.check_permission_sync("read_file", "README.md")
     check("read allowed", ok, why)
+
+    ok, why = pm.check_permission_sync("read_file", ".env")
+    check("manual asks for secret file read", (not ok) and "sensitive" in why, why)
 
     ok, why = pm.check_permission_sync("write_file", "x.py")
     check("write asks", (not ok) and "confirmation" in why, why)
@@ -65,21 +68,33 @@ def main() -> int:
     pm.set_mode(PermissionMode.READONLY)
     ok, why = pm.check_permission_sync("read_file", "README.md")
     check("readonly read", ok, why)
+    ok, why = pm.check_permission_sync("read_file", "app.secret")
+    check("readonly honors deny rule", (not ok) and "denied by rule" in why, why)
+    ok, why = pm.check_permission_sync("read_file", ".env")
+    check("readonly blocks secret file read", (not ok) and "sensitive" in why, why)
+    ok, why = pm.check_permission_sync("read_file", "secrets/token.txt")
+    check("readonly blocks secret dir read", (not ok) and "sensitive" in why, why)
     ok, why = pm.check_permission_sync("write_file", "x.py")
     check("readonly write", (not ok) and "readonly" in why, why)
 
-    pm.set_mode(PermissionMode.LOCKED)
-    ok, why = pm.check_permission_sync("read_file", "README.md")
-    check("locked", (not ok) and "locked" in why, why)
+    # locked 模式已移除：旧配置值必须抛错，不能静默接受
+    try:
+        PermissionMode("locked")
+        check("locked mode removed", False, "PermissionMode('locked') still accepted")
+    except ValueError:
+        check("locked mode removed", True, "")
 
     pm.set_mode(PermissionMode.AUTO)
     ok, why = pm.check_permission_sync("execute_code", "rm -rf /tmp/x")
     check("auto allows all", ok, why)
 
+    ok, why = pm.check_permission_sync("read_file", ".env")
+    check("auto blocks secret file read", (not ok) and "sensitive" in why, why)
+
     with open(rules_path, "r", encoding="utf-8") as f:
         saved = json.load(f)
     check("mode persisted", saved.get("mode") == "auto", str(saved.get("mode")))
-    check("rules persisted", len(saved.get("deny", [])) == 1, str(saved))
+    check("rules persisted", len(saved.get("deny", [])) == 2, str(saved))
 
     print(f"\nRESULT: PASS={passed} FAIL={failed}")
     return 0 if failed == 0 else 1

@@ -1,6 +1,6 @@
 #!/usr/bin/env python
 # -*- coding: utf-8 -*-
-"""Agent tool policy: chat_agent 4-tool allowlist (YAML load + filter + policy check).
+"""Agent tool policy: chat_agent allowlist (YAML load + filter + policy check).
 
 Run: python tests/test_agent_tool_policy.py   (exit 0 = pass)
 """
@@ -33,6 +33,39 @@ def main() -> int:
         clear_agent_cache,
     )
 
+    # chat_agent.yaml 的白名单契约：内置读类 + 网络只读 + MCP 只读
+    expected_internal = {
+        "read_file", "search_files", "search_in_file", "grep", "glob",
+        "web_search", "fetch_url", "browser_navigate",
+    }
+    expected_mcp = {
+        "mcp__github__get_file_contents",
+        "mcp__github__search_repositories",
+        "mcp__github__search_code",
+        "mcp__github__search_users",
+        "mcp__github__list_commits",
+        "mcp__github__get_issue",
+        "mcp__github__list_issues",
+        "mcp__github__search_issues",
+        "mcp__github__get_pull_request",
+        "mcp__github__list_pull_requests",
+        "mcp__github__get_pull_request_files",
+        "mcp__github__get_pull_request_status",
+        "mcp__github__get_pull_request_comments",
+        "mcp__github__get_pull_request_reviews",
+        "mcp__chrome_devtools__list_pages",
+        "mcp__chrome_devtools__navigate_page",
+        "mcp__chrome_devtools__take_snapshot",
+        "mcp__chrome_devtools__take_screenshot",
+        "mcp__chrome_devtools__list_console_messages",
+        "mcp__chrome_devtools__get_console_message",
+        "mcp__chrome_devtools__list_network_requests",
+        "mcp__chrome_devtools__get_network_request",
+        "mcp__chrome_devtools__wait_for",
+        "mcp__chrome_devtools__get_css_styles",
+    }
+    expected_allowed = expected_internal | expected_mcp
+
     # ============ 1. chat_agent.yaml loads with enforce + allowlist ============
     clear_agent_cache()
     defn = load_agent_yaml("chat_agent")
@@ -43,10 +76,9 @@ def main() -> int:
         f"got {getattr(defn.tools, 'enforce', None) if defn else None}",
     )
     check(
-        "allowed == 4 tools",
-        defn is not None
-        and set(defn.tools.allowed) == {"read_file", "search_files", "edit_file", "write_file"},
-        f"got {defn.tools.allowed if defn else None}",
+        "allowed == expected allowlist",
+        defn is not None and set(defn.tools.allowed) == expected_allowed,
+        f"diff: {sorted(set(defn.tools.allowed) ^ expected_allowed) if defn else None}",
     )
 
     # ============ 2. filter_tools_for_agent ============
@@ -63,8 +95,8 @@ def main() -> int:
     filtered = filter_tools_for_agent(fake_tools, defn)
     names = sorted(t["function"]["name"] for t in filtered)
     check(
-        "filtered == 4 tools",
-        names == ["edit_file", "read_file", "search_files", "write_file"],
+        "filtered == allowlist intersection",
+        names == ["read_file", "search_files", "web_search"],
         f"got {names}",
     )
 
@@ -77,16 +109,16 @@ def main() -> int:
 
     # ============ 3. check_agent_tool_policy ============
     clear_agent_cache()
-    for t in ["read_file", "write_file", "edit_file", "search_files"]:
+    for t in sorted(expected_internal):
         check(f"chat_agent + {t} -> allowed", check_agent_tool_policy("chat_agent", t) is None)
-    r1 = check_agent_tool_policy("chat_agent", "web_search")
-    check("chat_agent + web_search -> denied", r1 is not None, f"got {r1}")
+    for t in ["write_file", "edit_file", "delete_file", "execute_code", "execute_shell", "browser_download", "clarify", "list_tools"]:
+        check(f"chat_agent + {t} -> denied", check_agent_tool_policy("chat_agent", t) is not None)
     r2 = check_agent_tool_policy("chat_agent", "mcp__blender__look")
     check("chat_agent + MCP tool -> denied", r2 is not None, f"got {r2}")
     r3 = check_agent_tool_policy("chat_agent", "execute_code")
     check("chat_agent + execute_code -> denied", r3 is not None, f"got {r3}")
     check(
-        "code_agent + web_search -> allowed (enforce off)",
+        "code_agent + web_search -> allowed (empty allowlist, no filtering)",
         check_agent_tool_policy("code_agent", "web_search") is None,
     )
     check("empty agent -> allowed", check_agent_tool_policy("", "web_search") is None)
@@ -101,13 +133,13 @@ def main() -> int:
     filtered_real = filter_tools_for_agent(all_tools, defn)
     real_names = sorted(t["function"]["name"] for t in filtered_real)
     check(
-        "real full list -> filtered == 4 tools",
-        real_names == ["edit_file", "read_file", "search_files", "write_file"],
+        "real full list -> filtered == internal allowlist",
+        real_names == sorted(expected_internal),
         f"got {real_names}",
     )
-    missing = {"read_file", "search_files", "edit_file", "write_file"} - set(all_names)
-    check("4 target tools exist in full list", not missing, f"missing {missing}")
-    for probe in ["execute_code", "execute_shell", "web_search", "fetch_url", "clarify"]:
+    missing = expected_internal - set(all_names)
+    check("internal allowlist tools exist in full list", not missing, f"missing {missing}")
+    for probe in ["execute_code", "execute_shell", "browser_download", "clarify"]:
         check(f"full list contains {probe} (will be filtered out)", probe in all_names)
 
     print(f"\nRESULT: {passed} passed, {failed} failed")

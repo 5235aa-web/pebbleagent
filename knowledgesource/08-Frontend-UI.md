@@ -52,7 +52,7 @@
 | ProjectPanel.vue | Project files panel (multi-project: click path to expand the project list, switch active, add, hover delete cross + ConfirmDialog, one-click adopt of unassigned; file tree; overlay close is ignored while the add-path input is non-empty) | 🟡Aux |
 | MemoryCenterPanel.vue | Memory center panel (ledger list with a Global badge per entry; detail shows scope; agent notes scope select User / Project) | 🟡Aux |
 | PermissionDialog.vue | Permission dialog (blocking: overlay clicks do not dismiss; decisions only via Deny / Deny Current / Allow All) | 🟡Aux |
-| PermissionMode.vue | Permission mode switch (manual / auto / readonly) | 🟡Aux |
+| PermissionMode.vue | Permission mode switch (manual / auto / readonly); an unrecognized mode from the backend is rendered verbatim with a warning banner instead of falling back to Manual | 🟡Aux |
 | ConfirmDialog.vue | Generic confirm dialog | 🟡Aux |
 | Tooltip.vue | Generic Tooltip | 🟡Aux |
 | TreeNodes.vue | Project file-tree node (recursive component; click file → file.open in the system default app; expand directory → file.search limit 100 lazy load; per-extension icon/color mapping) | 🟡Aux |

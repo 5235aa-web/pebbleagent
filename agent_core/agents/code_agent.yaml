@@ -3,58 +3,6 @@
 name: code_agent
 description: Code expert for programming, debugging, and file operations
 
-
-# Tool permission control
-tools:
-  # Allowed tools (whitelist mode)
-  allowed:
-    # Code execution
-    - execute_code
-    - execute_python
-    - execute_shell
-    # Code search and files
-    - search_files
-    - grep
-    - search_codebase
-    - glob
-    - ls
-    - get_file_info
-    - read_file
-    - write_file
-    - edit_file
-    # Network
-    - web_search
-    # Skills
-    - load_skill
-    - list_skills
-    # Plan mode and task management
-    - enter_plan_mode
-    - exit_plan_mode
-    - create_plan
-    - get_plan
-    - todo_write
-    - todo_read
-    # LSP code intelligence
-    - lsp_go_to_definition
-    - lsp_find_references
-    - lsp_hover
-    - lsp_document_symbol
-    - lsp_workspace_symbol
-    - lsp_go_to_implementation
-    - lsp_prepare_call_hierarchy
-    - lsp_incoming_calls
-    - lsp_outgoing_calls
-    # User interaction
-    - clarify
-    - experience_write
-    - experience_update
-    # Tool search and discovery
-    - tool_search
-    - list_tools
-    # Additional tools
-    - powershell
-    - notebook_edit
-  
 # Agent behavior traits
 behavior:
   # Professional style, no emotional expression
@@ -63,6 +11,12 @@ behavior:
   auto_execute: false
   # Verbosity level
   verbosity: detailed  # Options: minimal, moderate, detailed
+
+# 工具权限：allowed 为空表示不做白名单过滤（全量工具可用），
+# 限制交给权限机制（模式 + 规则 + 路径边界 + 敏感读取拦截）
+tools:
+  enforce: true
+  allowed: []
 
 # System prompt file reference
 system_prompt_file: code_agent_prompt.md
@@ -77,4 +31,4 @@ meta:
   author: "Pebble"
   source: "built-in"
   created_at: "2026-04-08"
-  updated_at: "2026-04-18"
+  updated_at: "2026-10-16"

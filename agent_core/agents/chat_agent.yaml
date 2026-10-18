@@ -4,22 +4,52 @@
 name: chat_agent
 description: 日常聊天助手，轻松对话、闲聊、答疑解惑
 
-# 工具权限控制（enforce=true 强制生效：白名单之外的任何工具——含 MCP 工具——
-# 既不会把说明上传给 LLM，也会在执行入口被拒绝）
-tools:
-  enforce: true
-  allowed:
-    # 文件操作（唯一允许的工具集）
-    - read_file
-    - search_files
-    - edit_file
-    - write_file
-
 # Agent行为特性
 behavior:
   professional_tone: false
   auto_execute: false
   verbosity: moderate  # 可选: minimal, moderate, detailed
+
+# 工具权限（enforce=true：白名单强制执行，未列入的工具既不注入 schema，也在执行入口被拒）
+tools:
+  enforce: true
+  allowed:
+    # 文件读取与搜索
+    - read_file
+    - search_files
+    - search_in_file
+    - grep
+    - glob
+    # 网络只读（browser_download 会落盘，不在白名单）
+    - web_search
+    - fetch_url
+    - browser_navigate
+    # MCP · GitHub 只读
+    - mcp__github__get_file_contents
+    - mcp__github__search_repositories
+    - mcp__github__search_code
+    - mcp__github__search_users
+    - mcp__github__list_commits
+    - mcp__github__get_issue
+    - mcp__github__list_issues
+    - mcp__github__search_issues
+    - mcp__github__get_pull_request
+    - mcp__github__list_pull_requests
+    - mcp__github__get_pull_request_files
+    - mcp__github__get_pull_request_status
+    - mcp__github__get_pull_request_comments
+    - mcp__github__get_pull_request_reviews
+    # MCP · Chrome DevTools 只读（evaluate_script / click / fill / upload_file / take_heapsnapshot 等改状态或落盘的工具不在白名单）
+    - mcp__chrome_devtools__list_pages
+    - mcp__chrome_devtools__navigate_page
+    - mcp__chrome_devtools__take_snapshot
+    - mcp__chrome_devtools__take_screenshot
+    - mcp__chrome_devtools__list_console_messages
+    - mcp__chrome_devtools__get_console_message
+    - mcp__chrome_devtools__list_network_requests
+    - mcp__chrome_devtools__get_network_request
+    - mcp__chrome_devtools__wait_for
+    - mcp__chrome_devtools__get_css_styles
 
 # 系统提示词（内联，不依赖外部 md 文件）
 system_prompt: |
@@ -37,4 +67,4 @@ meta:
   author: "Pebble"
   source: "built-in"
   created_at: "2026-08-01"
-  updated_at: "2026-08-01"
+  updated_at: "2026-10-17"

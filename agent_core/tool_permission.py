@@ -252,6 +252,74 @@ class PathBoundaryChecker:
                 return True, f"Sensitive directory detected: '{sensitive_dir}'"
         
         return False, ""
+    
+    # 高置信度敏感模式：只匹配几乎必然是密钥/凭据的文件，供只读读取拦截使用。
+    # 不含 token / password / api_key 这类宽泛子串——它们会把 tokenizer.py、
+    # password_utils.ts 等正常源码判成敏感。
+    HIGH_CONFIDENCE_SENSITIVE_PATTERNS = [
+        r"\.env$",
+        r"\.env\.",
+        r"\.pem$",
+        r"\.key$",
+        r"\.p12$",
+        r"\.pfx$",
+        r"credentials",
+        r"secrets?",
+        r"id_rsa",
+        r"id_dsa",
+        r"id_ecdsa",
+        r"id_ed25519",
+        r"\.gitconfig$",
+        r"\.npmrc$",
+        r"\.pypirc$",
+    ]
+    
+    HIGH_CONFIDENCE_SENSITIVE_DIRS = [
+        ".ssh",
+        ".gnupg",
+        ".password-store",
+        ".config/credentials",
+        ".aws",
+        ".azure",
+        # 裸目录名：文件名本身可能不含任何关键词（如 secrets/token.txt），靠目录段兜住
+        "credentials",
+        "secrets",
+    ]
+    
+    @classmethod
+    def check_sensitive_read(cls, file_path: str) -> Tuple[bool, str]:
+        """
+        检查读取目标是否为高置信度敏感文件或目录
+        
+        与 check_sensitive_file 的区别：模式集合更窄，只覆盖密钥/凭据类文件，
+        避免在只读模式下把正常源码误判为敏感而拒绝读取。
+        
+        Args:
+            file_path: 文件或目录路径
+        
+        Returns:
+            (是否敏感, 原因)
+        """
+        if not file_path:
+            return False, ""
+        
+        normalized = str(file_path).replace("\\", "/")
+        filename = os.path.basename(normalized).lower()
+        segments = {seg.lower() for seg in normalized.split("/") if seg}
+
+        for pattern in cls.HIGH_CONFIDENCE_SENSITIVE_PATTERNS:
+            if re.search(pattern, filename):
+                return True, f"Sensitive file: filename matches '{pattern}'"
+
+        for sensitive_dir in cls.HIGH_CONFIDENCE_SENSITIVE_DIRS:
+            # 单段目录名按路径段精确匹配（避免 my-ssh 之类误伤），多段项按子路径匹配
+            if "/" in sensitive_dir:
+                if sensitive_dir in normalized.lower():
+                    return True, f"Sensitive directory: '{sensitive_dir}'"
+            elif sensitive_dir in segments:
+                return True, f"Sensitive directory: '{sensitive_dir}'"
+        
+        return False, ""
 
 
 def _get_permission_type_enum():

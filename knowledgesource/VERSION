@@ -22,17 +22,17 @@
 
 ## Agents
 
-- `code_agent` — full toolset, CKB preloaded, system prompt in `agent_core/agents/code_agent_prompt.md`
-- `chat_agent` — daily chat, four file tools only, `enforce=true` (schema filtering + execution-entry interception)
+- `chat_agent` — daily chat; `enforce=true` allowlist of 32 entries: read_file / search_files / search_in_file / grep / glob, web_search / fetch_url / browser_navigate, 14 read-only GitHub MCP methods, 10 read-only Chrome DevTools MCP methods (schema filtering + execution-entry interception; writes, exec, downloads, clarify and tool-discovery are denied)
+- `code_agent` — full toolset via `enforce=true` with an empty allowlist (empty means no filtering, so every tool including newly installed ones is granted); restriction is delegated entirely to the permission chain; CKB preloaded, system prompt in `agent_core/agents/code_agent_prompt.md`
 - YAML-defined: tools permission, behavior, skills preload, system prompt (inline or file)
 
 ## Tools
 
-- 53 built-in tools across file, shell, network, media, memory, planning, UI, and utility groups; MCP proxy tools (`mcp__*`)
+- 53 built-in tools across file, shell, network, media, memory, planning, UI, and utility groups; MCP proxy tools (`mcp__*`); schema and `TOOL_HANDLERS` are in one-to-one correspondence (53 / 53), including `web_search`, which fetches `cn.bing.com/search` over httpx, parses structured results and is rate-limited by the network guard
 - Interaction tools: `clarify` (structured questions: title / prompt / options label+detail / multiple), `todo_write` / `todo_read` (session checklist), `enter_plan_mode` / `exit_plan_mode` / `create_plan` / `get_plan`
 - Dispatch: one declarative registry (`agent_core/tool_impl/registry.py`) maps tool names to handlers; handlers live in per-domain modules (filesystem / execution / web / documents / system / workspace / lsp / mcp_bridge); `tool_executor_impl.py` is the execution pipeline facade (policy → permission → snapshot → dispatch → write-result backfill)
 - Shell validation: BashValidator (read-only / destructive / mode / sed / path / semantic), PowerShellValidator (destructive patterns + path boundary), code destructive scan, network behaviour guards (rate / navigation / download counters scoped per session via contextvar)
-- Permission chain: modes (manual / auto / readonly / locked), allow / deny / ask rules with `tool:pattern` syntax, path whitelist, project boundary checks, per-(session, permission_type) trust, inline-code escalation, fail-closed on module errors
+- Permission chain: modes (manual / auto / readonly; readonly allows the READONLY_TOOLS allowlist — reads, git, env, LSP, todo/plan, plus web_search / fetch_url / browser_navigate, with browser_download and every write rejected; deny rules are evaluated before the readonly allowlist, and high-confidence secret reads (filename patterns plus secrets / credentials directory segments) are blocked in every mode — auto rejects, manual asks, readonly rejects, allow rules cannot bypass), allow / deny / ask rules with `tool:pattern` syntax, path whitelist, project boundary checks, per-(session, permission_type) trust, inline-code escalation, fail-closed on module errors
 - Audit: permission decisions persisted with chained SHA256 checksum (v3) and write-time secret masking
 - Snapshots: write-ahead file snapshots; single-file revert matches records by normalized absolute path, reverts one version per click and reports `remaining`; a failed restore leaves the record active; the RPC runs in the thread pool; external-modification detection; undo support
 
@@ -51,7 +51,7 @@
 - Message flow: execution-order rendering (thinking / tool / question / content), inline clarify cards (title / prompt / options label+detail / multiple), multi-question answers, image attachments with viewer
 - Compaction card: 任务 / 现状 / 决定 / 待办 / 线索 sections with counts
 - HTML preview: sandboxed iframe (allow-scripts only), injected meta CSP, postMessage bridge, PNG capture, interactive comment layer
-- Config panels: LLM providers/models, thinking toggle and reasoning effort, price editor with hot reload, MCP panel, permission mode
+- Config panels: LLM providers/models, thinking toggle and reasoning effort, price editor with hot reload, MCP panel, permission mode (three options: manual / auto / read-only; a mode the panel does not recognize is shown verbatim with an explicit warning instead of silently falling back to Manual)
 - Permission dialog: blocking request queue (overlay clicks do not dismiss), per-request remember duration, Deny / Deny Current / Allow All
 - Overlay guards: panels keep unsaved input (pricing warns once before discarding, path whitelist saves on close, rename / add-path / Set path inputs block outside dismissal)
 - Reconnect recovery: disconnect detection, resume-based display restoration, short-poll for in-flight turns

@@ -757,12 +757,12 @@ def get_tools_definition() -> List[Dict[str, Any]]:
                 }
             }
         },
-        # ==================== 网络搜索 ====================
+        # ==================== 网络访问 ====================
         {
             "type": "function",
             "function": {
                 "name": "web_search",
-                "description": "搜索互联网获取实时信息。使用用户的浏览器执行搜索，返回标题、摘要和URL。这是联网搜索的唯一推荐方式，禁止使用代码执行来模拟HTTP请求或爬取网页。",
+                "description": "搜索互联网获取实时信息。按关键词返回标题、摘要和URL，适用于还不知道具体网址的场景。禁止使用代码执行来模拟HTTP请求或爬取网页。",
                 "parameters": {
                     "type": "object",
                     "properties": {
@@ -779,7 +779,7 @@ def get_tools_definition() -> List[Dict[str, Any]]:
             "type": "function",
             "function": {
                 "name": "browser_navigate",
-                "description": "在浏览器中导航到指定URL并获取页面内容。适用于查看特定网页的详细信息。需要先使用 web_search 确定目标URL。每轮最多3次。禁止遍历URL、翻页或批量访问。",
+                "description": "在浏览器中导航到指定URL并获取页面内容。适用于查看特定网页的详细信息。每轮最多3次。禁止遍历URL、翻页或批量访问。",
                 "parameters": {
                     "type": "object",
                     "properties": {

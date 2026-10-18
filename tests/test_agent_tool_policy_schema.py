@@ -38,21 +38,36 @@ def main() -> int:
     svc._mcp_initialized = False
     svc._mcp_manager = None
 
-    # 1. chat_agent: schema filtered to exactly 4 tools
-    result = svc._get_tools_definition(chat_def)
-    names = sorted(t["function"]["name"] for t in result)
-    print(f"[INFO] chat_agent schema tool count: {len(names)}")
-    check(
-        "chat_agent schema == 4 tools",
-        names == ["edit_file", "read_file", "search_files", "write_file"],
-        f"got {names}",
-    )
+    # 1. chat_agent: schema filtered by the YAML allowlist
+    from agent_core.tool_definitions import get_tools_definition
 
-    # 2. code_agent: unfiltered (full list, enforce off)
+    base_names = {t["function"]["name"] for t in get_tools_definition()}
+    result = svc._get_tools_definition(chat_def)
+    names = {t["function"]["name"] for t in result}
+    print(f"[INFO] chat_agent schema tool count: {len(names)}")
+
+    # 白名单里的内置工具必须全部出现在过滤结果里
+    # （MCP 工具是运行时注册的，不在静态 schema 中，故不参与比较）
+    allowed_internal = {t for t in chat_def.tools.allowed if t in base_names}
+    missing = sorted(allowed_internal - names)
+    check("chat_agent schema includes every allowed internal tool", not missing, f"missing {missing}")
+
+    # 写类与执行类工具必须被过滤掉
+    forbidden = {
+        "write_file", "edit_file", "delete_file", "copy_file", "move_file",
+        "create_directory", "notebook_edit",
+        "execute_code", "execute_shell", "powershell",
+        "browser_download", "kill_process", "set_env_var",
+    }
+    leaked = sorted(forbidden & names)
+    check("chat_agent schema excludes write and exec tools", not leaked, f"leaked {leaked}")
+
+    # 2. code_agent: empty allowlist -> no filtering (full list)
     result2 = svc._get_tools_definition(code_def)
-    names2 = sorted(t["function"]["name"] for t in result2)
+    names2 = {t["function"]["name"] for t in result2}
     print(f"[INFO] code_agent schema tool count: {len(names2)}")
-    check("code_agent schema unfiltered (>4)", len(names2) > 4, f"got {len(names2)}")
+    check("code_agent schema includes every base tool", base_names <= names2,
+          f"missing {sorted(base_names - names2)}")
     check("code_agent schema includes web_search", "web_search" in names2)
 
     # 3. no agent_def: unfiltered (backward compatible)

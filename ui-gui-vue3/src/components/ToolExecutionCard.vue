@@ -245,8 +245,8 @@ function st(n: string, s: ToolStatus): string {
   if (s === 'running') {
     switch (n) {
       case 'web_search': return 'searching...'
-      case 'browser_navigate': return 'loading...'
       case 'fetch_url': return 'fetching...'
+      case 'browser_navigate': return 'loading...'
       default: return 'running'
     }
   }

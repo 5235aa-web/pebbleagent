@@ -68,7 +68,7 @@ The repository also has three billing/holiday regression scripts at the project 
 | --- | --- |
 | `test_transcript_manager.py` | transcript write/read/search/delete under a temporary `PEBBLE_HOME` |
 | `test_guard_scope.py` | per-session rate/navigation/download counters, scoped reset, asyncio task isolation |
-| `test_permission_e2e.py` | rule parsing, allow/deny/ask, manual/auto/readonly/locked, persisted mode |
+| `test_permission_e2e.py` | rule parsing, allow/deny/ask, manual/auto/readonly, readonly deny precedence + sensitive-read block, persisted mode |
 | `test_mcp_registry.py` | MCP tool naming, name parsing, lookup, state shape, executor factory resolution |
 | `test_lsp_framing.py` | LSP Content-Length framing, invalid length/JSON, closed stream |
 | `test_grep_tool_async.py` | GrepTool async subprocess path (asyncio import, real search) |

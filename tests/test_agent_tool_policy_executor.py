@@ -49,9 +49,9 @@ def main() -> int:
             cancel_event=asyncio.Event(),
         )
 
-        # 1. web_search must be denied at entry (never reaches network)
-        r = await ex.execute("web_search", {"query": "test"}, ctx)
-        check("web_search denied at entry", r.startswith("Error:") and "allowlist" in r, f"got: {r[:120]}")
+        # 1. browser_download must be denied at entry (never writes to disk)
+        r = await ex.execute("browser_download", {"url": "https://example.com/a.pdf"}, ctx)
+        check("browser_download denied at entry", r.startswith("Error:") and "allowlist" in r, f"got: {r[:120]}")
 
         # 2. MCP tool denied at entry
         r2 = await ex.execute("mcp__blender__look", {}, ctx)
@@ -66,7 +66,7 @@ def main() -> int:
         r4 = await ex.execute("read_file", {"file_path": target}, ctx)
         check("read_file passes policy (real read)", ("chat_agent" in r4) and ("allowlist" not in r4), f"got: {r4[:150]}")
 
-        # 5. code_agent: web_search must NOT be policy-denied (enforce off)
+        # 5. code_agent: web_search must NOT be policy-denied (empty allowlist = no filtering)
         from agent_core.agent_loader import check_agent_tool_policy
 
         check("code_agent web_search not policy-denied", check_agent_tool_policy("code_agent", "web_search") is None)

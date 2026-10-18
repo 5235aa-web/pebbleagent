@@ -150,7 +150,10 @@ def main() -> int:
     defn = load_agent_yaml("code_agent")
     check("code_agent.yaml loads", defn is not None)
     allowed = set(defn.tools.allowed) if defn else set()
-    check("code_agent allowlist non-empty", bool(allowed), f"got {len(allowed)}")
+    check("code_agent enforce=true", defn is not None and defn.tools.enforce is True,
+          f"got {getattr(defn.tools, 'enforce', None) if defn else None}")
+    # 空 allowed 是设计契约：不做白名单过滤（全量工具可用），限制交给权限机制
+    check("code_agent allowlist empty (no filtering)", not allowed, f"got {sorted(allowed)}")
 
     # ---------- 1. required sections ----------
     for section in REQUIRED_SECTIONS:
@@ -198,10 +201,11 @@ def main() -> int:
     # tools the prompt orders the agent to use must be in the allowlist
     must_allow = [
         "read_file", "write_file", "edit_file", "glob", "grep",
-        "search_files", "execute_shell", "web_search", "list_tools",
+        "search_files", "execute_shell", "fetch_url", "list_tools",
         "clarify", "load_skill",
     ]
-    missing = [t for t in must_allow if t not in allowed]
+    # 空 allowlist 表示不做过滤（全量放行），此时不存在"未授权"的工具
+    missing = [t for t in must_allow if t not in allowed] if allowed else []
     check("prompt-critical tools are allowed by YAML", not missing, f"missing {missing}")
 
     # and every allowlist entry must exist in the registry
@@ -216,7 +220,7 @@ def main() -> int:
         and not WILDCARD_RE.match(t)
         and t in base_names
     }
-    not_allowed = sorted(prompt_tools - allowed)
+    not_allowed = sorted(prompt_tools - allowed) if allowed else []
     check("every base tool named in prompt is allowed by YAML", not not_allowed,
           f"prompt names but YAML withholds: {not_allowed}")
 

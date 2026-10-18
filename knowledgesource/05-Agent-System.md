@@ -60,11 +60,11 @@
 | File | Agent | system_prompt_file |
 |------|-------|--------------------|
 | agents/code_agent.yaml | Code expert | code_agent_prompt.md |
-| agents/chat_agent.yaml | Daily chat | (inline system_prompt, no external file; **enforce=true, four file tools only**) |
+| agents/chat_agent.yaml | Daily chat | (inline system_prompt, no external file; **enforce=true, 32-entry allowlist: read/search tools + read-only web + read-only MCP; writes, exec, downloads and clarify denied**) |
 
 Each agent YAML defines: tools permission (**the `enforce` switch can force it: when enforce=true, filter by the allowed whitelist / disallowed blacklist — blocked tools' schemas are not uploaded to the LLM + execution entry interception; enforce=false (default) stays backward-compatible with full injection**), behavior, skills preload list.
 
-⚙️ Current state: **chat_agent has enforce=true (only read_file / search_files / edit_file / write_file; MCP tools are filtered too)**; the allowed lists of code/analysis/article remain declarative (enforce off, full injection unaffected).
+⚙️ Current state: **chat_agent has enforce=true with a 32-entry allowlist — read_file / search_files / search_in_file / grep / glob, web_search / fetch_url / browser_navigate, 14 read-only GitHub MCP methods and 10 read-only Chrome DevTools MCP methods; write, execute, download, clarify and tool-discovery tools are denied and their schemas filtered out. code_agent has enforce=true with an empty allowlist, which means no filtering at all (every tool is granted, new tools included) — its restriction comes entirely from the permission chain**; other agents remain declarative (enforce off, full injection unaffected).
 
 ### Prompt structure and its contract test
 

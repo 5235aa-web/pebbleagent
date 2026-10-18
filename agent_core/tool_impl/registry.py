@@ -24,6 +24,7 @@ TOOL_HANDLERS: Dict[str, ToolHandler] = {
     "experience_write": lambda self, args, context: self._tool_experience_write(args.get('statement', ''), args.get('kind', 'preference'), args.get('rationale', ''), args.get('scope', 'project'), args.get('keywords'), context),
     "experience_update": lambda self, args, context: self._tool_experience_update(args.get('id', ''), args.get('statement', ''), args.get('kind', ''), args.get('rationale', ''), args.get('confidence'), context),
     "fetch_url": lambda self, args, context: self._tool_fetch_url(args.get('url', ''), args.get('timeout', 30)),
+    "web_search": lambda self, args, context: self._tool_web_search(args.get('query', '')),
     "find_files": lambda self, args, context: self._tool_find_files(args.get('directory', ''), args.get('pattern', ''), args.get('max_depth')),
     "get_env_var": lambda self, args, context: self._tool_get_env_var(args.get('name', '')),
     "get_file_info": lambda self, args, context: self._tool_get_file_info(args.get('path', '')),

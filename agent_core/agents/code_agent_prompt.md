@@ -267,7 +267,9 @@ Retry strategy:
 - `notebook_edit` - Edit Jupyter Notebook cells
 
 ### Browser operations
-- `web_search` - Web search (uses Bing China, available domestically)
+- `web_search` - Search the web by keyword, returns titles, snippets and URLs
+- `fetch_url` - Fetch a page's content over http/https
+- `browser_navigate` - Navigate the browser to a URL and read the page
 
 ### Skill loading
 - `list_skills` - List all available skills

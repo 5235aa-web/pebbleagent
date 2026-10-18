@@ -2,7 +2,7 @@
 权限管理器 - 规则驱动的工具授权
 
 提供：
-- 授权模式（manual / auto / readonly / locked）
+- 授权模式（manual / auto / readonly）
 - 规则表（allow / deny / ask）
 - 规则匹配（工具名 + 参数模式）
 - 与 PermissionService 的会话信任集成
@@ -37,7 +37,6 @@ class PermissionMode(str, Enum):
     MANUAL = "manual"        # 规则优先，未命中按风险等级决定
     AUTO = "auto"            # 全部放行
     READONLY = "readonly"    # 只读放行，写与执行一律拒绝
-    LOCKED = "locked"        # 全部拒绝
 
 
 class PermissionBehavior(str, Enum):
@@ -53,7 +52,7 @@ _LEGACY_MODES = {
     "autoAllow": PermissionMode.AUTO,
     "acceptEdits": PermissionMode.AUTO,
     "bypassPermissions": PermissionMode.AUTO,
-    "dontAsk": PermissionMode.LOCKED,
+    # dontAsk（旧版「不询问」）已废弃：不在映射表中，加载时回退 manual
 }
 
 
@@ -84,15 +83,30 @@ class PermissionManager:
     """
 
     # 只读工具（readonly 模式下放行）
+    # 网络只读取回放行；browser_download 会落盘，仍按写操作拒绝
     READONLY_TOOLS = {
         "read_file", "read_pdf", "list_directory", "get_file_info", "ls",
         "grep", "glob", "search_in_file", "search_files", "find_files",
         "git_status", "git_log", "git_diff", "get_env_var", "get_system_info",
         "list_processes", "list_skills", "load_skill", "todo_read", "get_plan",
         "tool_search", "list_tools",
+        "web_search", "fetch_url", "browser_navigate",
         "lsp_go_to_definition", "lsp_find_references", "lsp_hover",
         "lsp_document_symbol", "lsp_workspace_symbol", "lsp_go_to_implementation",
         "lsp_prepare_call_hierarchy", "lsp_incoming_calls", "lsp_outgoing_calls",
+    }
+
+    # 需要拦截敏感目标的读类工具（参数里带具体文件或目录路径）
+    READ_TARGET_TOOLS = {
+        "read_file", "read_pdf", "search_in_file",
+        "list_directory", "get_file_info", "ls",
+        "search_files", "find_files", "grep", "glob",
+    }
+
+    # 工具面已被 YAML 白名单锁死的 agent：权限模式对其不生效，按 auto 处理
+    # （敏感读取拦截不受影响，它在 auto 分支内同样生效）
+    AGENT_MODE_OVERRIDES = {
+        "chat_agent": PermissionMode.AUTO,
     }
 
     # 默认放行的工具
@@ -250,30 +264,70 @@ class PermissionManager:
             return True
         return False
 
+    def _effective_mode(self, agent_name: Optional[str]) -> PermissionMode:
+        """agent 级模式覆盖：工具面已由 YAML 白名单锁死的 agent 不受用户权限模式影响"""
+        override = self.AGENT_MODE_OVERRIDES.get(agent_name or "")
+        return override or self.context.mode
+
+    def _sensitive_read_reason(self, tool_name: str, content: Optional[str]) -> Optional[str]:
+        """
+        敏感目标拦截（三种模式共用）。
+
+        仅对参数里带路径的读类工具生效，命中高置信度敏感文件或目录时返回原因。
+        敏感模式模块不可用时按 fail-closed 处理。
+        """
+        if tool_name not in self.READ_TARGET_TOOLS or not content:
+            return None
+        try:
+            from agent_core.tool_permission import PathBoundaryChecker
+        except ImportError as exc:
+            logger.warning("[PermissionManager] sensitive-read check unavailable: %s", exc)
+            return "sensitive-read check unavailable (fail-closed)"
+        is_sensitive, why = PathBoundaryChecker.check_sensitive_read(content)
+        return why if is_sensitive else None
+
     async def check_permission(
         self,
         tool_name: str,
         content: Optional[str] = None,
         target: Optional[str] = None,
         reason: str = "",
+        agent_name: Optional[str] = None,
     ) -> tuple[bool, str]:
         """检查权限，必要时向用户发起请求"""
-        if self.context.mode == PermissionMode.AUTO:
+        mode = self._effective_mode(agent_name)
+        if mode == PermissionMode.AUTO:
+            sensitive_reason = self._sensitive_read_reason(tool_name, content)
+            if sensitive_reason:
+                logger.info("[PermissionManager] auto mode blocks sensitive read: %s", sensitive_reason)
+                return False, f"sensitive read blocked: {sensitive_reason}"
             logger.info("[PermissionManager] auto mode, allowing %s", tool_name)
             return True, "auto mode"
 
-        if self.context.mode == PermissionMode.LOCKED:
-            return False, "locked mode"
-
-        if self.context.mode == PermissionMode.READONLY:
-            if tool_name in self.READONLY_TOOLS:
-                return True, "readonly mode"
-            return False, f"readonly mode rejects {tool_name}"
-
+        # deny 规则先于只读白名单：显式拒绝不被只读模式豁免
         for rule in self.context.deny_rules:
             if self._match_rule(rule, tool_name, content):
                 logger.info("[PermissionManager] denied by rule: %s:%s", rule.tool, rule.pattern)
                 return False, f"denied by rule: {rule.tool}"
+
+        if mode == PermissionMode.READONLY:
+            if tool_name not in self.READONLY_TOOLS:
+                return False, f"readonly mode rejects {tool_name}"
+            sensitive_reason = self._sensitive_read_reason(tool_name, content)
+            if sensitive_reason:
+                return False, f"readonly mode blocks sensitive read: {sensitive_reason}"
+            return True, "readonly mode"
+
+        # manual：敏感文件读取必须由用户确认，allow 规则不能直接放行
+        sensitive_reason = self._sensitive_read_reason(tool_name, content)
+        if sensitive_reason:
+            detail = f"sensitive file: {sensitive_reason}"
+            return await self._request_user_permission(
+                tool_name=tool_name,
+                content=content,
+                target=target or content or "",
+                reason=f"{reason} ({detail})" if reason else detail,
+            )
 
         for rule in self.context.ask_rules:
             if self._match_rule(rule, tool_name, content):
@@ -308,6 +362,7 @@ class PermissionManager:
         self,
         tool_name: str,
         content: Optional[str] = None,
+        agent_name: Optional[str] = None,
     ) -> tuple[bool, str]:
         """
         同步评估权限（不触发用户交互，供 RPC 预检使用）。
@@ -315,18 +370,31 @@ class PermissionManager:
         命中 ask 规则或需要人工确认时返回 (False, "requires user confirmation")，
         由调用方决定是否走完整流程。
         """
-        if self.context.mode == PermissionMode.AUTO:
+        mode = self._effective_mode(agent_name)
+        if mode == PermissionMode.AUTO:
+            sensitive_reason = self._sensitive_read_reason(tool_name, content)
+            if sensitive_reason:
+                return False, f"sensitive read blocked: {sensitive_reason}"
             return True, "auto mode"
-        if self.context.mode == PermissionMode.LOCKED:
-            return False, "locked mode"
-        if self.context.mode == PermissionMode.READONLY:
-            if tool_name in self.READONLY_TOOLS:
-                return True, "readonly mode"
-            return False, f"readonly mode rejects {tool_name}"
 
+        # deny 规则先于只读白名单：显式拒绝不被只读模式豁免
         for rule in self.context.deny_rules:
             if self._match_rule(rule, tool_name, content):
                 return False, f"denied by rule: {rule.tool}"
+
+        if mode == PermissionMode.READONLY:
+            if tool_name not in self.READONLY_TOOLS:
+                return False, f"readonly mode rejects {tool_name}"
+            sensitive_reason = self._sensitive_read_reason(tool_name, content)
+            if sensitive_reason:
+                return False, f"readonly mode blocks sensitive read: {sensitive_reason}"
+            return True, "readonly mode"
+
+        # manual：敏感文件读取需人工确认
+        sensitive_reason = self._sensitive_read_reason(tool_name, content)
+        if sensitive_reason:
+            return False, f"requires user confirmation (sensitive file: {sensitive_reason})"
+
         for rule in self.context.ask_rules:
             if self._match_rule(rule, tool_name, content):
                 return False, "requires user confirmation"

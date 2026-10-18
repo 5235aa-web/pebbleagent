@@ -87,7 +87,7 @@ def handle(ctx, method):
             mode_str = mode.value
             mgr = get_permission_manager()
             mgr.set_mode(mode)
-            # 模式切换写审计（auto/locked 等高危切换可追溯）
+            # 模式切换写审计（auto 等高危切换可追溯）
             try:
                 from gateway.permission_audit import get_audit_logger, AuditEvent, AuditEventType
                 get_audit_logger().log_event(AuditEvent(

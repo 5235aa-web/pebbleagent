@@ -309,7 +309,8 @@ class PermissionEnforcer:
             tool_name=tool_name,
             content=content,
             target=content,
-            reason=f"Agent 请求执行 {tool_name}"
+            reason=f"Agent 请求执行 {tool_name}",
+            agent_name=context.agent_name if context else "",
         )
 
         response_time_ms = int((time.time() - check_start_time) * 1000)
