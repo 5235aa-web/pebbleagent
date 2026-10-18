@@ -119,13 +119,6 @@ class ExecuteCodeTool(BaseTool[Dict[str, Any], str]):
         
         logger.info(f"[ExecuteCode] Executing {language} code ({len(code)} chars)")
         
-        # === 网络请求安全扫描：硬编码拦截 ===
-        from .code_network_guard import check_and_block_network_code
-        is_allowed, block_message = check_and_block_network_code(code, language)
-        if not is_allowed:
-            return block_message
-        # === END 网络请求安全扫描 ===
-        
         # 使用 subprocess 执行
         return await self._execute_subprocess(code, language, timeout)
     

@@ -245,7 +245,7 @@ async def prepare_turn(service, params: Dict[str, Any], state: TurnState) -> Asy
     state.pending_todo_events = pending_todo_events
 
     try:
-        from ..code_network_guardV2 import reset_all_guards
+        from ..little_guard import reset_all_guards
         reset_all_guards(conversation_uuid)
     except ImportError:
         pass

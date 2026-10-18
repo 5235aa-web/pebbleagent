@@ -104,7 +104,7 @@ class AgentToolExecutorImpl(
         Returns:
             执行结果字符串
         """
-        from .code_network_guardV2 import set_guard_scope, reset_guard_scope
+        from .little_guard import set_guard_scope, reset_guard_scope
         token = set_guard_scope(context.conversation_uuid if context else "")
         try:
             return await self._execute_inner(tool_name, args, context)

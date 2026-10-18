@@ -9,7 +9,7 @@ from typing import List
 import httpx
 
 from ..truncation_manager import truncate_output
-from ..code_network_guardV2 import (
+from ..little_guard import (
     get_rate_limiter,
     get_path_depth_guard,
     get_download_guard,
@@ -252,7 +252,7 @@ class WebToolsMixin:
         """
         搜索网络（通过 httpx 抓取 Bing 搜索页并解析结构化结果）
         
-        受 code_network_guardV2 的速率限制保护。
+        受 little_guard 的速率限制保护。
         """
         if not query:
             return "Error: No query provided"

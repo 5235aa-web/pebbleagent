@@ -1,17 +1,15 @@
 """
-Behavior-based Network Request Guard V2
+Per-tool runtime limits.
 
-区别于 V1（禁止一切 HTTP 库），V2 基于行为模式检测：
-- 允许单次可控的 HTTP 请求
-- 阻止批量/遍历/自动化的爬虫行为
+Three independent limiters, each guarding one outbound tool:
 
-检测维度：
-1. 循环遍历检测（for/while 遍历 URL 列表）
-2. 翻页模式检测（page/offset/start 参数递增）
-3. URL 提取+自动跟进检测
-4. 递归/深度遍历检测
-5. 速率限制（相同域名频率控制）
-6. 爬虫框架检测（scrapy/selenium/playwright 等）
+- RateLimiter: per-domain request frequency (web_search, browser_navigate)
+- PathDepthGuard: navigation count and pagination patterns (browser_navigate)
+- DownloadGuard: file extensions, count and size (browser_download)
+
+Counters are scoped per conversation through a contextvar set by the tool
+executor and reset at the start of every turn. These limit resource use;
+they are not a crawler defence.
 """
 
 import re
@@ -42,166 +40,12 @@ def get_guard_scope() -> str:
     return _GUARD_SCOPE.get() or "default"
 
 
-# ==================== 静态模式检测 ====================
-
-# 遍历URL列表的关键模式
-LOOP_TRAVERSAL_PATTERNS = [
-    # for url in urls: requests.get(url)
-    (r'\bfor\s+\w+\s+in\s+\w+.*(?:requests|urllib|httpx|aiohttp|fetch|axios|get|post)', "Loop over URLs with HTTP"),
-    (r'\bwhile\s+.*(?:requests|urllib|httpx|aiohttp|fetch|axios)', "While loop with HTTP"),
-    # 列表推导式中的HTTP调用
-    (r'\[.*(?:requests|urllib|httpx|aiohttp|fetch|axios)\..*for\s+\w+\s+in', "List comprehension with HTTP"),
-    # map + HTTP
-    (r'\bmap\s*\(.*lambda.*(?:requests|urllib|httpx|aiohttp|fetch|axios)', "map() with HTTP"),
-    # asyncio.gather + HTTP
-    (r'\bgather\s*\(.*(?:requests|urllib|httpx|aiohttp|fetch)', "asyncio.gather with HTTP"),
-]
-
-# 翻页模式
-PAGINATION_PATTERNS = [
-    # page/offset/start 参数递增
-    (r'(?:page|offset|start|skip|limit|per_page|p)\s*[+=]+\s*\d+', "Pagination parameter detected"),
-    (r'(?:page|offset|start)\s*=\s*\d+.*(?:page|offset|start)\s*=\s*\d+', "Multiple pagination params"),
-    # /page/1 /page/2 模式
-    (r'f["\'].*/page/\d+', "URL path pagination"),
-    (r'f["\'].*\?.*page=\{\}', "f-string pagination URL"),
-    (r'f["\'].*\?.*offset=\{\}', "f-string offset URL"),
-    (r'["\'].*\?.*page=["\']\s*\+', "String concat pagination URL"),
-]
-
-# HTTP 库导入检测 — 禁止在 execute_code 中使用 HTTP 库
-# 所有网络请求必须通过 web_search / fetch_url / browser_navigate 工具
-CODE_HTTP_LIB_PATTERNS = [
-    # Python HTTP 库
-    (r'\bimport\s+requests\b', "import requests - use web_search/fetch_url instead"),
-    (r'\bfrom\s+requests\b', "from requests - use web_search/fetch_url instead"),
-    (r'\bimport\s+httpx\b', "import httpx - use web_search/fetch_url instead"),
-    (r'\bfrom\s+httpx\b', "from httpx - use web_search/fetch_url instead"),
-    (r'\bimport\s+aiohttp\b', "import aiohttp - use web_search/fetch_url instead"),
-    (r'\bfrom\s+aiohttp\b', "from aiohttp - use web_search/fetch_url instead"),
-    (r'\bimport\s+urllib\b', "import urllib - use web_search/fetch_url instead"),
-    (r'\bfrom\s+urllib\b', "from urllib - use web_search/fetch_url instead"),
-    (r'\bimport\s+urllib3\b', "import urllib3 - use web_search/fetch_url instead"),
-    (r'\bfrom\s+urllib3\b', "from urllib3 - use web_search/fetch_url instead"),
-    (r'\bimport\s+urllib\.request\b', "import urllib.request - use web_search/fetch_url instead"),
-    (r'\bfrom\s+urllib\.request\b', "from urllib.request - use web_search/fetch_url instead"),
-    (r'\bimport\s+http\.client\b', "import http.client - use web_search/fetch_url instead"),
-    (r'\bfrom\s+http\.client\b', "from http.client - use web_search/fetch_url instead"),
-    # Shell 网络命令
-    (r'\bcurl\s+', "curl - use web_search/fetch_url instead"),
-    (r'\bwget\s+', "wget - use web_search/fetch_url instead"),
-    (r'\bInvoke-WebRequest\b', "PowerShell Invoke-WebRequest - use web_search/fetch_url instead"),
-    (r'\bInvoke-RestMethod\b', "PowerShell Invoke-RestMethod - use web_search/fetch_url instead"),
-    # 动态导入绕过
-    (r'\b__import__\s*\(\s*["\']requests["\']', "__import__('requests')"),
-    (r'\b__import__\s*\(\s*["\']httpx["\']', "__import__('httpx')"),
-    (r'\b__import__\s*\(\s*["\']urllib["\']', "__import__('urllib')"),
-    (r'\b__import__\s*\(\s*["\']aiohttp["\']', "__import__('aiohttp')"),
-    (r'\bimportlib\.import_module\s*\(\s*["\']requests["\']', "importlib.import_module('requests')"),
-    (r'\bimportlib\.import_module\s*\(\s*["\']httpx["\']', "importlib.import_module('httpx')"),
-]
-
-# 爬虫框架检测（V1 保留）
-CRAWLER_FRAMEWORK_PATTERNS = [
-    (r'\bimport\s+scrapy\b', "import scrapy"),
-    (r'\bfrom\s+scrapy\b', "from scrapy"),
-    (r'\bimport\s+selenium\b', "import selenium"),
-    (r'\bfrom\s+selenium\b', "from selenium"),
-    (r'\bimport\s+playwright\b', "import playwright"),
-    (r'\bfrom\s+playwright\b', "from playwright"),
-    (r'\bimport\s+mechanicalsoup\b', "import mechanicalsoup"),
-    (r'\bimport\s+bs4\b', "import bs4"),
-    (r'\bfrom\s+bs4\b', "from bs4"),
-    (r'\bCrawlSpider\b', "CrawlSpider"),
-    (r'\bCrawlerProcess\b', "CrawlerProcess"),
-    (r'\bSitemapSpider\b', "SitemapSpider"),
-    # 动态导入绕过
-    (r'\b__import__\s*\(\s*["\']scrapy["\']', "__import__('scrapy')"),
-    (r'\b__import__\s*\(\s*["\']selenium["\']', "__import__('selenium')"),
-    (r'\b__import__\s*\(\s*["\']playwright["\']', "__import__('playwright')"),
-    (r'\bimportlib\.import_module\s*\(\s*["\']scrapy["\']', "importlib.import_module('scrapy')"),
-]
-
-# URL 提取+自动跟进检测
-URL_EXTRACTION_PATTERNS = [
-    # 提取所有链接后逐个访问
-    (r'querySelectorAll\s*\(\s*["\']a["\']', "Extract all links"),
-    (r'find_all\s*\(\s*["\']a["\']', "BeautifulSoup find_all links"),
-    (r'getElementsByTagName\s*\(\s*["\']a["\']', "getElementsByTagName links"),
-    # 递归爬取
-    (r'\brecursive\b.*\bcrawl\b', "Recursive crawl"),
-    (r'\bcrawl\b.*\brecursive\b', "Crawl recursive"),
-    (r'\bdepth\s*[=:]\s*\d+', "Crawl depth parameter"),
-    (r'\bmax_depth\s*[=:]\s*\d+', "Max depth parameter"),
-]
-
-
-def scan_code_for_scraping_behavior(code: str, language: str = "python") -> Tuple[bool, List[str]]:
-    """
-    扫描代码中是否包含爬虫行为模式
-    
-    Returns:
-        (is_blocked, detected_patterns)
-    """
-    if not code or not code.strip():
-        return False, []
-    
-    detected = []
-    
-    # 1. 检测 HTTP 库导入（封堵 execute_code 绕过）
-    for pattern, desc in CODE_HTTP_LIB_PATTERNS:
-        if re.search(pattern, code, re.IGNORECASE):
-            detected.append(desc)
-            break
-    
-    # 2. 检测循环遍历
-    for pattern, desc in LOOP_TRAVERSAL_PATTERNS:
-        if re.search(pattern, code, re.IGNORECASE):
-            detected.append(desc)
-            break
-    
-    # 3. 检测翻页
-    for pattern, desc in PAGINATION_PATTERNS:
-        if re.search(pattern, code, re.IGNORECASE):
-            detected.append(desc)
-            break
-    
-    # 4. 检测爬虫框架
-    for pattern, desc in CRAWLER_FRAMEWORK_PATTERNS:
-        if re.search(pattern, code, re.IGNORECASE):
-            detected.append(desc)
-            break
-    
-    # 5. 检测 URL 提取+自动跟进
-    for pattern, desc in URL_EXTRACTION_PATTERNS:
-        if re.search(pattern, code, re.IGNORECASE):
-            detected.append(desc)
-            break
-    
-    # 6. Shell 命令中的 curl/wget 循环
-    if language in ("bash", "shell", "sh", "zsh", "powershell", "ps1", "pwsh"):
-        if re.search(r'\bfor\s+\w+\s+in\s+.*\b(?:curl|wget)\b', code):
-            detected.append("Shell loop with curl/wget")
-        if re.search(r'\bwhile\s+.*\b(?:curl|wget)\b', code):
-            detected.append("Shell while with curl/wget")
-        if re.search(r'\bseq\s+\d+.*\b(?:curl|wget)\b', code):
-            detected.append("seq loop with curl/wget")
-    
-    if detected:
-        logger.warning(f"[NetworkGuardV2] Detected scraping behavior! Language={language}: {detected}")
-        return True, detected
-    
-    return False, []
-
-
-# ==================== 运行时速率限制 ====================
 
 class RateLimiter:
     """
     速率限制器
     
-    限制对相同域名的请求频率，防止爬虫行为。
-    按域名追踪，每分钟最多 max_per_minute 次。
+    按域名追踪请求频率，每分钟最多 max_per_minute 次。
     """
     
     def __init__(self, max_per_minute: int = 6):

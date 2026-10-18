@@ -9,9 +9,6 @@ import time
 from typing import Any, Dict, List, Optional
 
 
-from ..code_network_guardV2 import (
-    scan_code_for_scraping_behavior,
-)
 from ..code_destructive_guard import scan_code_for_destructive_behavior
 from ..query_state_machine import ToolExecutionContext
 
@@ -120,17 +117,6 @@ class ExecutionToolsMixin:
         """执行代码"""
         if not code:
             return "Error: No code provided"
-        
-        # V2 行为模式扫描：检测批量爬虫代码
-        is_blocked, patterns = scan_code_for_scraping_behavior(code, language)
-        if is_blocked:
-            patterns_str = "; ".join(patterns)
-            logger.warning(f"[ToolExecutor] Code blocked by NetworkGuardV2: {patterns_str}")
-            return (
-                f"⛔ [安全拦截] 代码中检测到爬虫行为模式，已被阻止执行。\n"
-                f"检测到: {patterns_str}\n"
-                f"说明: 禁止批量/遍历/自动化的页面访问行为。"
-            )
         
         # 破坏性模式扫描（与 execute_shell 校验对齐）
         is_blocked, patterns = scan_code_for_destructive_behavior(code, language)
@@ -263,20 +249,9 @@ class ExecutionToolsMixin:
         timeout: int = 60000,
         context: ToolExecutionContext = None
     ) -> str:
-        """执行 PowerShell 命令（含网络行为守卫，与 execute_code 同级）"""
+        """执行 PowerShell 命令"""
         if not command:
             return "Error: No command provided"
-
-        # V2 行为模式扫描：禁止 HTTP 库/网络命令/爬虫模式（与 execute_code 一致）
-        is_blocked, patterns = scan_code_for_scraping_behavior(command, "powershell")
-        if is_blocked:
-            patterns_str = "; ".join(patterns)
-            logger.warning(f"[ToolExecutor] PowerShell blocked by NetworkGuardV2: {patterns_str}")
-            return (
-                f"⛔ [安全拦截] 命令中检测到网络请求模式，已被阻止执行。\n"
-                f"检测到: {patterns_str}\n"
-                f"说明: 网络请求请使用 web_search / fetch_url / browser_navigate 工具。"
-            )
 
         # 破坏性/路径校验（与 execute_shell 的 BashValidator 同级）
         from ..powershell_validator import PowerShellValidator

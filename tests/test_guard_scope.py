@@ -16,7 +16,7 @@ if ROOT not in sys.path:
     sys.path.insert(0, ROOT)
 sys.stdout.reconfigure(encoding="utf-8", errors="replace")
 
-from agent_core.code_network_guardV2 import (
+from agent_core.little_guard import (
     DownloadGuard,
     PathDepthGuard,
     RateLimiter,

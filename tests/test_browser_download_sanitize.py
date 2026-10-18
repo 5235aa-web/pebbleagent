@@ -86,7 +86,7 @@ def main() -> int:
         async def get(self, url):
             return FakeResp()
 
-    from agent_core.code_network_guardV2 import reset_all_guards
+    from agent_core.little_guard import reset_all_guards
     import agent_core.tool_impl.web as web_mod
 
     orig_httpx = web_mod.httpx
