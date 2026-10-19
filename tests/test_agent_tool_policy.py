@@ -111,7 +111,7 @@ def main() -> int:
     clear_agent_cache()
     for t in sorted(expected_internal):
         check(f"chat_agent + {t} -> allowed", check_agent_tool_policy("chat_agent", t) is None)
-    for t in ["write_file", "edit_file", "delete_file", "execute_code", "execute_shell", "browser_download", "clarify", "list_tools"]:
+    for t in ["write_file", "edit_file", "delete_file", "execute_code", "execute_shell", "browser_download", "clarify"]:
         check(f"chat_agent + {t} -> denied", check_agent_tool_policy("chat_agent", t) is not None)
     r2 = check_agent_tool_policy("chat_agent", "mcp__blender__look")
     check("chat_agent + MCP tool -> denied", r2 is not None, f"got {r2}")

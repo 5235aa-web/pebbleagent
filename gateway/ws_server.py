@@ -380,7 +380,7 @@ async def main(host: str = "127.0.0.1", port: int = 19876):
         _connections.difference_update(disconnected)
     
     try:
-        from tools.todo_tool import TodoManager
+        from agent_core.state.todo import TodoManager
         TodoManager.register_ws_push(_ws_push_todo)
         logger.info("[WS] TodoManager WS push callback registered")
     except Exception as e:

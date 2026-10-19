@@ -1361,7 +1361,7 @@ class AgentChatServiceV2:
         finally:
             # 清理 Todo 回调
             try:
-                from tools.todo_tool import TodoManager
+                from .state.todo import TodoManager
                 TodoManager.set_event_callback(None)
             except:
                 pass

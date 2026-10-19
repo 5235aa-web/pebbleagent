@@ -3,7 +3,6 @@
 import asyncio
 import json
 import logging
-import re
 import uuid
 from typing import Any, Dict, List
 
@@ -21,7 +20,7 @@ class WorkspaceToolsMixin:
             return "Error: todos 参数为空"
         
         try:
-            from tools.todo_tool import TodoManager
+            from ..state.todo import TodoManager
             
             processed_todos = []
             for i, item in enumerate(todos):
@@ -56,7 +55,7 @@ class WorkspaceToolsMixin:
     async def _tool_todo_read(self) -> str:
         """读取任务列表"""
         try:
-            from tools.todo_tool import TodoManager, TodoStatus
+            from ..state.todo import TodoManager, TodoStatus
             
             todos = TodoManager.get_todos()
             
@@ -91,7 +90,7 @@ class WorkspaceToolsMixin:
                 return f"Error: Question {i} must have 'options' field"
         
         try:
-            from tools.ask_question_tool import QuestionManager
+            from ..state.question import QuestionManager
             
             # 注意：set_pending_questions 已由 agent_chat_service_v2.py 在 yield ask_question
             # 事件之前执行，此处不再重复调用，避免清掉用户已提交的答案。
@@ -249,187 +248,3 @@ class WorkspaceToolsMixin:
             return f"Error: {str(e)}"
 
 
-    async def _tool_enter_plan_mode(self) -> str:
-        """进入计划模式"""
-        try:
-            from tools.plan_mode_tool import PlanModeManager
-            
-            result = PlanModeManager.enter_plan_mode()
-            return json.dumps(result, ensure_ascii=False, indent=2)
-        except ImportError:
-            return "Error: plan_mode_tool not available"
-        except Exception as e:
-            return f"Error: {str(e)}"
-
-
-    async def _tool_exit_plan_mode(self, plan_title: str = None, 
-                                    plan_description: str = None,
-                                    steps: List[Dict] = None) -> str:
-        """退出计划模式"""
-        try:
-            from tools.plan_mode_tool import PlanModeManager
-            
-            plan_data = None
-            if plan_title and plan_description:
-                PlanModeManager.create_plan(plan_title, plan_description, steps or [])
-                plan_data = {
-                    "title": plan_title,
-                    "description": plan_description,
-                    "steps": steps or []
-                }
-            
-            result = PlanModeManager.exit_plan_mode(plan_data)
-            return json.dumps(result, ensure_ascii=False, indent=2)
-        except ImportError:
-            return "Error: plan_mode_tool not available"
-        except Exception as e:
-            return f"Error: {str(e)}"
-
-
-    async def _tool_create_plan(self, title: str, description: str = "", 
-                                 steps: List[Dict] = None) -> str:
-        """创建计划"""
-        try:
-            from tools.plan_mode_tool import PlanModeManager, PlanMode
-            
-            if PlanModeManager.get_mode() != PlanMode.PLAN:
-                return json.dumps({
-                    "success": False,
-                    "error": "Not in plan mode. Use enter_plan_mode first."
-                }, ensure_ascii=False, indent=2)
-            
-            if not title:
-                return "Error: title is required"
-            
-            plan = PlanModeManager.create_plan(title, description, steps or [])
-            
-            return json.dumps({
-                "success": True,
-                "plan": plan.to_dict(),
-                "message": f"Created plan: {plan.title}"
-            }, ensure_ascii=False, indent=2)
-        except ImportError:
-            return "Error: plan_mode_tool not available"
-        except Exception as e:
-            return f"Error: {str(e)}"
-
-
-    async def _tool_get_plan(self) -> str:
-        """获取当前计划"""
-        try:
-            from tools.plan_mode_tool import PlanModeManager
-            
-            plan = PlanModeManager.get_current_plan()
-            
-            if not plan:
-                return json.dumps({
-                    "success": True,
-                    "plan": None,
-                    "message": "No current plan"
-                }, ensure_ascii=False, indent=2)
-            
-            return json.dumps({
-                "success": True,
-                "plan": plan.to_dict(),
-                "mode": PlanModeManager.get_mode().value,
-                "message": f"Current plan: {plan.title}"
-            }, ensure_ascii=False, indent=2)
-        except ImportError:
-            return "Error: plan_mode_tool not available"
-        except Exception as e:
-            return f"Error: {str(e)}"
-
-
-    async def _tool_tool_search(self, query: str, max_results: int = 5) -> str:
-        """搜索可用工具"""
-        if not query:
-            return "Error: No query provided"
-        
-        
-        try:
-            from tools.tool_registry import ToolRegistry
-            
-            all_tools = list(ToolRegistry._tools.values())
-            
-            if query.startswith("select:"):
-                tool_name = query[7:].strip()
-                for tool in all_tools:
-                    if tool.name.lower() == tool_name.lower():
-                        return json.dumps({
-                            "matches": [tool.name],
-                            "selected_tool": {
-                                "name": tool.name,
-                                "description": tool.description[:500] if tool.description else ""
-                            }
-                        }, ensure_ascii=False, indent=2)
-                
-                return json.dumps({
-                    "matches": [],
-                    "error": f"Tool not found: {tool_name}"
-                }, ensure_ascii=False, indent=2)
-            
-            # 关键词搜索
-            query_lower = query.lower()
-            query_words = re.findall(r'\w+', query_lower)
-            
-            scored_tools = []
-            for tool in all_tools:
-                score = 0
-                name_lower = tool.name.lower()
-                desc_lower = (tool.description or "").lower()
-                
-                if query_lower == name_lower:
-                    score += 100
-                if query_lower in name_lower:
-                    score += 50
-                for word in query_words:
-                    if word in name_lower:
-                        score += 20
-                    if word in desc_lower:
-                        score += 5
-                
-                if score > 0:
-                    scored_tools.append((tool, score))
-            
-            scored_tools.sort(key=lambda x: x[1], reverse=True)
-            matches = [tool.name for tool, score in scored_tools[:max_results]]
-            
-            return json.dumps({
-                "matches": matches,
-                "query": query,
-                "total_deferred_tools": len(all_tools)
-            }, ensure_ascii=False, indent=2)
-        
-        except ImportError:
-            return "Error: ToolRegistry not available"
-        except Exception as e:
-            return f"Error: {str(e)}"
-
-
-    async def _tool_list_tools(self) -> str:
-        """列出所有可用工具"""
-        try:
-            from tools.tool_registry import ToolRegistry
-            
-            all_tools = list(ToolRegistry._tools.values())
-            
-            tools_info = []
-            for tool in all_tools:
-                tools_info.append({
-                    "name": tool.name,
-                    "description": (tool.description or "")[:200],
-                    "requires_permission": getattr(tool, "requires_permission", True),
-                    "danger_level": getattr(tool, "danger_level", "medium")
-                })
-            
-            tools_info.sort(key=lambda x: x["name"])
-            
-            return json.dumps({
-                "tools": tools_info,
-                "count": len(tools_info)
-            }, ensure_ascii=False, indent=2)
-        
-        except ImportError:
-            return "Error: ToolRegistry not available"
-        except Exception as e:
-            return f"Error: {str(e)}"

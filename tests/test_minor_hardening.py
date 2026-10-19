@@ -10,12 +10,10 @@
 
 Run: python tests/test_minor_hardening.py   (exit 0 = pass)
 """
-import asyncio
 import os
 import sqlite3
 import sys
 import tempfile
-import threading
 
 ROOT = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
 if ROOT not in sys.path:
@@ -40,47 +38,6 @@ def main() -> int:
         with open(os.path.join(ROOT, path), "r", encoding="utf-8") as f:
             return f.read()
 
-    # ================= 7a: BaseTool thread-skip removed =================
-    base_src = read("tools/base_tool.py")
-    check("7a static: no 'skipping permission check' branch",
-          "skipping permission check" not in base_src and "Background task - permission check" not in base_src)
-
-    from tools.base_tool import BaseTool, ToolResult
-    from gateway.permission_manager import get_permission_manager, PermissionMode
-
-    mgr = get_permission_manager()
-    mgr.config_path = os.path.join(tempfile.gettempdir(), "pebble_test_rules_minor.json")
-    mgr.context.mode = PermissionMode.AUTO  # in-memory only
-
-    class _T(BaseTool):
-        name = "TestTool7a"
-        description = "test"
-        requires_permission = True
-
-        async def call(self, input_data):
-            return ToolResult(status="success", content="ok")
-
-        def _extract_content(self, input_data):
-            return "test-content"
-
-    result_holder = {}
-
-    def _run_in_thread():
-        loop = asyncio.new_event_loop()
-        asyncio.set_event_loop(loop)
-        try:
-            tool = _T()
-            result_holder["r"] = loop.run_until_complete(tool.check_permissions({}))
-        finally:
-            loop.close()
-
-    t = threading.Thread(target=_run_in_thread)
-    t.start()
-    t.join(timeout=30)
-    r = result_holder.get("r")
-    check("7a dynamic: background-thread call is NOT skipped",
-          r is not None and "Background task" not in (r.reason or ""),
-          f"got {r}")
 
     # ================= 7b: path_whitelist.save validation =================
     from gateway.server import handle_request
@@ -138,8 +95,11 @@ def main() -> int:
     check("7d: empty when absent", got == "", f"got {got!r}")
 
     # ================= 7f: rule prefix word boundary =================
-    from gateway.permission_manager import PermissionRule, PermissionBehavior
+    from gateway.permission_manager import (
+        PermissionRule, PermissionBehavior, get_permission_manager,
+    )
 
+    mgr = get_permission_manager()
     rule = PermissionRule(tool="execute_shell", pattern="git *", effect=PermissionBehavior.ALLOW)
     check("7f: 'git status' matches", mgr._match_rule(rule, "execute_shell", "git status") is True)
     check("7f: bare 'git' matches", mgr._match_rule(rule, "execute_shell", "git") is True)

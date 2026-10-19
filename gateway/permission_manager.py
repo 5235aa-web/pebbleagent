@@ -88,8 +88,7 @@ class PermissionManager:
         "read_file", "read_pdf", "list_directory", "get_file_info", "ls",
         "grep", "glob", "search_in_file", "search_files", "find_files",
         "git_status", "git_log", "git_diff", "get_env_var", "get_system_info",
-        "list_processes", "list_skills", "load_skill", "todo_read", "get_plan",
-        "tool_search", "list_tools",
+        "list_processes", "list_skills", "load_skill", "todo_read",
         "web_search", "fetch_url", "browser_navigate",
         "lsp_go_to_definition", "lsp_find_references", "lsp_hover",
         "lsp_document_symbol", "lsp_workspace_symbol", "lsp_go_to_implementation",
@@ -114,9 +113,8 @@ class PermissionManager:
         "read_file", "read_pdf", "list_directory", "get_file_info", "ls",
         "grep", "glob", "search_in_file", "search_files", "find_files",
         "git_status", "git_log", "git_diff",
-        "todo_read", "todo_write", "get_plan", "create_plan",
-        "enter_plan_mode", "exit_plan_mode",
-        "list_skills", "load_skill", "tool_search", "list_tools",
+        "todo_read", "todo_write",
+        "list_skills", "load_skill",
         "clarify",
         "get_env_var", "get_system_info", "list_processes",
         "execute_shell:git *", "execute_shell:ls", "execute_shell:dir",
@@ -133,7 +131,7 @@ class PermissionManager:
         "execute_shell:taskkill *",
         "write_file:.env", "write_file:*.pem", "write_file:*.key",
         "write_file:.git/*", "write_file:*.secret", "write_file:credentials*",
-        "delete_file", "kill_process", "set_env_var", "notebook_edit",
+        "delete_file", "kill_process", "set_env_var",
     ]
 
     def __init__(self, config_path: str = "permission_rules.json"):
@@ -435,7 +433,6 @@ class PermissionManager:
             "find_files": PermissionType.FILE_READ,
             "write_file": PermissionType.FILE_WRITE,
             "edit_file": PermissionType.FILE_WRITE,
-            "notebook_edit": PermissionType.FILE_WRITE,
             "delete_file": PermissionType.FILE_DELETE,
             "copy_file": PermissionType.FILE_WRITE,
             "move_file": PermissionType.FILE_WRITE,

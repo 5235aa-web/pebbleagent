@@ -64,7 +64,7 @@ class ToolCycle:
             tc["function"]["arguments"] = json.dumps(tool_args, ensure_ascii=False)
 
             # 先注册再发事件：避免用户答案在注册前到达而被清掉
-            from tools.ask_question_tool import QuestionManager
+            from ..state.question import QuestionManager
             QuestionManager.set_pending_questions({
                 "id": question_id,
                 "questions": questions,

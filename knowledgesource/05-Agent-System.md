@@ -64,7 +64,7 @@
 
 Each agent YAML defines: tools permission (**the `enforce` switch can force it: when enforce=true, filter by the allowed whitelist / disallowed blacklist — blocked tools' schemas are not uploaded to the LLM + execution entry interception; enforce=false (default) stays backward-compatible with full injection**), behavior, skills preload list.
 
-⚙️ Current state: **chat_agent has enforce=true with a 32-entry allowlist — read_file / search_files / search_in_file / grep / glob, web_search / fetch_url / browser_navigate, 14 read-only GitHub MCP methods and 10 read-only Chrome DevTools MCP methods; write, execute, download, clarify and tool-discovery tools are denied and their schemas filtered out. code_agent has enforce=true with an empty allowlist, which means no filtering at all (every tool is granted, new tools included) — its restriction comes entirely from the permission chain**; other agents remain declarative (enforce off, full injection unaffected).
+⚙️ Current state: **chat_agent has enforce=true with a 32-entry allowlist — read_file / search_files / search_in_file / grep / glob, web_search / fetch_url / browser_navigate, 14 read-only GitHub MCP methods and 10 read-only Chrome DevTools MCP methods; write, execute, download and clarify tools are denied and their schemas filtered out. code_agent has enforce=true with an empty allowlist, which means no filtering at all (every tool is granted, new tools included) — its restriction comes entirely from the permission chain**; other agents remain declarative (enforce off, full injection unaffected).
 
 ### Prompt structure and its contract test
 
@@ -72,7 +72,7 @@ Each agent YAML defines: tools permission (**the `enforce` switch can force it: 
 
 Severity wording: 13 headings carry the `[MUST]` suffix — CKB build-mode constraints, supreme principle, output-execution consistency, truthfulness, general rules, task-list updates, requirement clarification, requirement review, code quality, handoff document, HTML comment loop, debugging process, LSP checks. No other severity vocabulary exists: `(must)`, `(mandatory rule)`, `(important!)`, and `(violation = failure)` do not occur anywhere in the file.
 
-`tests/test_code_agent_prompt_contract.py` pins the prompt to the runtime: required sections present, every tool named in the prompt granted by the YAML allowlist or owned by an MCP server in `.mcp.json`, no ghost entry in the allowlist, no forced single-language rule, no ambiguous severity marker, the `[MUST]` heading count fixed at 13, and the CKB exemptions / MCP fallback / retry budget still documented. The tool universe is `agent_core/tool_definitions.py` ∪ static `name = "..."` declarations under `tools/` ∪ the runtime `ToolRegistry`; the static scan is what keeps the check alive under the CI dependency set, which omits the heavy optional imports.
+`tests/test_code_agent_prompt_contract.py` pins the prompt to the runtime: required sections present, every tool named in the prompt granted by the YAML allowlist or owned by an MCP server in `.mcp.json`, no ghost entry in the allowlist, no forced single-language rule, no ambiguous severity marker, the `[MUST]` heading count fixed at 13, and the CKB exemptions / MCP fallback / retry budget still documented. The tool universe is the schema set in `agent_core/tool_definitions.py`, which the handler-side table in `agent_core/tool_impl/registry.py` mirrors exactly.
 
 ### Notes
 

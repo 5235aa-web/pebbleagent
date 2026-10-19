@@ -32,7 +32,7 @@ def main() -> int:
     tmp_home = tempfile.mkdtemp(prefix="pebble_test_")
     os.environ["PEBBLE_HOME"] = tmp_home  # must be set before importing gateway.server
 
-    from tools.ask_question_tool import QuestionManager
+    from agent_core.state.question import QuestionManager
     from gateway.server import _submit_clarify_answer
 
     print("=== Test 1: new channel (structured answers object) ===")

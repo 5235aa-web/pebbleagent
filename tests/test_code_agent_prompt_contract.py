@@ -77,25 +77,6 @@ def read_text(path):
         return f.read()
 
 
-def scan_tool_names_static():
-    """Tool names declared in tools/*_tool*.py, without importing the modules.
-
-    Importing them pulls in heavy optional deps (OCR, torch), which the CI
-    dependency set deliberately omits, so the static scan is the reliable floor.
-    """
-    names = set()
-    tools_dir = os.path.join(ROOT, "tools")
-    if not os.path.isdir(tools_dir):
-        return names
-    for fn in os.listdir(tools_dir):
-        if not (fn.endswith("_tool.py") or fn.endswith("_tools.py")):
-            continue
-        try:
-            text = read_text(os.path.join(tools_dir, fn))
-        except Exception:
-            continue
-        names |= set(re.findall(r'^\s*name\s*=\s*"([a-z][a-z0-9_]*)"', text, re.MULTILINE))
-    return names
 
 
 def mcp_prefixes():
@@ -162,19 +143,9 @@ def main() -> int:
         check(f"section present: {section}", section in prompt)
 
     # ---------- 2. tool-name sync ----------
-    # Universe = static tool declarations + the static schema set
-    # (agent_core/tool_definitions.py) + the runtime registry when it imports
-    # cleanly. No single source is complete: the schema set misses
-    # execute_python / notebook_edit, the registry misses the LSP family.
+    # Universe = the static schema set (agent_core/tool_definitions.py). The
+    # handler-side dispatch table is checked by tests/test_tool_registry.py.
     base_names = {t["function"]["name"] for t in get_tools_definition()}
-    base_names |= scan_tool_names_static()
-    if not os.environ.get("CONTRACT_NO_REGISTRY"):
-        try:
-            from tools.tool_registry import ToolRegistry, auto_register_tools
-            auto_register_tools()
-            base_names |= set(ToolRegistry.list_tools())
-        except Exception as exc:
-            print(f"[WARN] tool registry unavailable, static scan only: {exc}")
     prefixes = mcp_prefixes()
     print(f"[INFO] base tools: {len(base_names)} | MCP prefixes: {len(prefixes)}")
 
@@ -203,7 +174,7 @@ def main() -> int:
     # tools the prompt orders the agent to use must be in the allowlist
     must_allow = [
         "read_file", "write_file", "edit_file", "glob", "grep",
-        "search_files", "execute_shell", "fetch_url", "list_tools",
+        "search_files", "execute_shell", "fetch_url",
         "clarify", "load_skill",
     ]
     # 空 allowlist 表示不做过滤（全量放行），此时不存在"未授权"的工具

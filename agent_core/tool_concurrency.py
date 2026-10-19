@@ -78,11 +78,8 @@ READ_ONLY_TOOLS: Set[str] = {
     "get_system_info",
     "list_processes",
     
-    # 技能和工具查询
+    # 技能查询
     "list_skills",
-    "list_tools",
-    "tool_search",
-    "get_plan",
     
     # LSP 代码智能（全部只读）
     "lsp_go_to_definition",
@@ -146,8 +143,6 @@ WRITE_TOOLS: Set[str] = {
 SIDE_EFFECT_TOOLS: Set[str] = {
     # 这些工具会改变系统状态或需要用户交互
     "clarify",  # 需要等待用户响应
-    "enter_plan_mode",    # 改变会话模式
-    "exit_plan_mode",     # 改变会话模式
 }
 
 

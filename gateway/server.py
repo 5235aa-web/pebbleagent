@@ -440,7 +440,7 @@ def _submit_clarify_answer(answer: str, request_id: str = "", answers: dict = No
     直接忽略（旧卡重复提交不得污染下一次 ask 的等待事件）。
     """
     try:
-        from tools.ask_question_tool import QuestionManager
+        from agent_core.state.question import QuestionManager
         pending = QuestionManager.get_pending_questions()
         if not pending:
             logger.info(f"[Gateway] clarify.respond ignored (no pending question), request_id={request_id}")

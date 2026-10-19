@@ -6,38 +6,28 @@ The executor is a thin pipeline (policy → permission → snapshot → dispatch
 
 | File | Function | Tag |
 |------|------|------|
-| registry.py | Declarative dispatch table (52 tool names → handler) | 🔴Core |
+| registry.py | Declarative dispatch table (47 tool names → handler) | 🔴Core |
 | filesystem.py | Read/write/edit/search/glob/ls/grep/directory tools | 🔴Core |
 | execution.py | Shell, PowerShell, inline code, subprocess lifecycle | 🔴Core |
 | web.py | Fetch, search, browser navigate/download, network guards | 🔴Core |
 | documents.py | PDF reading + OCR | 🟡Aux |
 | system.py | Env vars, system info, processes, git status/log/diff | 🟡Aux |
-| workspace.py | Todo, notes, questions, plans, skills, tool discovery, experience ledger writes and updates (experience_write / experience_update) | 🟡Aux |
+| workspace.py | Todo, notes, questions, skills, experience ledger writes and updates (experience_write / experience_update) | 🟡Aux |
 | lsp.py | Language-server code intelligence (9 tools + formatters) | 🟡Aux |
 | mcp_bridge.py | MCP tool routing (executor factory + ToolExecutionContext imported; unconnected server returns an error string) | 🟡Aux |
 
 `agent_core/tool_executor_impl.py` is the facade: mixin composition + the execution pipeline.
 
-### tools/ (18 files)
+### agent_core/state/ (3 files — cross-turn runtime state)
 
 | File | Function | Tag |
 |------|------|------|
-| base_tool.py | Unified tool base class + ToolRegistry (**permission-manager ImportError denies — fail-closed**; **all tool execution goes through the permission layer regardless of thread**) | 🔴Core |
-| tool_registry.py | Tool registry (singleton; auto_register_from_module scans a module and registers BaseTool subclasses, SimpleTool excluded) | 🔴Core |
-| file_tools.py | File operation tool set | 🔴Core |
-| todo_tool.py | Todo list management | 🔴Core |
-| ask_question_tool.py | Clarify tool (ClarifyTool, question manager) | 🟡Aux |
-| execute_code_tool.py | Code execution tool | 🟡Aux |
-| powershell_tool.py | PowerShell tool (danger_level "high") | 🟡Aux |
-| grep_tool.py | Code search tool (async subprocess, cancel polling, process-tree termination) | 🟡Aux |
-| glob_tool.py | File matching tool | 🟡Aux |
-| web_fetch_tool.py | HTTP request tool | 🟡Aux |
-| plan_mode_tool.py | Plan mode tool | 🟡Aux |
-| skill_tools.py | Skill tools | 🟡Aux |
-| notebook_edit_tool.py | Notebook editing | 🟡Aux |
-| tool_search_tool.py | Tool search | 🟡Aux |
-| test_tools.py | Test tools | 🧪Test |
-| __init__.py | Module init | 📦Config |
+| todo.py | TodoManager (per-session todo list + WebSocket push callback) | 🔴Core |
+| question.py | QuestionManager (pending clarify questions + answer event) | 🔴Core |
+| __init__.py | Package exports | 📦Config |
+
+These two managers are the runtime state behind the `todo_write` / `todo_read` and `clarify` tools. The former `tools/` package (BaseTool classes + ToolRegistry) has been removed: tool schemas live in `agent_core/tool_definitions.py`, dispatch in `agent_core/tool_impl/registry.py`, and implementations in the `tool_impl/` mixins.
+
 
 ### agent_core/mcp/ (5 files)
 
@@ -73,6 +63,6 @@ Custom tools just need to be placed under `extensions/tools/` exposing those 4 a
 
 ### Notes
 
-1. **Tool architecture — four layers**: BaseTool + ToolRegistry + Extensions Loader + MCP (MCP servers defined in the root .mcp.json, 6 of them incl. blender; dependency declarations and the frontend panel use mcp_install.json + the mcp.install_info RPC)
+1. **Tool architecture — three layers**: declarative dispatch (`tool_definitions.py` schemas + `tool_impl/registry.py` handlers + `tool_impl/` mixins) + Extensions Loader + MCP (MCP servers defined in the root .mcp.json, 6 of them incl. blender; dependency declarations and the frontend panel use mcp_install.json + the mcp.install_info RPC)
 7. **Todo event path**: `TodoManager._event_callback` is only set inside the LLM stream. When an Agent calls `todo_write` itself, it falls back to `_ws_push_callback`
 8. **MCP connect control**: the McpPanel switch calls `mcp.toggle` → `McpManager.set_server_enabled_state` (idempotent, non-blocking submit onto the WS loop). Disabled servers are excluded from `get_enabled_configs()` at init, so toggle recovers them from `get_all_configs()` before connecting. Disabling cancels the connection-monitor task (otherwise it reports a false "Connection lost" one poll later) and tolerates a failing `close()` without skipping the state switch. `mcp.list` reports `enabled` / `state` from the merged config (not the raw file) and hides unusable placeholder entries unless `mcp_install.json` declares them installable. State changes are pushed to the frontend as `mcp.state_changed`

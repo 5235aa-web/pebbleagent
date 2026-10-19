@@ -336,7 +336,6 @@ TOOL_PERMISSION_MAPPING: Dict[str, Tuple[str, Callable[[Dict[str, Any]], str], b
     # ==================== 代码执行 ====================
     "execute_code": ("EXEC_COMMAND", lambda a: a.get("code", ""), False),
     "execute_shell": ("EXEC_COMMAND", lambda a: a.get("command", ""), False),
-    "execute_python": ("EXEC_COMMAND", lambda a: a.get("code", ""), False),
     "execute_javascript": ("EXEC_COMMAND", lambda a: a.get("code", ""), False),
     "powershell": ("EXEC_COMMAND", lambda a: a.get("command", ""), False),
     
@@ -383,7 +382,6 @@ TOOL_PERMISSION_MAPPING: Dict[str, Tuple[str, Callable[[Dict[str, Any]], str], b
     "get_system_info": ("FILE_READ", lambda a: "", False),
     
     # ==================== Notebook ====================
-    "notebook_edit": ("FILE_WRITE", lambda a: a.get("notebook_path", ""), True),
     
     # ==================== 技能管理（无需权限检查） ====================
     "list_skills": ("", lambda a: "", False),
@@ -395,16 +393,6 @@ TOOL_PERMISSION_MAPPING: Dict[str, Tuple[str, Callable[[Dict[str, Any]], str], b
     # ==================== Todo管理（无需权限检查） ====================
     "todo_write": ("", lambda a: "", False),
     "todo_read": ("", lambda a: "", False),
-    
-    # ==================== Plan Mode（无需权限检查） ====================
-    "enter_plan_mode": ("", lambda a: "", False),
-    "exit_plan_mode": ("", lambda a: "", False),
-    "create_plan": ("", lambda a: "", False),
-    "get_plan": ("", lambda a: "", False),
-    
-    # ==================== Tool Search（无需权限检查） ====================
-    "tool_search": ("", lambda a: "", False),
-    "list_tools": ("", lambda a: "", False),
     
     # ==================== LSP 代码智能（只读文件访问，需要路径边界检查） ====================
     "lsp_go_to_definition": ("FILE_READ", lambda a: a.get("file_path", ""), True),

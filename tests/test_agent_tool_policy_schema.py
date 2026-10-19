@@ -55,7 +55,7 @@ def main() -> int:
     # 写类与执行类工具必须被过滤掉
     forbidden = {
         "write_file", "edit_file", "delete_file", "copy_file", "move_file",
-        "create_directory", "notebook_edit",
+        "create_directory",
         "execute_code", "execute_shell", "powershell",
         "browser_download", "kill_process", "set_env_var",
     }

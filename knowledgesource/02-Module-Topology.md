@@ -8,7 +8,8 @@
 [Data]        gateway/session.py (sessions.db), agent_core/agent_chat_history.py (agent_chat.db)
               agent_core/transcript_manager.py (JSONL transcript archive), gateway/permission_audit.py (audit DB)
                  ↑ read/write
-[Tools]       tools/ (BaseTool + ToolRegistry), agent_core/extensions/, agent_core/mcp/
+[Tools]       agent_core/tool_definitions.py (47 schemas) + agent_core/tool_impl/ (dispatch + handlers)
+              agent_core/extensions/, agent_core/mcp/, agent_core/state/ (todo + question managers)
               Tool infrastructure: bash_validator (6-layer command validation) / little_guard (3 runtime limiters, per-session counters)
               / lsp_client (backend of 9 LSP tools)
                  ↑ call
@@ -40,7 +41,7 @@
 | agent_loader.py | Service | agent_chat_service_v2 | agents/*.yaml + *_prompt.md |
 | context_compressor.py | Service | agent_chat_service_v2, server.py | - |
 | tool_orchestrator.py | Service | agent_chat_service_v2 | tool_executor_impl |
-| tool_executor_impl.py | Service | tool_orchestrator | tools/ |
+| tool_executor_impl.py | Service | tool_orchestrator | tool_impl/ |
 | tool_definitions.py | Tools | agent_chat_service_v2 | extensions_loader, MCP |
 | extensions_loader.py | Tools | tool_definitions | extensions/tools/*.py |
 | config.py | Gateway | server.py | llm_providers.json |

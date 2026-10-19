@@ -232,7 +232,7 @@ async def prepare_turn(service, params: Dict[str, Any], state: TurnState) -> Asy
     state.cancel_event = asyncio.Event()
     service._cancel_signals[conversation_uuid] = state.cancel_event
 
-    from tools.todo_tool import TodoManager
+    from ..state.todo import TodoManager
     TodoManager.set_session_id(conversation_uuid)
     try:
         from gateway.permission_manager import get_permission_manager
