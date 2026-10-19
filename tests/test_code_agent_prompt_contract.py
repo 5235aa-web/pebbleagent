@@ -64,6 +64,8 @@ NON_TOOL_TOKENS = {
     "pending", "in_progress", "completed",
     # experience_write / experience_update parameter values
     "scope", "project", "global", "rationale", "status",
+    # OpenAI request-body field name, not a tool
+    "tools",
 }
 
 TOOL_TOKEN_RE = re.compile(r"`([a-z][a-z0-9_]{2,})`")
