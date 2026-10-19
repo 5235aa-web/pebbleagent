@@ -450,7 +450,12 @@ class McpManager:
                 self._configs[server_name] = recovered
 
             if enabled == (not is_mcp_server_disabled(server_name)):
-                return True  # 已是目标状态
+                # 已是目标状态。禁用态仍需回收工具：历史残留不会自愈，
+                # 而 mcp.list 与 agent 工具定义都直接读 self._tools。
+                if not enabled:
+                    self._update_tools_for_server(server_name, [])
+                    self._notify_state_change()
+                return True
 
             config = self._configs[server_name]
 
@@ -492,6 +497,9 @@ class McpManager:
                     self._clients[server_name] = DisabledMCPServer(
                         name=server_name, config=config
                     )
+                    # 断开后必须回收工具，否则 mcp.list 的角标与 agent 的工具
+                    # 定义仍会暴露该服务器的工具，调用时必然 not connected。
+                    self._update_tools_for_server(server_name, [])
                     self._notify_state_change()
 
             return True
@@ -526,14 +534,12 @@ class McpManager:
         except ImportError:
             pass
         
-        async def update():
-            # 移除旧工具
-            prefix = f"mcp__{server_name.replace('-', '_').lower()}"
-            self._tools = [t for t in self._tools if not t.name.startswith(prefix)]
-            # 添加新工具
-            self._tools.extend(new_tools)
-        
-        asyncio.get_event_loop().create_task(update())
+        # 一次性替换，避免读者观察到"旧工具已删、新工具未加"的中间态。
+        # 同步执行：连接流程、reload、disable 都需要调用后立刻读到结果。
+        prefix = f"mcp__{server_name.replace('-', '_').lower()}__"
+        self._tools = [
+            t for t in self._tools if not t.name.startswith(prefix)
+        ] + list(new_tools)
     
     def _update_commands_for_server(self, server_name: str, new_commands: List[Dict[str, Any]]):
         """更新指定服务器的命令"""
