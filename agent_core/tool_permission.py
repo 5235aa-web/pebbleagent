@@ -368,7 +368,6 @@ TOOL_PERMISSION_MAPPING: Dict[str, Tuple[str, Callable[[Dict[str, Any]], str], b
     # ==================== 网络 ====================
     "search_web": ("NETWORK_FETCH", lambda a: a.get("query", ""), False),
     "web_search": ("NETWORK_FETCH", lambda a: a.get("query", ""), False),
-    "browser_navigate": ("NETWORK_FETCH", lambda a: a.get("url", ""), False),
     "browser_download": ("NETWORK_FETCH", lambda a: a.get("url", ""), False),
     "fetch_url": ("NETWORK_FETCH", lambda a: a.get("url", ""), False),
     

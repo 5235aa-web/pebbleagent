@@ -246,14 +246,12 @@ function st(n: string, s: ToolStatus): string {
     switch (n) {
       case 'web_search': return 'searching...'
       case 'fetch_url': return 'fetching...'
-      case 'browser_navigate': return 'loading...'
       default: return 'running'
     }
   }
   if (s === 'completed') {
     switch (n) {
       case 'web_search': return 'done'
-      case 'browser_navigate': return 'loaded'
       default: return 'completed'
     }
   }

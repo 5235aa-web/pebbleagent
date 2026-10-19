@@ -1,6 +1,6 @@
 # Project Code Knowledge Base — PebbleAgent (Index)
 
-> Last updated: 2026-10-19 | Scope: WebSocket gateway, agent runtime, tool system (47 built-in tools), cross-turn state, LLM billing, Vue 3 + Tauri frontend, CKB | 123 .py + 61 .vue/.ts + 3 .rs
+> Last updated: 2026-10-19 | Scope: WebSocket gateway, agent runtime, tool system (46 built-in tools), cross-turn state, LLM billing, Vue 3 + Tauri frontend, CKB | 123 .py + 61 .vue/.ts + 3 .rs
 
 1. Project Overview (positioning, tech stack, entry points, the CKB mechanism itself)
 2. Module Topology (module layers and call-relationship diagram)

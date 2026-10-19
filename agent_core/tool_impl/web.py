@@ -229,12 +229,35 @@ def _parse_bing_search_results(html: str) -> list:
 
 class WebToolsMixin:
 
-    async def _tool_fetch_url(self, url: str, timeout: int = 30) -> str:
-        """获取网页内容"""
+    async def _tool_fetch_url(self, url: str, mode: str = "auto", timeout: int = 30) -> str:
+        """抓取网页内容。
+
+        mode:
+          auto - 按 Content-Type 决定（text/html 剥标签，其余原样返回）
+          text - 强制剥标签，返回可读正文
+          raw  - 强制返回原始响应体
+        """
         if not url:
             return "Error: No URL provided"
-        
-        # 第一阶段：httpx 快速获取
+
+        if not url.startswith(("http://", "https://")):
+            return "Error: URL must start with http:// or https://"
+
+        if mode not in ("auto", "text", "raw"):
+            return f"Error: Invalid mode {mode!r}; expected auto, text or raw"
+
+        # 翻页检测 + 每轮抓取次数
+        path_guard = get_path_depth_guard()
+        allowed, msg = path_guard.check_navigate(url)
+        if not allowed:
+            return f"Error: {msg}"
+
+        # 同域名每分钟请求上限
+        rate_limiter = get_rate_limiter()
+        allowed, msg = rate_limiter.check(url)
+        if not allowed:
+            return f"Error: {msg}"
+
         try:
             async with httpx.AsyncClient(timeout=timeout, follow_redirects=True) as client:
                 resp = await client.get(
@@ -242,10 +265,33 @@ class WebToolsMixin:
                     headers={"User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36"}
                 )
                 raw_text = resp.text
+                content_type = resp.headers.get("content-type", "").lower()
+        except asyncio.CancelledError:
+            raise
         except Exception as e:
+            logger.error(f"[ToolExecutor] Fetch error: {e}")
             return f"Error: Failed to fetch URL: {e}"
-        
-        return truncate_output(raw_text)[0]
+
+        resolved = mode
+        if resolved == "auto":
+            is_html = "text/html" in content_type or "application/xhtml" in content_type
+            resolved = "text" if is_html else "raw"
+
+        if resolved == "raw":
+            return truncate_output(raw_text)[0]
+
+        # 剥标签：仅在 HTML 上执行，避免破坏 JSON / 纯文本里的 '<'
+        text_only = re.sub(r'<[^>]+>', '\n', raw_text)
+        lines = [l.strip() for l in text_only.split('\n') if l.strip()]
+        clean_text = '\n'.join(lines[:500])
+        truncated, _ = truncate_output(clean_text)
+        return "\n".join([
+            f"## URL: {url}",
+            "(Fetched via httpx)",
+            "",
+            "### Page Content:",
+            truncated,
+        ])
 
 
     async def _tool_web_search(self, query: str) -> str:
@@ -337,56 +383,6 @@ class WebToolsMixin:
             logger.error(f"[ToolExecutor] Search error: {e}")
             return f"Error: Search failed - {str(e)}"
 
-
-    async def _tool_browser_navigate(self, url: str, extract_links: bool = False) -> str:
-        """
-        导航到指定 URL 并获取页面内容
-        
-        受 path_depth_guard 限制器保护（翻页检测 + 每轮次数限制）。
-        """
-        if not url:
-            return "Error: No URL provided"
-        
-        if not url.startswith(("http://", "https://")):
-            return "Error: URL must start with http:// or https://"
-        
-        # 路径深度检查（翻页检测 + 每轮导航次数）
-        path_guard = get_path_depth_guard()
-        allowed, msg = path_guard.check_navigate(url)
-        if not allowed:
-            return f"Error: {msg}"
-        
-        # 速率限制
-        rate_limiter = get_rate_limiter()
-        allowed, msg = rate_limiter.check(url)
-        if not allowed:
-            return f"Error: {msg}"
-        
-        try:
-            async with httpx.AsyncClient(timeout=30.0, follow_redirects=True) as client:
-                resp = await client.get(
-                    url,
-                    headers={"User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36"}
-                )
-            raw = resp.text
-            import re
-            text_only = re.sub(r'<[^>]+>', '\n', raw)
-            lines = [l.strip() for l in text_only.split('\n') if l.strip()]
-            clean_text = '\n'.join(lines[:500])
-            truncated, _ = truncate_output(clean_text)
-            output_parts = [
-                f"## URL: {url}",
-                "(Fetched via httpx)",
-                "",
-                "### Page Content:",
-                truncated
-            ]
-            return "\n".join(output_parts)
-        except asyncio.CancelledError:
-            raise
-        except Exception as e:
-            logger.error(f"[ToolExecutor] Navigate error: {e}")
-            return f"Error: Failed to fetch URL: {e}"
 
 
     async def _tool_browser_download(self, url: str, filename: str = "") -> str:

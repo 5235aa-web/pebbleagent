@@ -114,7 +114,7 @@ class PathDepthGuard:
         re.IGNORECASE
     )
     
-    def __init__(self, max_navigations_per_turn: int = 3):
+    def __init__(self, max_navigations_per_turn: int = 8):
         self.max_per_turn = max_navigations_per_turn
         self._state: Dict[str, Tuple[int, Dict[str, str]]] = {}
 

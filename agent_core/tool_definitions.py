@@ -499,13 +499,19 @@ def get_tools_definition() -> List[Dict[str, Any]]:
             "type": "function",
             "function": {
                 "name": "fetch_url",
-                "description": "获取网页内容。注意：SPA站点（JS渲染）可能回退到浏览器获取，请勿用于批量爬取。",
+                "description": "抓取网页内容。纯 HTTP 请求，不执行 JS；需要 JS 渲染或页面交互时改用 chrome_devtools MCP 的 navigate_page。同域名每分钟 6 次、每轮最多 8 次。",
                 "parameters": {
                     "type": "object",
                     "properties": {
                         "url": {
                             "type": "string",
-                            "description": "URL地址"
+                            "description": "URL地址，必须以 http:// 或 https:// 开头"
+                        },
+                        "mode": {
+                            "type": "string",
+                            "enum": ["auto", "text", "raw"],
+                            "description": "auto：按 Content-Type 决定（HTML 剥标签，其余原样）；text：强制剥标签返回正文；raw：返回原始响应体。默认 auto",
+                            "default": "auto"
                         },
                         "timeout": {
                             "type": "integer",
@@ -772,28 +778,6 @@ def get_tools_definition() -> List[Dict[str, Any]]:
                         }
                     },
                     "required": ["query"]
-                }
-            }
-        },
-        {
-            "type": "function",
-            "function": {
-                "name": "browser_navigate",
-                "description": "在浏览器中导航到指定URL并获取页面内容。适用于查看特定网页的详细信息。每轮最多3次。禁止遍历URL、翻页或批量访问。",
-                "parameters": {
-                    "type": "object",
-                    "properties": {
-                        "url": {
-                            "type": "string",
-                            "description": "要访问的完整URL（必须以 http:// 或 https:// 开头）"
-                        },
-                        "extract_links": {
-                            "type": "boolean",
-                            "description": "是否提取页面中的链接列表",
-                            "default": False
-                        }
-                    },
-                    "required": ["url"]
                 }
             }
         },

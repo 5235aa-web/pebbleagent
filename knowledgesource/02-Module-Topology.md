@@ -51,5 +51,5 @@
 | permission_audit.py | Data (audit permission_audit.db) | permission_enforcer, tool_executor_impl | permission_audit.db |
 | bash_validator.py | Tool infra (6-layer command validation) | tool_executor_impl, permission_enforcer, tool_concurrency | - |
 | lsp_client.py | Tool infra (LSP client) | tool_executor_impl | LSP server subprocess |
-| little_guard.py | Tool infra (runtime limiters for web_search / browser_navigate / browser_download; counters scoped per session via contextvar) | agent_chat_service_v2, tool_executor_impl | - |
+| little_guard.py | Tool infra (runtime limiters for web_search / fetch_url / browser_download; counters scoped per session via contextvar) | agent_chat_service_v2, tool_executor_impl | - |
 | src-tauri/lib.rs | Desktop shell (Tauri 2) | - | pebble-backend.exe (sidecar launch/cleanup) |

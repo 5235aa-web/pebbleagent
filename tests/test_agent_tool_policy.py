@@ -36,7 +36,7 @@ def main() -> int:
     # chat_agent.yaml 的白名单契约：内置读类 + 网络只读 + MCP 只读
     expected_internal = {
         "read_file", "search_files", "search_in_file", "grep", "glob",
-        "web_search", "fetch_url", "browser_navigate",
+        "web_search", "fetch_url",
     }
     expected_mcp = {
         "mcp__github__get_file_contents",

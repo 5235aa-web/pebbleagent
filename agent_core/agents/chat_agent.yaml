@@ -23,7 +23,6 @@ tools:
     # 网络只读（browser_download 会落盘，不在白名单）
     - web_search
     - fetch_url
-    - browser_navigate
     # MCP · GitHub 只读
     - mcp__github__get_file_contents
     - mcp__github__search_repositories
