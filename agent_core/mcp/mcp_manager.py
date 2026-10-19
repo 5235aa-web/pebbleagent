@@ -128,6 +128,8 @@ class McpManager:
         
         # 锁
         self._lock = asyncio.Lock()
+        # 每服务器一把 toggle 锁，避免并发点击导致重复连接/断开
+        self._toggle_locks: Dict[str, asyncio.Lock] = {}
         
         # 通知处理器（用于 ListChanged）
         self._notification_tasks: Dict[str, asyncio.Task] = {}
@@ -236,6 +238,15 @@ class McpManager:
             
             self._notify_state_change()
             
+        except asyncio.CancelledError:
+            # 取消不是连接失败，但必须落一个确定状态，否则会停在 pending。
+            # 重新抛出以保留取消语义。
+            logger.warning(f"[MCP] Connection to '{name}' cancelled")
+            self._clients[name] = FailedMCPServer(
+                name=name, config=config, error="connection cancelled"
+            )
+            self._notify_state_change()
+            raise
         except Exception as e:
             logger.error(f"[MCP Manager] Failed to connect to '{name}': {e}")
             self._clients[name] = FailedMCPServer(name=name, config=config, error=str(e))
@@ -425,36 +436,71 @@ class McpManager:
     
     # ==================== 启用/禁用 ====================
     
+    async def set_server_enabled_state(self, server_name: str, enabled: bool) -> bool:
+        """显式设置服务器启用状态（幂等）。True=连接，False=断开。"""
+        lock = self._toggle_locks.setdefault(server_name, asyncio.Lock())
+        async with lock:
+            if server_name not in self._configs:
+                # 禁用的服务器在 initialize() 时被 get_enabled_configs() 排除，
+                # 这里从配置层补回来，否则禁用后无法再次启用。
+                from .mcp_config import get_mcp_config_manager
+                recovered = get_mcp_config_manager().get_all_configs().get(server_name)
+                if recovered is None:
+                    raise ValueError(f"MCP server '{server_name}' not found")
+                self._configs[server_name] = recovered
+
+            if enabled == (not is_mcp_server_disabled(server_name)):
+                return True  # 已是目标状态
+
+            config = self._configs[server_name]
+
+            if enabled:
+                set_mcp_server_enabled(server_name, True)
+                self._clients[server_name] = PendingMCPServer(name=server_name, config=config)
+                self._notify_state_change()
+                await self._connect_and_process(server_name, config)
+            else:
+                set_mcp_server_enabled(server_name, False)
+                current = self._clients.get(server_name)
+                try:
+                    if isinstance(current, ConnectedMCPServer) and current._client:
+                        await current._client.close()
+                except asyncio.CancelledError:
+                    # 两种情况要区分：
+                    # 1) 调用方真的取消了这个任务 -> 继续传播
+                    # 2) MCP SDK 关闭 anyio 传输时自身抛出的 CancelledError -> 关闭已完成
+                    current_task = asyncio.current_task()
+                    if current_task is not None and current_task.cancelling():
+                        logger.warning(
+                            f"[MCP] Close of '{server_name}' cancelled by caller"
+                        )
+                        raise
+                    logger.info(
+                        f"[MCP] Close of '{server_name}' raised CancelledError from the "
+                        f"SDK; treating it as a completed close"
+                    )
+                except Exception as e:
+                    logger.warning(
+                        f"[MCP] Closing '{server_name}' raised "
+                        f"{type(e).__name__}: {e} (state still switched to disabled)"
+                    )
+                finally:
+                    # 无论关闭成功、失败还是被取消，都要停监控并落 disabled 状态
+                    task = self._notification_tasks.pop(server_name, None)
+                    if task and not task.done():
+                        task.cancel()
+                    self._clients[server_name] = DisabledMCPServer(
+                        name=server_name, config=config
+                    )
+                    self._notify_state_change()
+
+            return True
+
     async def toggle_server(self, server_name: str) -> bool:
         """切换服务器启用/禁用状态"""
-        if server_name not in self._configs:
-            raise ValueError(f"MCP server '{server_name}' not found")
-        
-        is_disabled = is_mcp_server_disabled(server_name)
-        
-        if is_disabled:
-            # 启用
-            set_mcp_server_enabled(server_name, True)
-            config = self._configs[server_name]
-            self._clients[server_name] = PendingMCPServer(name=server_name, config=config)
-            self._notify_state_change()
-            
-            # 连接
-            await self._connect_and_process(server_name, config)
-        else:
-            # 禁用
-            set_mcp_server_enabled(server_name, False)
-            
-            # 断开连接
-            current = self._clients.get(server_name)
-            if current and isinstance(current, ConnectedMCPServer) and current._client:
-                await current._client.close()
-            
-            config = self._configs[server_name]
-            self._clients[server_name] = DisabledMCPServer(name=server_name, config=config)
-            self._notify_state_change()
-        
-        return True
+        return await self.set_server_enabled_state(
+            server_name, is_mcp_server_disabled(server_name)
+        )
     
     # ==================== 状态管理 ====================
     

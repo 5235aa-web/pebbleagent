@@ -999,7 +999,11 @@ async def connect_to_server(name: str, config: ScopedMcpServerConfig) -> MCPServ
                 logger.debug(f"[MCP] Using cached connection for '{name}'")
                 return existing_server
             else:
-                logger.warning(f"[MCP] Cached connection for '{name}' is dead (connected={existing_client.is_connected}, transport_alive={transport_alive}), reconnecting...")
+                logger.info(
+                    f"[MCP] Cache miss for '{name}' "
+                    f"(connected={existing_client.is_connected}, "
+                    f"transport_alive={transport_alive}); reconnecting"
+                )
                 await existing_client.close()
                 del _connection_cache[cache_key]
         

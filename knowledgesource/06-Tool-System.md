@@ -43,9 +43,9 @@ The executor is a thin pipeline (policy → permission → snapshot → dispatch
 
 | File | Function | Key symbols | Tag |
 |------|------|---------|------|
-| mcp_manager.py | MCP connection management | McpManager | 🔴Core |
+| mcp_manager.py | MCP connection management (per-server connect / disconnect via `set_server_enabled_state` + `toggle_server`, per-server toggle lock, state-change callbacks) | McpManager | 🔴Core |
 | mcp_client.py | MCP stdio client (**placeholder commands (REPLACE_WITH_...) rejected with a clear error, **) | StdioTransport | 🔴Core |
-| mcp_config.py | MCP config management | McpConfigManager | 🟡Aux |
+| mcp_config.py | MCP config management (three-layer merge; disabled list is global at `~/.pebble/disabled_mcp_servers.json`, the legacy per-project file is read as fallback) | McpConfigManager | 🟡Aux |
 | mcp_integration.py | MCP tool registration and execution (missing server returns an error string) | register_mcp_tools, McpToolExecutorFactory | 🔴Core |
 | mcp_types.py | MCP types: stdio / sse / http / ws configs, connection states, tool and resource records | McpServerConfig, ScopedMcpServerConfig | 🧪Types |
 
@@ -75,3 +75,4 @@ Custom tools just need to be placed under `extensions/tools/` exposing those 4 a
 
 1. **Tool architecture — four layers**: BaseTool + ToolRegistry + Extensions Loader + MCP (MCP servers defined in the root .mcp.json, 6 of them incl. blender; dependency declarations and the frontend panel use mcp_install.json + the mcp.install_info RPC)
 7. **Todo event path**: `TodoManager._event_callback` is only set inside the LLM stream. When an Agent calls `todo_write` itself, it falls back to `_ws_push_callback`
+8. **MCP connect control**: the McpPanel switch calls `mcp.toggle` → `McpManager.set_server_enabled_state` (idempotent, non-blocking submit onto the WS loop). Disabled servers are excluded from `get_enabled_configs()` at init, so toggle recovers them from `get_all_configs()` before connecting. Disabling cancels the connection-monitor task (otherwise it reports a false "Connection lost" one poll later) and tolerates a failing `close()` without skipping the state switch. `mcp.list` reports `enabled` / `state` from the merged config (not the raw file) and hides unusable placeholder entries unless `mcp_install.json` declares them installable. State changes are pushed to the frontend as `mcp.state_changed`

@@ -76,7 +76,7 @@ Use `powershell` or `execute_code` when at least one of these holds:
 
 One sentence naming the dedicated tools you considered and why they fall short. That is the whole requirement: no exhaustive audit of the tool list, and no obligation to attempt unrelated tools and record them as failures.
 
-**Which tools count as dedicated** is not a fixed list. Call `list_tools` (or read the `## Available tools` section below) and pick the tools whose descriptions cover the capability. The set differs per environment; never assume a tool exists because some rule names it.
+**Which tools count as dedicated** is not a fixed list. Read the tool definitions in the API `tools` parameter, and call `list_tools` when unsure whether a tool exists. The set differs per environment; never assume a tool exists because some rule names it.
 
 **Still forbidden**
 
@@ -252,36 +252,11 @@ Retry strategy:
 
 ---
 
-## Available tools
+## Tool notes
 
-### Code execution
-- `execute_code` - Execute arbitrary code (python/bash/js etc.)
-- `execute_shell` - Execute shell commands (⚠️ on Windows may cause officecli style loss; see the Office-document task section)
-- `powershell` - Execute PowerShell commands (Windows native; officecli must use this tool. ⚠️ Before every execution, run `$env:Path = "$env:LOCALAPPDATA\OfficeCLI;$env:Path"` first to ensure officecli is in PATH)
+Tool definitions are provided in the API `tools` parameter. Read them there; there is no list here to keep in sync.
 
-### File operations
-- `search_files` - Search files
-- `read_file` - Read file content
-- `write_file` - Create new files or fully overwrite file content
-- `edit_file` - Edit files (text replacement)
-- `notebook_edit` - Edit Jupyter Notebook cells
-
-### Browser operations
-- `web_search` - Search the web by keyword, returns titles, snippets and URLs
-- `fetch_url` - Fetch a page's content over http/https
-- `browser_navigate` - Navigate the browser to a URL and read the page
-
-### Skill loading
-- `list_skills` - List all available skills
-- `load_skill` - Load the full content of a specified skill
-
-### Plan mode and task management
-- `enter_plan_mode` - Enter plan mode (for the planning phase of complex multi-step tasks)
-- `create_plan` - Create a detailed implementation plan in plan mode
-- `exit_plan_mode` - Exit plan mode, return to normal execution mode
-- `get_plan` - Get current plan details
-- `todo_write` - Create or update the task list for tracking execution progress
-- `todo_read` - Read the current task list
+**Windows execution**: `execute_shell` may cause officecli style loss. `powershell` is Windows native and is required for officecli; before every execution run `$env:Path = "$env:LOCALAPPDATA\OfficeCLI;$env:Path"` first to ensure officecli is in PATH.
 
 **⚠️ Plan-mode workflow:**
 Plan mode is a **plan-only, no-execution** mode. The correct flow is:
@@ -291,11 +266,6 @@ Plan mode is a **plan-only, no-execution** mode. The correct flow is:
 4. **After exiting you must continue executing!** Follow the plan steps using `write_file`/`execute_code` etc. to actually complete each step.
 
 **Never** stop after creating a plan! Creating a plan is only the first step; after exiting plan mode you must immediately start executing the code according to the plan.
-
-### User interaction
-- `clarify` - Ask the user multiple-choice questions to clarify requirements or get choices
-- `experience_write` - Record a durable lesson in the experience ledger
-- `experience_update` - Update an existing ledger entry (scope fixed, deletion not available)
 
 ### Experience ledger (experience_write / experience_update)
 The experience ledger is a cross-session store of lessons: corrections, constraints, preferences, pitfalls, recipes, references. The system automatically detects lessons from each turn and injects the relevant ones into your system prompt under `<experience-ledger>`.

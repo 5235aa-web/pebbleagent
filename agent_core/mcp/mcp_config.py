@@ -710,43 +710,49 @@ class McpConfigManager:
     # ==================== 启用/禁用 ====================
     
     def _get_disabled_list_path(self) -> str:
-        """获取禁用列表文件路径"""
+        """禁用列表文件路径（全局用户级，跨项目共享）"""
+        return os.path.join(DEFAULT_USER_CONFIG_DIR, "disabled_mcp_servers.json")
+
+    def _get_legacy_disabled_list_path(self) -> str:
+        """旧版项目级禁用列表，仅用于读取兼容"""
         return os.path.join(self._project_path, ".pebble", "disabled_mcp_servers.json")
-    
+
+    def _read_disabled_list(self) -> List[str]:
+        """读取禁用列表；全局文件优先，缺失时回退旧的项目级文件"""
+        for path in (self._get_disabled_list_path(), self._get_legacy_disabled_list_path()):
+            try:
+                if os.path.exists(path):
+                    with open(path, 'r', encoding='utf-8') as f:
+                        data = json.load(f)
+                    if isinstance(data, list):
+                        return [str(n) for n in data]
+            except Exception:
+                continue
+        return []
+
     def is_server_disabled(self, name: str) -> bool:
         """检查服务器是否被禁用"""
-        disabled_path = self._get_disabled_list_path()
-        try:
-            if os.path.exists(disabled_path):
-                with open(disabled_path, 'r', encoding='utf-8') as f:
-                    disabled_list = json.load(f)
-                    return name in disabled_list
-        except Exception:
-            pass
-        return False
-    
+        return name in self._read_disabled_list()
+
     def set_server_enabled(self, name: str, enabled: bool):
-        """设置服务器启用/禁用状态"""
+        """设置服务器启用/禁用状态（写入全局禁用列表，原子替换）"""
         disabled_path = self._get_disabled_list_path()
         os.makedirs(os.path.dirname(disabled_path), exist_ok=True)
-        
+
         try:
-            disabled_list = []
-            if os.path.exists(disabled_path):
-                with open(disabled_path, 'r', encoding='utf-8') as f:
-                    disabled_list = json.load(f)
-            
+            disabled_list = self._read_disabled_list()
+
             if enabled:
                 disabled_list = [n for n in disabled_list if n != name]
             else:
                 if name not in disabled_list:
                     disabled_list.append(name)
-            
+
             temp_path = disabled_path + ".tmp"
             with open(temp_path, 'w', encoding='utf-8') as f:
-                json.dump(disabled_list, f, indent=2)
+                json.dump(disabled_list, f, indent=2, ensure_ascii=False)
             os.replace(temp_path, disabled_path)
-            
+
         except Exception as e:
             logger.error(f"Failed to set MCP server '{name}' enabled={enabled}: {e}")
 

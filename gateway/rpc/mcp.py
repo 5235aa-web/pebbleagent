@@ -1,11 +1,49 @@
 """MCP management RPCs."""
 
 import asyncio
+import concurrent.futures
 import json
 import logging
 import os
 
 logger = logging.getLogger(__name__)
+
+
+def _is_unusable_config(raw) -> bool:
+    """配置本身无法连接：命令为空或仍是占位符，或远程地址为空。"""
+    command = getattr(raw, "command", None)
+    if command is not None:
+        text = str(command).strip()
+        return (not text) or ("REPLACE_WITH" in text)
+    url = getattr(raw, "url", None)
+    if url is not None:
+        return not str(url).strip()
+    return False
+
+
+def _installable_server_names(srv) -> set:
+    """mcp_install.json 声明的可安装服务器（这些即使配置占位也保留在面板里）。"""
+    for p in (srv._DATA_DIR / "mcp_install.json", srv._PROJECT_ROOT / "mcp_install.json"):
+        try:
+            if p.exists():
+                with open(p, "r", encoding="utf-8") as f:
+                    data = json.load(f)
+                return set((data.get("servers") or {}).keys())
+        except Exception:
+            continue
+    return set()
+
+
+def _config_fingerprint(scoped) -> str:
+    """配置指纹，用于判断服务器配置是否变化需要重连。"""
+    raw = getattr(scoped, "config", scoped)
+    parts = [
+        str(getattr(raw, "command", "") or ""),
+        " ".join(str(a) for a in (getattr(raw, "args", None) or [])),
+        str(getattr(raw, "url", "") or ""),
+        json.dumps(getattr(raw, "env", None) or {}, sort_keys=True, default=str),
+    ]
+    return "|".join(parts)
 
 
 def handle(ctx, method):
@@ -14,69 +52,183 @@ def handle(ctx, method):
     rid = ctx.rid
 
     if method == "mcp.list":
-        mcp_path = srv._DATA_DIR / ".mcp.json"
-        bundled_mcp = srv._PROJECT_ROOT / ".mcp.json"
         servers = []
         tools_list = []
-        config = None
-        for mp in [mcp_path, bundled_mcp]:
-            if mp.exists():
-                try:
-                    with open(mp, "r", encoding="utf-8") as f:
-                        config = json.load(f)
-                        break
-                except Exception as e:
-                    logger.warning(f"[Server] Failed to read .mcp.json from {mp}: {e}")
-        if config:
-            # 尝试从 MCP manager 获取真实状态（只读，不触发初始化）
-            try:
-                from agent_core.mcp.mcp_manager import get_mcp_manager
-                mgr = get_mcp_manager()
-                state = mgr.get_state() if mgr._initialized else None
-                if state:
-                    server_tools: dict = {}
-                    for t in state.tools:
-                        sn = t.server_name or "unknown"
-                        if sn not in server_tools:
-                            server_tools[sn] = []
-                        server_tools[sn].append(t.name)
-                    connected_map = {
-                    c.name: {"type": c.type, "error": getattr(c, 'error', None)} for c in state.clients
-                    }
-                else:
-                    server_tools = {}
-                    connected_map = {}
-            except Exception:
-                server_tools = {}
-                connected_map = {}
-
-            for name, cfg in config.get("mcpServers", {}).items():
-                st = server_tools.get(name, [])
-                conn_data = connected_map.get(name, {})
-                conn_type = conn_data.get("type", "") if isinstance(conn_data, dict) else conn_data
-                servers.append({
-                "name": name,
-                "transport": cfg.get("command", "unknown"),
-                "connected": conn_type == "connected",
-                "tools": len(st),
-                "tool_names": st,
-                "error": conn_data.get("error") if isinstance(conn_data, dict) else None,
-                })
-            # 收集所有工具
-            for sn, tnames in server_tools.items():
-                for tn in tnames:
-                    tools_list.append({"server": sn, "name": tn})
-        # 未批准的项目级 .mcp.json（防"克隆陌生仓库即执行其定义的服务器"）
+        pending = []
         try:
-            from agent_core.mcp.mcp_config import get_pending_project_mcp
+            from agent_core.mcp.mcp_config import (
+                get_mcp_config_manager, get_pending_project_mcp,
+            )
+            from agent_core.mcp.mcp_manager import get_mcp_manager
+
+            cfg_mgr = get_mcp_config_manager()
+            cfg_mgr.set_project_path(str(srv._PROJECT_ROOT))
+            all_configs = cfg_mgr.get_all_configs()
+
+            mgr = get_mcp_manager()
+            state = mgr.get_state() if mgr._initialized else None
+            clients = {c.name: c for c in state.clients} if state else {}
+            server_tools: dict = {}
+            if state:
+                for t in state.tools:
+                    sn = t.server_name or "unknown"
+                    server_tools.setdefault(sn, []).append(t.name)
+
+            installable = _installable_server_names(srv)
+            for name, scoped in all_configs.items():
+                raw = getattr(scoped, "config", scoped)
+                # 隐藏无法连接也无法安装的失效配置（如占位符命令）
+                if _is_unusable_config(raw) and name not in installable:
+                    continue
+                conn = clients.get(name)
+                conn_type = getattr(conn, "type", "") if conn else ""
+                enabled = not cfg_mgr.is_server_disabled(name)
+                tnames = server_tools.get(name, [])
+                if not enabled:
+                    conn_type = "disabled"
+                elif not conn_type:
+                    conn_type = "not-started"
+                servers.append({
+                    "name": name,
+                    "transport": getattr(raw, "type", None) or "stdio",
+                    "command": getattr(raw, "command", None) or getattr(raw, "url", "") or "",
+                    "connected": conn_type == "connected",
+                    "enabled": enabled,
+                    "state": conn_type,
+                    "tools": len(tnames),
+                    "tool_names": tnames,
+                    "error": getattr(conn, "error", None) if conn else None,
+                })
+            tools_list = [
+                {"server": s["name"], "name": tn}
+                for s in servers for tn in s["tool_names"]
+            ]
             pending = get_pending_project_mcp(str(srv._PROJECT_ROOT))
-        except Exception:
-            pending = []
+        except Exception as e:
+            logger.warning(f"[Server] mcp.list failed: {e}")
         return {"id": rid, "result": {"servers": servers, "tools": tools_list, "pending_project_servers": pending}}
 
+    if method == "mcp.toggle":
+        """连接/断开指定 MCP 服务器（持久化到全局禁用列表，热生效）。
+        参数：server（必填）、enabled（可选，缺省取反当前状态）。"""
+        server_name = str(params.get("server") or "").strip()
+        if not server_name:
+            return {"id": rid, "error": {"code": -32602, "message": "server required"}}
+        try:
+            from agent_core.mcp.mcp_config import get_mcp_config_manager
+            from agent_core.mcp.mcp_manager import get_mcp_manager
+
+            cfg_mgr = get_mcp_config_manager()
+            cfg_mgr.set_project_path(str(srv._PROJECT_ROOT))
+            if server_name not in cfg_mgr.get_all_configs():
+                return {"id": rid, "error": {"code": -32602, "message": f"server '{server_name}' is not configured"}}
+
+            desired = params.get("enabled")
+            desired = (not cfg_mgr.is_server_disabled(server_name)) if desired is None else bool(desired)
+
+            mgr = get_mcp_manager()
+            if not mgr._initialized:
+                # 管理器尚未启动：只落配置，首次请求按新配置初始化
+                cfg_mgr.set_server_enabled(server_name, desired)
+                return {"id": rid, "result": {"ok": True, "enabled": desired, "state": "not-started"}}
+
+            if srv._ws_loop:
+                fut = asyncio.run_coroutine_threadsafe(
+                    mgr.set_server_enabled_state(server_name, desired), srv._ws_loop
+                )
+
+                def _done(f, _sn=server_name, _en=desired):
+                    try:
+                        f.result()
+                        logger.info(f"[Server] MCP '{_sn}' enabled={_en} applied")
+                    except (asyncio.CancelledError, concurrent.futures.CancelledError):
+                        # 取消不代表配置未生效，以实际状态为准
+                        try:
+                            actual_enabled = not cfg_mgr.is_server_disabled(_sn)
+                            actual_client = get_mcp_manager()._clients.get(_sn)
+                            logger.info(
+                                f"[Server] MCP '{_sn}' toggle cancelled; "
+                                f"actual enabled={actual_enabled} "
+                                f"state={getattr(actual_client, 'type', 'unknown')}"
+                            )
+                        except Exception:
+                            logger.info(f"[Server] MCP '{_sn}' toggle cancelled")
+                    except Exception as e:
+                        logger.warning(f"[Server] MCP '{_sn}' toggle failed: {type(e).__name__}: {e}")
+
+                fut.add_done_callback(_done)
+            else:
+                cfg_mgr.set_server_enabled(server_name, desired)
+
+            return {"id": rid, "result": {
+                "ok": True,
+                "enabled": desired,
+                "state": "connecting" if desired else "disabled",
+            }}
+        except Exception as e:
+            logger.error(f"[Server] mcp.toggle failed: {e}")
+            return {"id": rid, "result": {"ok": False, "error": str(e)}}
+
     if method == "mcp.reload":
+        """重新加载 MCP 配置：重建 dynamic 层；新增的连接，消失的断开，变更的重连。"""
         logger.info("[Server] MCP reload requested")
-        return {"id": rid, "result": {"status": "ok", "message": "MCP config reloaded"}}
+        try:
+            from agent_core.mcp.mcp_config import (
+                build_user_override_configs, get_mcp_config_manager,
+            )
+            from agent_core.mcp.mcp_manager import get_mcp_manager
+
+            cfg_mgr = get_mcp_config_manager()
+            cfg_mgr.set_project_path(str(srv._PROJECT_ROOT))
+            overrides = build_user_override_configs()
+            if overrides:
+                cfg_mgr.set_dynamic_configs(overrides)
+
+            enabled = cfg_mgr.get_enabled_configs()
+            mgr = get_mcp_manager()
+            if not mgr._initialized:
+                return {"id": rid, "result": {"ok": True, "applied": "on-next-init"}}
+
+            added = [n for n in enabled if n not in mgr._configs]
+            removed = [n for n in list(mgr._configs) if n not in enabled]
+            changed = [
+                n for n in enabled
+                if n in mgr._configs
+                and _config_fingerprint(enabled[n]) != _config_fingerprint(mgr._configs[n])
+            ]
+
+            async def _apply():
+                for name in removed:
+                    try:
+                        cur = mgr._clients.get(name)
+                        if cur and getattr(cur, "_client", None):
+                            await cur._client.close()
+                        mgr._clients.pop(name, None)
+                        mgr._configs.pop(name, None)
+                        mgr._update_tools_for_server(name, [])
+                    except Exception as e:
+                        logger.warning(f"[Server] MCP reload remove '{name}' failed: {e}")
+                for name in added + changed:
+                    try:
+                        mgr._configs[name] = enabled[name]
+                        await mgr.reconnect_server(name)
+                    except Exception as e:
+                        logger.warning(f"[Server] MCP reload connect '{name}' failed: {e}")
+                mgr._notify_state_change()
+
+            if srv._ws_loop:
+                asyncio.run_coroutine_threadsafe(_apply(), srv._ws_loop)
+                applied = "async"
+            else:
+                applied = "skipped"
+
+            return {"id": rid, "result": {
+                "ok": True, "applied": applied,
+                "added": added, "removed": removed, "changed": changed,
+            }}
+        except Exception as e:
+            logger.error(f"[Server] mcp.reload failed: {e}")
+            return {"id": rid, "result": {"ok": False, "error": str(e)}}
 
     if method == "mcp.trust_project":
         """批准项目级 .mcp.json（记录当前内容指纹），并热加载其中定义的服务器"""

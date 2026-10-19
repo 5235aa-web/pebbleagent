@@ -78,3 +78,14 @@
 - `ruff check` — static analysis gate (F + E9) over `agent_core`, `gateway`, `tools`, `tests` and root scripts
 - `tests/run_all.mjs` — frontend logic suites (fold algorithm, WS recovery, UI formulas, time grouping)
 - CI: `.github/workflows/checks.yml` (python job: compileall, ruff, Python suites on a 3.11 / 3.14 matrix; frontend job: vue-tsc, Node suites)
+
+## Changes
+
+- 2026-10-19 MCP connect control: per-server switch in McpPanel -> `mcp.toggle` -> `McpManager.set_server_enabled_state` (idempotent, non-blocking submit onto the WS loop). Disabled list moved to the global user scope (`~/.pebble/disabled_mcp_servers.json`), legacy per-project file read as fallback. `mcp.list` now reports `enabled` / `state` from the merged config and hides unusable placeholder entries unless `mcp_install.json` declares them installable. `mcp.reload` re-applies config changes at runtime (added / removed / changed). State changes are pushed over WS as `mcp.state_changed`
+- 2026-10-19 code_agent prompt: removed the duplicated `## Available tools` list (the API `tools` schema is authoritative); section renamed to `## Tool notes`, keeping the Windows execution notes, plan-mode workflow and experience-ledger rules
+
+- 2026-10-19 MCP toggle hardening (from live logs): disabling a server now cancels its connection-monitor task (the monitor used to report a false "Connection lost" one poll later and attempt a blocked reconnect) and tolerates a failing `close()` so the state still switches to disabled; toggle failures log the exception type instead of an empty message
+
+- 2026-10-19 MCP toggle log classification: `run_coroutine_threadsafe` futures raise `concurrent.futures.CancelledError` (an `Exception`), not `asyncio.CancelledError` (a `BaseException`), so the callback now catches both and reports the actual server state instead of a misleading "toggle failed"
+
+- 2026-10-19 MCP toggle state integrity: the SDK raises `asyncio.CancelledError` from `close()` when tearing down an anyio transport, which bypassed `except Exception` and left "config disabled but client still connected". The disable path now switches state and cancels the monitor in a `finally` block, and distinguishes an SDK-originated cancel from a caller cancel via `current_task.cancelling()`

@@ -20,16 +20,23 @@ timeout /t 1 /nobreak >nul
 echo [2/3] 启动后端服务...
 start "PebbleAgent-Backend" cmd /c "python run_backend.py ^& pause"
 
-:: 等待后端就绪（检测端口 19876）
+:: 等待后端就绪（检测端口 19876，最多 60 秒）
+set tries=0
 :wait_loop
 timeout /t 1 /nobreak >nul
+set /a tries+=1
 netstat -an | find "127.0.0.1:19876" >nul 2>&1
-if errorlevel 1 goto wait_loop
+if not errorlevel 1 goto backend_ready
+if %tries% lss 60 goto wait_loop
+echo       后端 60 秒内未就绪，请查看 PebbleAgent-Backend 窗口日志
+goto start_frontend
 
-echo      后端已就绪 (ws://127.0.0.1:19876)
+:backend_ready
+echo       后端已就绪 (ws://127.0.0.1:19876)
 echo.
 
-:: 启动前端 dev server
+:start_frontend
+:: 启动前端 dev server（新窗口）
 echo [3/3] 启动前端开发服务器...
 cd ui-gui-vue3
 start "PebbleAgent-Frontend" cmd /c "npm run dev ^& pause"
@@ -37,15 +44,11 @@ start "PebbleAgent-Frontend" cmd /c "npm run dev ^& pause"
 echo.
 echo ========================================
 echo   在浏览器打开 http://localhost:5174
-echo   关闭此窗口即可停止所有服务
+echo   后端日志: PebbleAgent-Backend 窗口
+echo   前端日志: PebbleAgent-Frontend 窗口
+echo   停止服务: 关闭上面两个窗口即可
 echo ========================================
 echo.
-
-:: 等待用户按任意键退出
-pause
-
-:: 关闭所有子进程
-echo 正在关闭服务...
-taskkill /f /fi "WINDOWTITLE eq PebbleAgent-Backend" >nul 2>&1
-taskkill /f /fi "WINDOWTITLE eq PebbleAgent-Frontend" >nul 2>&1
-echo 已停止所有服务。
+echo 本窗口 3 秒后自动关闭...
+timeout /t 3 /nobreak >nul
+exit /b

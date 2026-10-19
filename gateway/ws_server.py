@@ -404,6 +404,50 @@ async def main(host: str = "127.0.0.1", port: int = 19876):
     svc.register_push_callback(_on_permission_request)
     logger.info("[WS] Permission push callback registered")
 
+    # MCP 状态变化推送：连接/断开完成后前端无需轮询
+    async def _broadcast_mcp_state(state):
+        payload = {
+            "servers": [
+                {
+                    "name": c.name,
+                    "state": getattr(c, "type", ""),
+                    "error": getattr(c, "error", None),
+                }
+                for c in getattr(state, "clients", [])
+            ]
+        }
+        msg = json.dumps({
+            "jsonrpc": "2.0",
+            "method": "event",
+            "params": {"type": "mcp.state_changed", "payload": payload},
+        }, ensure_ascii=False)
+        disconnected = set()
+        for ws in _connections:
+            try:
+                await ws.send(msg)
+            except websockets.ConnectionClosed:
+                disconnected.add(ws)
+        _connections.difference_update(disconnected)
+
+    def _on_mcp_state(state):
+        try:
+            loop = asyncio.get_running_loop()
+        except RuntimeError:
+            loop = _loop
+        if loop is None:
+            return
+        try:
+            loop.create_task(_broadcast_mcp_state(state))
+        except RuntimeError:
+            asyncio.run_coroutine_threadsafe(_broadcast_mcp_state(state), loop)
+
+    try:
+        from agent_core.mcp.mcp_manager import get_mcp_manager
+        get_mcp_manager().on_state_change(_on_mcp_state)
+        logger.info("[WS] MCP state push callback registered")
+    except Exception as e:
+        logger.warning(f"[WS] Failed to register MCP state push: {e}")
+
     # 后台启动 MCP 自动初始化
     _mcp_init_task = asyncio.create_task(_init_mcp_background())
 

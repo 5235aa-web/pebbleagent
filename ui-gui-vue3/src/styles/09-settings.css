@@ -318,6 +318,44 @@
   color: var(--muted);
   border: 1px solid var(--border-subtle);
 }
+.mc-status.dis {
+  background: rgba(255,255,255,0.03);
+  color: var(--muted);
+  border: 1px solid var(--border-subtle);
+  opacity: .7;
+}
+.mc-switch {
+  flex-shrink: 0;
+  width: 24px;
+  height: 13px;
+  padding: 0;
+  border-radius: 7px;
+  border: 1px solid var(--border-subtle);
+  background: rgba(255,255,255,0.04);
+  cursor: pointer;
+  position: relative;
+  transition: background .15s, border-color .15s;
+}
+.mc-switch.on {
+  background: rgba(76,175,80,0.18);
+  border-color: rgba(76,175,80,0.35);
+}
+.mc-switch.off { background: rgba(255,255,255,0.03); }
+.mc-switch.busy { opacity: .5; cursor: wait; }
+.mc-switch-knob {
+  position: absolute;
+  top: 1px;
+  left: 1px;
+  width: 9px;
+  height: 9px;
+  border-radius: 50%;
+  background: var(--muted);
+  transition: transform .15s, background .15s;
+}
+.mc-switch.on .mc-switch-knob {
+  transform: translateX(11px);
+  background: var(--success);
+}
 .mc-tools {
   margin-top: 6px;
   display: flex;
