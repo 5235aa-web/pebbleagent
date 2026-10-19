@@ -1,6 +1,6 @@
 # PebbleAgent — Version Notes
 
-> Last updated: 2026-10-17
+> Last updated: 2026-10-19
 
 ## Platform
 
@@ -95,3 +95,5 @@
 - 2026-10-19 Legacy `tools/` package removed. `TodoManager` and `QuestionManager` moved to `agent_core/state/` (`todo.py`, `question.py`) together with their dataclasses; the BaseTool-based tool classes and `ToolRegistry`, which had no runtime consumer, were deleted with the package. All seven call sites switched to the new module path (`agent_core.state.todo` / `agent_core.state.question`). Tests `test_grep_tool_async.py` and `test_tool_registry_autoregister.py` removed; the BaseTool section of `test_minor_hardening.py`, the registry branch of `test_code_agent_prompt_contract.py`, and the `QuestionManager` import in `test_clarify_dual.py` were updated. CI compileall/ruff no longer reference the `tools` directory.
 
 - 2026-10-19 `browser_navigate` merged into `fetch_url`. Both were plain httpx GETs with the same User-Agent; `browser_navigate` never used a browser and its `extract_links` parameter was never implemented. `fetch_url` now takes `mode` (auto / text / raw): auto strips tags only when Content-Type is HTML, so JSON and plain text are no longer mangled by the tag-stripping regex. The RateLimiter (6 req/min per domain) and the PathDepthGuard pagination detection now cover `fetch_url`, and the per-turn cap was raised from 3 to 8 to suit lightweight fetches. `browser_navigate` removed from the schema, the dispatch table, the permission map, the chat_agent allowlist, the frontend status labels and two test assertions. Tool count 47 -> 46.
+
+- 2026-10-19 Session auto-naming moved to the gateway. The old "first 50 chars of the first user message" naming is gone, so a session keeps the `"New conversation"` placeholder until the model names it. `gateway/session_title.py` produces the title: language follows the user message (CJK -> Chinese, otherwise English), 15 characters / 15 words, label + quote + trailing-punctuation cleanup, thinking disabled, two attempts with an 8s timeout each, and no billing entry (matching the previous title-gen behaviour). `_apply_generated_title` runs after `message.complete`, skips interrupted turns, returns early unless the title is still the placeholder (so later turns never spend a model call), writes with compare-and-set `update_title_if_current` (a rename made mid-turn wins), then pushes `session.updated`. Any failure leaves the placeholder and never affects the reply.

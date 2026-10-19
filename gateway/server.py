@@ -279,6 +279,7 @@ def _install_download_server(server_name: str, entry: dict) -> str:
 # Loaded here and reached by gateway/rpc handlers as srv.<name>.
 from .config import load_llm_config, load_tools_info, load_skills_info  # noqa: F401
 from .session import SessionStore
+from .session_title import generate_session_title
 from .rpc import RpcContext, dispatch
 
 logger = logging.getLogger(__name__)
@@ -630,6 +631,48 @@ def handle_request(method: str, params: dict, rid: str) -> Optional[dict]:
     return dispatch(ctx, method)
 
 
+_PLACEHOLDER_TITLE = "New conversation"
+
+
+async def _apply_generated_title(
+    sid: str,
+    user_text: str,
+    assistant_text: str,
+    llm_config: dict,
+    write_event,
+) -> None:
+    """Name a session from its first completed turn.
+
+    The placeholder check runs first so later turns never spend a model call.
+    The write is a compare-and-set, so a rename made while the turn was running
+    always wins over the generated title. Failures stay silent: the reply and
+    its persistence are already done, and the placeholder title is a valid state.
+    """
+    try:
+        session = _session_store.get(sid) or {}
+    except Exception as e:
+        logger.warning(f"[Server] Title guard read failed for {sid}: {e}")
+        return
+    if (session.get("title") or "") != _PLACEHOLDER_TITLE:
+        return
+
+    title = await generate_session_title(llm_config, user_text, assistant_text)
+    if not title or title == _PLACEHOLDER_TITLE:
+        return
+
+    try:
+        applied = _session_store.update_title_if_current(sid, title, _PLACEHOLDER_TITLE)
+    except Exception as e:
+        logger.warning(f"[Server] Failed to persist generated title for {sid}: {e}")
+        return
+    if not applied:
+        logger.info(f"[Server] Generated title for {sid} discarded: title changed meanwhile")
+        return
+
+    logger.info(f"[Server] Session {sid} named by LLM: {title!r}")
+    write_event("session.updated", {"title": title, "session_id": sid})
+
+
 def handle_prompt_submit(
     sid: str,
     text: str,
@@ -674,11 +717,8 @@ def handle_prompt_submit(
     except Exception as e:
         logger.warning(f"[Server] Failed to load provider generation settings: {e}")
 
-    prev_count = _session_store.message_count(sid)
     _session_store.increment_messages(sid)
     user_msg_id, user_msg_uuid = _session_store.add_user_message(sid, text)
-    if prev_count == 0:
-        _session_store.update_title(sid, text[:50] or "New conversation")
 
     async def run():
         try:
@@ -818,6 +858,10 @@ def handle_prompt_submit(
                 except Exception as _se:
                     logger.warning(f"[Server] Failed to save assistant message for {sid}: {_se}")
                 write_event("message.complete", {"text": full_content, "reasoning": full_reasoning, "tool_calls": json.dumps(tool_executions), "interrupted": was_interrupted, "message_id": chat_completed_data.get("message_id"), "session_id": sid})
+                if not was_interrupted:
+                    # Runs after the reply is persisted and pushed, so the user is
+                    # never waiting on it; a failure leaves the placeholder title.
+                    await _apply_generated_title(sid, text, full_content, llm_config, write_event)
             else:
                 try:
                     _session_store.add_assistant_message(sid, full_content, full_reasoning, json.dumps(tool_executions) if tool_executions else None, interrupted=was_interrupted)

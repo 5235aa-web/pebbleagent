@@ -209,6 +209,25 @@ class SessionStore:
             conn.rollback()  # 失败回滚：释放写锁，避免连锁 "database is locked"
             raise
 
+    def update_title_if_current(self, sid: str, title: str, expected: str) -> bool:
+        """Set the title only while the stored one still equals `expected`.
+
+        Guards a generated title from overwriting a rename the user made while
+        the turn was still running. Returns True when the row was updated.
+        """
+        conn = _get_db()
+        now = time.time()
+        try:
+            cur = conn.execute(
+                "UPDATE sessions SET title=?, updated_at=? WHERE id=? AND title=?",
+                (title, now, sid, expected),
+            )
+            conn.commit()
+            return cur.rowcount > 0
+        except Exception:
+            conn.rollback()
+            raise
+
     def increment_messages(self, sid: str):
         conn = _get_db()
         now = time.time()
