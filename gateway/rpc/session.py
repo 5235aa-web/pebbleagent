@@ -188,7 +188,7 @@ def handle(ctx, method):
             return {"id": rid, "result": {"success": False, "reason": "no messages"}}
         try:
             from agent_core.context_compressor import manual_compress
-            client, model = srv._get_llm_client()
+            client, model = srv._get_llm_client(sid)
 
             # 转换消息格式：get_messages 返回的格式 → manual_compress 期望的格式
             messages = []

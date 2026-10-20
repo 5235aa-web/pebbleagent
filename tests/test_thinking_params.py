@@ -74,6 +74,15 @@ def main() -> int:
     r = btp("DeepSeek-V4-Pro", True, "max")
     check("uppercase DeepSeek keeps max (case-insensitive)", r["reasoning_effort"] == "max", str(r))
 
+    r = btp("glm-5.3", True, "max", True)
+    check("keep_max keeps max for non-DeepSeek", r["reasoning_effort"] == "max", str(r))
+
+    r = btp("glm-5.3", True, "max")
+    check("keep_max defaults off (glm still downgraded)", r["reasoning_effort"] == "high", str(r))
+
+    r = btp("glm-5.3", True, "max", False)
+    check("explicit keep_max=False downgrades", r["reasoning_effort"] == "high", str(r))
+
     print("=" * 62)
     print("2) _bool (extracted from gateway/server.py)")
     server_path = os.path.join(ROOT, "gateway", "server.py")
@@ -139,9 +148,9 @@ def main() -> int:
 
     with open(svc_path, "r", encoding="utf-8-sig") as f:
         svc_src = f.read()
-    check("source: chat_stream unified build call", 'stream_params.update(build_thinking_params(use_model, final_thinking_enabled, final_reasoning_effort))' in svc_src)
-    check("source: title-gen unified build call", 'title_params.update(build_thinking_params(use_model, thinking_enabled, reasoning_effort))' in svc_src)
-    check("source: title-gen call site args", 'generate_conversation_title(current_messages, use_model, final_thinking_enabled, final_reasoning_effort)' in svc_src)
+    check("source: chat_stream unified build call", 'stream_params.update(build_thinking_params(use_model, final_thinking_enabled, final_reasoning_effort, keep_max_effort(state.llm_config)))' in svc_src)
+    check("source: title-gen unified build call", 'title_params.update(build_thinking_params(use_model, thinking_enabled, reasoning_effort, keep_max_effort(llm_config)))' in svc_src)
+    check("source: title-gen call site args", 'generate_conversation_title(current_messages, use_model, final_thinking_enabled, final_reasoning_effort, conversation_uuid)' in svc_src)
 
     print("=" * 62)
     print(f"RESULT: {passed} passed / {failed} failed")

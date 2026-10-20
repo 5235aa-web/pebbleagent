@@ -211,6 +211,16 @@
 .mcp-fi { flex: 1; min-width: 0; padding: 4px 8px; background: var(--bg-input); border: 1px solid var(--border-subtle); border-radius: 4px; color: var(--text); font-family: var(--font-mono); font-size: 10px; outline: none; transition: border-color .15s; }
 .mcp-fi:focus { border-color: var(--accent); }
 .mcp-fi.mono { font-size: 9px; }
+/* Request-shaping fields (session header / reasoning mode / extra headers) */
+.mcp-sep { display: flex; align-items: center; gap: 8px; margin: 10px 0 7px; }
+.mcp-sep::before, .mcp-sep::after { content: ''; flex: 1; height: 1px; background: var(--border-subtle); }
+.mcp-sep span { font-size: 9px; color: var(--muted); opacity: .55; letter-spacing: .3px; text-transform: uppercase; }
+.mcp-fr-top { align-items: flex-start; }
+.mcp-fr-top .mcp-fl { padding-top: 5px; }
+.mcp-hdr { flex: 1; min-width: 0; display: flex; flex-direction: column; gap: 3px; }
+.mcp-hdr-ta { min-height: 32px; resize: vertical; line-height: 1.4; }
+.mcp-hdr-ta.bad { border-color: var(--error); }
+.mcp-err { font-size: 9px; color: var(--error); }
 
 /* Slider row */
 .mcp-sr { display: flex; align-items: center; gap: 8px; margin-bottom: 4px; }

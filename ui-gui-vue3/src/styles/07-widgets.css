@@ -435,6 +435,8 @@
 .tr svg { width: 12px; height: 12px; }
 .tr .v { color: var(--accent); font-size: 10px; }
 .cost { color: var(--muted); font-size: 10px; cursor: default; }
+.sbar-rate { color: var(--muted); font-size: 10px; font-variant-numeric: tabular-nums; transition: color 0.25s ease, opacity 0.25s ease; }
+.sbar-rate.idle { color: var(--text-body); opacity: 0.35; }
 
 /* ===== 复古数字时钟 ===== */
 .rclock {

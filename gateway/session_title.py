@@ -9,6 +9,8 @@ import logging
 import re
 from typing import Optional
 
+from agent_core.llm_client import apply_reasoning_mode, build_default_headers, keep_max_effort
+
 logger = logging.getLogger(__name__)
 
 MAX_TITLE_CHARS = 15  # CJK titles: characters
@@ -99,6 +101,7 @@ async def generate_session_title(
     llm_config: dict,
     user_text: str,
     assistant_text: str,
+    session_id: str = "",
 ) -> Optional[str]:
     """Ask the active model for a short title. Returns None on any failure."""
     config = llm_config or {}
@@ -127,7 +130,10 @@ async def generate_session_title(
 
     # Thinking off keeps the call fast. Providers that reject the vendor-specific
     # block still get one plain attempt, so a title is not lost on compatibility.
-    attempts = (build_thinking_params(model, False, ""), {})
+    thinking_params = apply_reasoning_mode(
+        build_thinking_params(model, False, "", keep_max_effort(config)), config
+    )
+    attempts = (thinking_params, {})
     last_error = ""
     for extra in attempts:
         params = dict(base_params)
@@ -138,6 +144,7 @@ async def generate_session_title(
                 base_url=config.get("base_url") or None,
                 timeout=_ATTEMPT_TIMEOUT,
                 max_retries=0,
+                default_headers=build_default_headers(config, session_id),
             ) as client:
                 resp = await asyncio.wait_for(
                     client.chat.completions.create(**params),

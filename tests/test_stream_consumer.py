@@ -18,6 +18,7 @@ if ROOT not in sys.path:
 sys.stdout.reconfigure(encoding="utf-8", errors="replace")
 
 from agent_core.chat.stream_client import PromptTooLong, StreamConsumer, open_stream
+from agent_core.context_compressor import estimate_tokens
 
 passed = 0
 failed = 0
@@ -78,6 +79,25 @@ async def main():
     check("reasoning events emitted", sum(1 for e in events if e["type"] == "reasoning") == 2)
     check("content events emitted", sum(1 for e in events if e["type"] == "content") == 2)
 
+    # ---- live token counter (reasoning + content) ----
+    order_t = []
+    c_t = StreamConsumer(order_t, 0, Cancel())
+    events_t = []
+    async for ev in c_t.consume(stream_of([
+        chunk(reasoning="thinking about it " * 2),
+        chunk(content="hello world " * 3, finish="stop"),
+    ])):
+        events_t.append(ev)
+    toks = [e.get("tokens") for e in events_t if e["type"] in ("reasoning", "content")]
+    check("every delta carries cumulative tokens",
+          all(isinstance(t, int) and t >= 0 for t in toks), f"{toks}")
+    check("token count is monotonic",
+          all(b >= a for a, b in zip(toks, toks[1:])), f"{toks}")
+    check("token count includes reasoning", c_t.output_tokens > 0, f"{c_t.output_tokens}")
+    check("token count matches estimate",
+          c_t.output_tokens == estimate_tokens(c_t.reasoning + c_t.content),
+          f"{c_t.output_tokens}")
+
     # ---- tool call assembly ----
     order2 = []
     c2 = StreamConsumer(order2, 0, Cancel())
@@ -91,6 +111,16 @@ async def main():
     check("tool args concatenated",
           c2.tool_calls_chunks[0]["function"]["arguments"] == '{"file_path": "a.txt"}',
           c2.tool_calls_chunks[0]["function"]["arguments"])
+
+    # ---- tool-call arguments count toward output tokens ----
+    order3 = []
+    c3 = StreamConsumer(order3, 0, Cancel())
+    async for _ in c3.consume(stream_of([
+        chunk(tool_calls=[tc(0, id_="call_2", name="write_file",
+                             args='{"path": "a.txt", "content": "0123456789abcdefghij"}')], finish="tool_calls"),
+    ])):
+        pass
+    check("tool args counted as output tokens", c3.output_tokens > 0, f"{c3.output_tokens}")
 
     # ---- cancellation ----
     cancel = Cancel()
@@ -145,6 +175,14 @@ async def main():
     cancel2.flag = True
     stream3, status3, _ = await open_stream(FakeClient(), {}, cancel2)
     check("cancelled before request", stream3 is None and status3 == "cancelled")
+
+    # ---- gateway passthrough (static guard) ----
+    with open(os.path.join(ROOT, "gateway", "server.py"), encoding="utf-8") as f:
+        server_src = f.read()
+    check("message.delta forwards tokens",
+          '"message.delta", {"text": chunk, "tokens"' in server_src)
+    check("thinking.delta forwards tokens",
+          '"thinking.delta", {"text": chunk, "tokens"' in server_src)
 
     print(f"\nRESULT: PASS={passed} FAIL={failed}")
     return 0 if failed == 0 else 1

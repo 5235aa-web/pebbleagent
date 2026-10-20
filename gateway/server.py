@@ -289,6 +289,7 @@ sys.path.insert(0, os.path.join(os.path.dirname(__file__), ".."))
 # Also reached by gateway/rpc handlers as srv.<name>.
 from agent_core.agent_chat_service_v2 import AgentChatServiceV2, current_pricing_period, get_cn_holidays_payload  # noqa: F401
 from agent_core.agent_loader import list_available_agents_from_yaml  # noqa: F401
+from agent_core.llm_client import build_default_headers
 
 _PROJECT_ROOT = Path(__file__).resolve().parent.parent
 _DATA_HOME = os.environ.get("PEBBLE_HOME") or os.path.join(Path.home(), ".pebble")
@@ -317,7 +318,7 @@ _running_prompt_futures: Dict[str, concurrent.futures.Future[Any]] = {}
 _current_agent = "code_agent"
 
 
-def _get_llm_client() -> tuple:
+def _get_llm_client(session_id: str = "") -> tuple:
     """获取当前 LLM 客户端和配置"""
     llm_config = load_llm_config(_current_agent)
     model = llm_config.get("model", "deepseek-chat")
@@ -341,7 +342,11 @@ def _get_llm_client() -> tuple:
         except Exception as e:
             logger.warning(f"[Server] Failed to load llm_providers.json overrides: {e}")
     from openai import OpenAI
-    client = OpenAI(api_key=api_key, base_url=base_url)
+    client = OpenAI(
+        api_key=api_key,
+        base_url=base_url,
+        default_headers=build_default_headers(llm_config, session_id),
+    )
     return client, model
 
 
@@ -656,7 +661,7 @@ async def _apply_generated_title(
     if (session.get("title") or "") != _PLACEHOLDER_TITLE:
         return
 
-    title = await generate_session_title(llm_config, user_text, assistant_text)
+    title = await generate_session_title(llm_config, user_text, assistant_text, sid)
     if not title or title == _PLACEHOLDER_TITLE:
         return
 
@@ -743,17 +748,17 @@ def handle_prompt_submit(
                 if event_type == "content":
                     chunk = event.get("content", "")
                     full_content += chunk
-                    write_event("message.delta", {"text": chunk})
+                    write_event("message.delta", {"text": chunk, "tokens": event.get("tokens", 0)})
                 elif event_type == "reasoning":
                     chunk = event.get("content", "")
                     full_reasoning += chunk
-                    write_event("thinking.delta", {"text": chunk})
+                    write_event("thinking.delta", {"text": chunk, "tokens": event.get("tokens", 0)})
                 elif event_type == "tool_call_streaming":
                     tool_id = event.get("tool_call_id", "")
                     tool_name = event.get("tool_name", "")
                     args_full = event.get("arguments_full", "")
                     if tool_id:
-                        write_event("tool.call_streaming", {"tool_id": tool_id, "name": tool_name, "args_text": args_full})
+                        write_event("tool.call_streaming", {"tool_id": tool_id, "name": tool_name, "args_text": args_full, "tokens": event.get("tokens", 0)})
                 elif event_type == "tool_execution":
                     tool_executions.append(event)
                     tool_name = event.get("tool_name", "")

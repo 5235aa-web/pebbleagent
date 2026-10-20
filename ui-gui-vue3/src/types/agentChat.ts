@@ -3,7 +3,7 @@ export interface TodoItem { id: string; content: string; status: TodoStatus; pri
 export interface QuestionOption { label: string; detail: string }
 export interface QuestionItem { prompt: string; title: string; options: QuestionOption[]; multiple?: boolean }
 export type ReasoningEffort = 'low' | 'medium' | 'high' | 'max'
-export interface LLMProvider { id: string; provider: string; apiKey: string; baseUrl: string; models: string[]; temperature: number; maxTokens: number; topP: number; reasoningEffort?: ReasoningEffort; thinkingEnabled?: boolean }
+export interface LLMProvider { id: string; provider: string; apiKey: string; baseUrl: string; models: string[]; temperature: number; maxTokens: number; topP: number; reasoningEffort?: ReasoningEffort; thinkingEnabled?: boolean; extraHeaders?: Record<string, string>; sessionHeader?: string; reasoningMode?: 'thinking' | 'effort_only'; maxEffort?: 'downgrade' | 'keep' }
 export interface AgentInfo { name: string; displayName: string; description: string; modelSource: string }
 export type ToolStatus = 'streaming' | 'running' | 'completed' | 'failed' | 'cancelled'
 export interface ToolCall { _toolId?: string; status: ToolStatus; label: string; duration: number; files?: string[]; input?: string; output?: string; error?: string }

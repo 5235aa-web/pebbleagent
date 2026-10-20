@@ -25,6 +25,35 @@ export const useGatewayStore = defineStore('gateway', () => {
   const messages = ref<Message[]>([])
   const streamingMessage = ref<Message | null>(null)
   const streaming = ref(false)
+  // Live generation rate (tokens/s). Derived only from the cumulative token
+  // count carried by streaming deltas; independent of usage/cost accounting.
+  const streamRate = ref(0)
+  const rateSamples: Array<{ t: number; v: number }> = []
+  let rateTimer: number | null = null
+  let rateLastAt = 0
+  let rateTokens = 0
+  function ratePush(tokens: number) {
+    if (!tokens) return
+    const now = performance.now()
+    if (tokens < rateTokens) rateSamples.length = 0
+    rateTokens = tokens; rateLastAt = now
+    rateSamples.push({ t: now, v: tokens })
+    const cut = now - 2500
+    while (rateSamples.length && rateSamples[0].t < cut) rateSamples.shift()
+    if (rateTimer === null) rateTimer = window.setInterval(rateTick, 500)
+  }
+  function rateTick() {
+    if (!streaming.value) { rateStop(); return }
+    const now = performance.now()
+    if (now - rateLastAt > 1500 || rateSamples.length < 2) { streamRate.value = 0; return }
+    const a = rateSamples[0]; const b = rateSamples[rateSamples.length - 1]
+    const dt = (b.t - a.t) / 1000
+    streamRate.value = dt > 0.05 ? Math.max(0, (b.v - a.v) / dt) : 0
+  }
+  function rateStop() {
+    if (rateTimer !== null) { window.clearInterval(rateTimer); rateTimer = null }
+    rateSamples.length = 0; rateLastAt = 0; rateTokens = 0; streamRate.value = 0
+  }
   const usage = ref<UsageData>({ sessionCostCny: 0, latestInputTokens: 0, latestOutputTokens: 0, modelContextLimit: 0, callHistory: [] })
   const fileChanges = ref<FileChangeItem[]>([])
   const sessionIdRef = ref<string | null>(null)
@@ -98,9 +127,9 @@ export const useGatewayStore = defineStore('gateway', () => {
   function handleEvent(ev: GatewayEvent) {
     const { type, payload } = ev
     switch (type) {
-      case 'message.delta': { const t = (payload.text as string) || ''; streamRef.value.content += t; const id = agentMsgIdRef.value; if (id) { const o = streamRef.value.order; const l = o[o.length - 1]; if (l && l.type === 'text') { l.content += t } else { if (l && l.type === 'reasoning' && l.startTime) l.durationMs = Date.now() - l.startTime; o.push({ id: `text_${++streamRef.value._orderSeq}`, type: 'text', content: t, startTime: Date.now() }) }; scheduleStreamFlush() } break }
-      case 'thinking.delta': { const t = (payload.text as string) || ''; streamRef.value.reasoning += t; const id = agentMsgIdRef.value; if (id) { const o = streamRef.value.order; const l = o[o.length - 1]; if (l && l.type === 'reasoning') { l.content += t } else { if (l && l.type === 'text' && l.startTime) l.durationMs = Date.now() - l.startTime; o.push({ id: `reasoning_${++streamRef.value._orderSeq}`, type: 'reasoning', content: t, startTime: Date.now() }) }; scheduleStreamFlush() } break }
-      case 'tool.call_streaming': { const tid = (payload.tool_id as string) || ''; const n = (payload.name as string) || 'tool'; const at = (payload.args_text as string) || ''; if (!tid) break; const ex = streamRef.value.toolCalls.find(tc => tc._toolId === tid); if (ex) { ex.input = at } else { const o = streamRef.value.order; const l = o[o.length - 1]; if (l && l.type === 'reasoning' && l.startTime) l.durationMs = Date.now() - l.startTime; const tc: ToolCall = { _toolId: tid, status: 'streaming', label: n, duration: 0, input: at }; streamRef.value.currentTool = tc; streamRef.value.toolCalls.push(tc); streamRef.value.order.push({ id: `tool_${++streamRef.value._orderSeq}_${tid}`, type: 'tool', toolInfo: tc }) }; if (agentMsgIdRef.value) scheduleStreamFlush(); break }
+      case 'message.delta': { const t = (payload.text as string) || ''; ratePush((payload.tokens as number) || 0); streamRef.value.content += t; const id = agentMsgIdRef.value; if (id) { const o = streamRef.value.order; const l = o[o.length - 1]; if (l && l.type === 'text') { l.content += t } else { if (l && l.type === 'reasoning' && l.startTime) l.durationMs = Date.now() - l.startTime; o.push({ id: `text_${++streamRef.value._orderSeq}`, type: 'text', content: t, startTime: Date.now() }) }; scheduleStreamFlush() } break }
+      case 'thinking.delta': { const t = (payload.text as string) || ''; ratePush((payload.tokens as number) || 0); streamRef.value.reasoning += t; const id = agentMsgIdRef.value; if (id) { const o = streamRef.value.order; const l = o[o.length - 1]; if (l && l.type === 'reasoning') { l.content += t } else { if (l && l.type === 'text' && l.startTime) l.durationMs = Date.now() - l.startTime; o.push({ id: `reasoning_${++streamRef.value._orderSeq}`, type: 'reasoning', content: t, startTime: Date.now() }) }; scheduleStreamFlush() } break }
+      case 'tool.call_streaming': { const tid = (payload.tool_id as string) || ''; const n = (payload.name as string) || 'tool'; const at = (payload.args_text as string) || ''; if (!tid) break; ratePush((payload.tokens as number) || 0); const ex = streamRef.value.toolCalls.find(tc => tc._toolId === tid); if (ex) { ex.input = at } else { const o = streamRef.value.order; const l = o[o.length - 1]; if (l && l.type === 'reasoning' && l.startTime) l.durationMs = Date.now() - l.startTime; const tc: ToolCall = { _toolId: tid, status: 'streaming', label: n, duration: 0, input: at }; streamRef.value.currentTool = tc; streamRef.value.toolCalls.push(tc); streamRef.value.order.push({ id: `tool_${++streamRef.value._orderSeq}_${tid}`, type: 'tool', toolInfo: tc }) }; if (agentMsgIdRef.value) scheduleStreamFlush(); break }
       case 'tool.start': { const tid = (payload.tool_id as string) || ''; const n = (payload.name as string) || 'tool'; const at = (payload.args_text as string) || ''; const ex = tid ? streamRef.value.toolCalls.find(tc => tc._toolId === tid) : undefined; if (ex) { ex.status = 'running'; ex.label = n; if (at) ex.input = at } else { const tc: ToolCall = { _toolId: tid || `tool_${Date.now()}`, status: 'running', label: n, duration: 0, input: at }; streamRef.value.currentTool = tc; streamRef.value.toolCalls.push(tc); streamRef.value.order.push({ id: `tool_${++streamRef.value._orderSeq}_${tid}`, type: 'tool', toolInfo: tc }) }; if (agentMsgIdRef.value) scheduleStreamFlush(); break }
       case 'tool.complete': { const tid = (payload.tool_id as string) || ''; const tc = tid ? streamRef.value.toolCalls.find(t => t._toolId === tid) : streamRef.value.currentTool; if (tc) { const ds = (payload.duration_s as number) || 0; tc.status = payload.error ? 'failed' : 'completed'; tc.duration = Math.round(ds * 1000); tc.output = (payload.result_text as string) || undefined; tc.error = (payload.error as string) || undefined; if (!tid) streamRef.value.currentTool = null; const o = streamRef.value.order; for (let i = o.length - 1; i >= 0; i--) { if (o[i].type === 'tool' && o[i].toolInfo === tc) { o[i].toolInfo = { ...tc }; break } } }; if (agentMsgIdRef.value) scheduleStreamFlush(); break }
       case 'file.change': { const fp = payload as Record<string, unknown>; const rp = (fp.relative_path as string) || ''; if (rp) { const ni: FileChangeItem = { id: `fc_${Date.now()}_${Math.random().toString(36).slice(2, 6)}`, relativePath: rp, operationType: (fp.operation_type as FileChangeItem['operationType']) || 'modify', toolName: (fp.tool_name as string) || '', toolId: (fp.tool_id as string) || '', expanded: false, reverted: false, loadingDiff: false, activeCount: typeof fp.active_count === 'number' && fp.active_count > 0 ? fp.active_count : 1 }; fileChanges.value = [...fileChanges.value.filter(f => f.relativePath !== rp || f.reverted), ni] }; window.dispatchEvent(new CustomEvent('gateway:file-change', { detail: { path: rp } })); break }
@@ -125,6 +154,7 @@ export const useGatewayStore = defineStore('gateway', () => {
           persistMessages(messages.value)
         }
         if (!interrupted) playCompletionSound()
+        rateStop()
         streaming.value = false; agentMsgIdRef.value = null; streamRef.value = emptyStream()
         window.dispatchEvent(new CustomEvent('gateway:message-complete', { detail: { sessionId: (payload.session_id as string) || sessionIdRef.value || '' } }))
         break
@@ -186,6 +216,7 @@ export const useGatewayStore = defineStore('gateway', () => {
       if (streamingMessage.value && streamingMessage.value.id === id) { streamingMessage.value = { ...streamingMessage.value, content: (streamingMessage.value.content ? streamingMessage.value.content + '\n\n' : '') + `**Error:** ${msg}` } }
       else { streamingMessage.value = { id, role: 'agent', content: `**Error:** ${msg}`, createdAt: Date.now() } }
     } else { messages.value.push({ id: nextId(), role: 'agent', content: `**Error:** ${msg}` }) }
+    rateStop()
     streaming.value = false; agentMsgIdRef.value = null; streamRef.value = emptyStream()
   }
 
@@ -237,5 +268,5 @@ export const useGatewayStore = defineStore('gateway', () => {
     gateway.connect()
   }
 
-  return { connected, sessionId, messages, streamingMessage, streaming, usage, fileChanges, sessionIdRef, pendingClarify, sendMessage, stopGeneration, clearMessages, createSession: async () => { await createSessionInternal() }, resumeSession, request: <T>(m: string, p?: Record<string, unknown>) => gateway.request<T>(m, p), updateUsage: (patch: Partial<UsageData>) => { usage.value = { ...usage.value, ...patch } }, fetchPricing: async () => { try { const r = await gateway.request<{ pricing?: unknown; period?: string | null; cn_holidays?: { holidays?: string[]; workdays?: string[]; years_covered?: number[]; updated_at?: string | null } | null }>('config.get', { key: 'pricing' }); if (r && typeof r === 'object' && (r as Record<string, unknown>).period) { usage.value = { ...usage.value, period: (r as Record<string, unknown>).period as string } } return r ?? null } catch { return null } }, handleEvent, loadInitialSession, setupConnection, gateway }
+  return { connected, sessionId, messages, streamingMessage, streaming, usage, fileChanges, sessionIdRef, pendingClarify, sendMessage, stopGeneration, clearMessages, createSession: async () => { await createSessionInternal() }, resumeSession, request: <T>(m: string, p?: Record<string, unknown>) => gateway.request<T>(m, p), updateUsage: (patch: Partial<UsageData>) => { usage.value = { ...usage.value, ...patch } }, fetchPricing: async () => { try { const r = await gateway.request<{ pricing?: unknown; period?: string | null; cn_holidays?: { holidays?: string[]; workdays?: string[]; years_covered?: number[]; updated_at?: string | null } | null }>('config.get', { key: 'pricing' }); if (r && typeof r === 'object' && (r as Record<string, unknown>).period) { usage.value = { ...usage.value, period: (r as Record<string, unknown>).period as string } } return r ?? null } catch { return null } }, handleEvent, loadInitialSession, setupConnection, gateway, streamRate }
 })

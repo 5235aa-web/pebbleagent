@@ -5,6 +5,8 @@ import sys
 from pathlib import Path
 from typing import Any, Dict, Optional
 
+from agent_core.llm_client import shaping_from_provider
+
 logger = logging.getLogger(__name__)
 
 _PROJECT_ROOT = Path(__file__).resolve().parent.parent
@@ -28,6 +30,11 @@ def load_llm_config(agent_name: str = "code_agent") -> Dict[str, Any]:
     api_key = os.getenv("OPENAI_API_KEY", "")
     base_url = os.getenv("OPENAI_BASE_URL", "https://api.openai.com/v1")
     model = os.getenv("OPENAI_MODEL", "")
+    # Optional per-provider request shaping; empty defaults mean "behave as before".
+    extra_headers: Dict[str, str] = {}
+    session_header = ""
+    reasoning_mode = "thinking"
+    max_effort = "downgrade"
 
     # 从 llm_providers.json 读取配置（优先用户数据目录，回退到打包根）
     data = _try_read_json(
@@ -66,6 +73,11 @@ def load_llm_config(agent_name: str = "code_agent") -> Dict[str, Any]:
                     pass  # 环境变量中指定了
                 elif fallback_models:
                     model = fallback_models[0]
+                shaping = shaping_from_provider(provider)
+                extra_headers = shaping["extra_headers"]
+                session_header = shaping["session_header"]
+                reasoning_mode = shaping["reasoning_mode"]
+                max_effort = shaping["max_effort"]
         except Exception as e:
             logger.warning(f"[Config] Failed to load llm_providers.json: {e}")
 
@@ -73,6 +85,10 @@ def load_llm_config(agent_name: str = "code_agent") -> Dict[str, Any]:
         "api_key": api_key or "local-dev-key",
         "base_url": base_url or "http://localhost:8080/v1",
         "model": model or "gpt-4",
+        "extra_headers": extra_headers,
+        "session_header": session_header,
+        "reasoning_mode": reasoning_mode,
+        "max_effort": max_effort,
     }
 
 

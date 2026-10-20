@@ -18,6 +18,8 @@ if tools:
         stream_params["tool_choice"] = "auto"  # DeepSeek thinking mode does not support this parameter
 ```
 
+**Per-provider shaping (agent_core/llm_client.py, opt-in through llm_providers.json):** `shaping_from_provider` extracts the four optional fields from a raw provider entry and is used by both config paths — `gateway/config.py` (selects by active index) and `AgentChatServiceV2._get_llm_config` (selects by the provider that owns the model, i.e. the path the main chat actually uses). `apply_reasoning_mode` removes the vendor-specific `thinking` block when the provider sets `reasoningMode: "effort_only"` (OpenCode Go's openai-compatible gateway accepts only `reasoning_effort`, which is exactly what the OpenCode CLI sends); the default mode leaves the request untouched. `keep_max_effort` feeds the `keep_max` argument of `build_thinking_params`, so a provider with `maxEffort: "keep"` keeps the `max` tier for non-DeepSeek models (default is still the MiMo/OpenAI-safe downgrade to `high`). `build_default_headers` merges provider `extraHeaders` with a `sessionHeader` whose value is the conversation uuid, and returns `None` when neither is configured — every client creation site then passes no `default_headers`, so unconfigured providers keep their previous request shape byte for byte. Four client sites use it: turn_executor (main stream), agent_chat_service_v2 title generation, gateway/session_title, gateway `_get_llm_client` (session.compress).
+
 **Unified thinking-parameter construction (build_thinking_params, module-level function)**:
 
 | Case | What is sent |
@@ -51,6 +53,10 @@ chunk.usage → _calculate_cost(model, usage)
   → yield "usage" event → server.py → write_event("message.usage")
   → gateway.ts → StatusBar.vue (shows total cost / tokens / cache hit)
 ```
+
+**Unpriced models (subscription providers such as OpenCode Go):** `calculate_cost` returns `None` when the model has no entry in model_pricing.json, and `_unpriced_cost_info` (agent_chat_service_v2.py) then builds the same dict shape with real token counts and every cost field 0. The usage event, token totals, context ring and call history therefore keep working while the displayed cost stays 0.000. `_cache_hit_tokens` reads DeepSeek's private `prompt_cache_hit_tokens` first and falls back to the OpenAI-standard `prompt_tokens_details.cached_tokens` (OpenCode Go reports the latter; its gateway returns usage even without `stream_options.include_usage`).
+
+**Context-ring denominator:** `get_model_context_limit` substring-matches the lowercased model name against `MODEL_CONTEXT_LIMITS` (vendor prefixes, first match in insertion order; unmatched names fall back to 128K). deepseek / mimo / minimax resolve to 1M, gemini to 1M, gpt-4 to 128K, sonnet / opus / haiku to 200K. The value only sets the denominator of the frontend context ring and never gates compaction.
 
 ### ⏱ DeepSeek Time-of-Day Pricing (holidays)
 

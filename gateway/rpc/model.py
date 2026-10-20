@@ -31,6 +31,10 @@ def handle(ctx, method):
             "reasoning_effort": p.get("reasoning_effort"),
             "thinking_enabled": p.get("thinking_enabled") is not False,
             "max_tokens": p.get("maxTokens", 4096),
+            "extraHeaders": p.get("extraHeaders") or {},
+            "sessionHeader": p.get("sessionHeader") or "",
+            "reasoningMode": p.get("reasoningMode") or "thinking",
+            "maxEffort": p.get("maxEffort") or "downgrade",
             })
         current_model = active_provider.get("models", [None])[0] if active_provider else None
         agent_cfg = srv._read_agent_model_config().get("agents", {}).get(srv._current_agent, {})
@@ -83,6 +87,14 @@ def handle(ctx, method):
         "reasoning_effort": srv._str(provider_data.get("reasoning_effort")),
         "thinking_enabled": srv._bool(provider_data.get("thinking_enabled"), True),
         }
+        # Request-shaping fields are edited by hand in llm_providers.json; the
+        # settings UI does not carry them, so keep the stored values on save
+        # instead of dropping them.
+        existing = providers[idx] if 0 <= idx < len(providers) else {}
+        for key in ("extraHeaders", "sessionHeader", "reasoningMode", "maxEffort"):
+            value = provider_data.get(key, existing.get(key))
+            if value:
+                new_provider[key] = value
         if idx >= 0 and idx < len(providers):
             providers[idx] = new_provider
         else:

@@ -11,6 +11,7 @@ from openai import AsyncOpenAI
 
 from ..agent_loader import get_cached_agent, get_agent_system_prompt
 from .. import agent_chat_history as history
+from ..llm_client import build_default_headers
 from .prompt import compose_system_prompt
 
 logger = logging.getLogger(__name__)
@@ -222,6 +223,7 @@ async def prepare_turn(service, params: Dict[str, Any], state: TurnState) -> Asy
             api_key=llm_config['api_key'],
             base_url=llm_config['base_url'],
             timeout=300.0,
+            default_headers=build_default_headers(llm_config, conversation_uuid),
         )
     except Exception as e:
         logger.error(f"[Turn] Failed to create OpenAI client: {e}")

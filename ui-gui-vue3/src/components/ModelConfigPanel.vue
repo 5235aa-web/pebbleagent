@@ -9,7 +9,30 @@ const agentPage = ref(0)
 const agentsPerPage = 2
 const totalAgentPages = computed(() => Math.ceil(cfg.agents.length / agentsPerPage))
 function scrollAgents(dir: number) { agentPage.value = Math.max(0, Math.min(totalAgentPages.value - 1, agentPage.value + dir)) }
-function doSave(){cfg.saveProviders();sv.value=true;setTimeout(()=>sv.value=false,2000)}
+function doSave(){if(!commitHeaders())return;cfg.saveProviders();sv.value=true;setTimeout(()=>sv.value=false,2000)}
+// Request shaping (optional): some gateways need custom headers or accept only
+// reasoning_effort. extra headers are edited as JSON text and only committed on
+// save, so a half-typed value never reaches the provider config.
+const hdrText = ref('')
+const hdrErr = ref('')
+function syncHdr(){const h=cfg.getActiveProvider()?.extraHeaders;hdrText.value=h&&Object.keys(h).length?JSON.stringify(h):'';hdrErr.value=''}
+watch(()=>cfg.activeProviderId,syncHdr,{immediate:true})
+watch(()=>cfg.providers,syncHdr)
+function onHdrInput(e:Event){hdrText.value=(e.target as HTMLTextAreaElement).value;hdrErr.value=''}
+function commitHeaders(){
+  const s=hdrText.value.trim()
+  if(!s){cfg.updateProvider(cfg.activeProviderId,{extraHeaders:{}});hdrErr.value='';return true}
+  try{
+    const v=JSON.parse(s)
+    if(!v||typeof v!=='object'||Array.isArray(v)){hdrErr.value='must be a JSON object';return false}
+    const out:Record<string,string>={}
+    for(const [k,val] of Object.entries(v)){
+      if(typeof val!=='string'){hdrErr.value='header values must be strings';return false}
+      out[k]=val
+    }
+    cfg.updateProvider(cfg.activeProviderId,{extraHeaders:out});hdrErr.value='';return true
+  }catch{hdrErr.value='invalid JSON';return false}
+}
 // provider 删除：hover 停留 800ms 显示右上角叉叉 → 点击弹确认框
 const hoverDel = ref<string | null>(null)
 let hoverTimer: ReturnType<typeof setTimeout> | null = null
@@ -119,6 +142,28 @@ watch(() => cfg.providers.length, () => nextTick(updateProvArrows))
           <div class="mcp-tg-row">
             <button class="mcp-tg" :class="{on:cfg.getActiveProvider()?.thinkingEnabled!==false}" @click="cfg.updateProvider(cfg.activeProviderId,{thinkingEnabled:!(cfg.getActiveProvider()?.thinkingEnabled!==false)})"><span class="mcp-tg-knob"/></button>
             <span class="mcp-tg-lb">{{cfg.getActiveProvider()?.thinkingEnabled!==false?'on':'off'}}</span>
+          </div>
+        </div>
+
+        <!-- 分割线：以下参数仅使用 OpenCode Go 等需要请求整形的网关时才填 -->
+        <div class="mcp-sep"><span>opencode-go</span></div>
+
+        <!-- 请求整形（可选）：部分网关要求自定义 header / 只接受 reasoning_effort -->
+        <div class="mcp-fr"><span class="mcp-fl">session hdr</span><input class="mcp-fi mono" placeholder="x-opencode-session" :value="cfg.getActiveProvider()!.sessionHeader||''" @input="cfg.updateProvider(cfg.activeProviderId,{sessionHeader:($event.target as HTMLInputElement).value.trim()})"/></div>
+        <div class="mcp-fr"><span class="mcp-fl">max effort</span>
+          <div class="mcp-reason-row">
+            <button v-for="e in (['downgrade','keep'] as ('downgrade'|'keep')[])" :key="e" class="mcp-reason-pill" :class="{active:(cfg.getActiveProvider()!.maxEffort||'downgrade')===e}" @click="cfg.updateProvider(cfg.activeProviderId,{maxEffort:e})">{{e}}</button>
+          </div>
+        </div>
+        <div class="mcp-fr"><span class="mcp-fl">reasoning mode</span>
+          <div class="mcp-reason-row">
+            <button v-for="m in (['thinking','effort_only'] as const)" :key="m" class="mcp-reason-pill" :class="{active:(cfg.getActiveProvider()!.reasoningMode||'thinking')===m}" @click="cfg.updateProvider(cfg.activeProviderId,{reasoningMode:m})">{{m}}</button>
+          </div>
+        </div>
+        <div class="mcp-fr mcp-fr-top"><span class="mcp-fl">extra headers</span>
+          <div class="mcp-hdr">
+            <textarea class="mcp-fi mono mcp-hdr-ta" :class="{bad:hdrErr}" :value="hdrText" @input="onHdrInput" placeholder='{"User-Agent": "PebbleAgent/1.0"}'></textarea>
+            <span v-if="hdrErr" class="mcp-err">{{hdrErr}}</span>
           </div>
         </div>
       </template>

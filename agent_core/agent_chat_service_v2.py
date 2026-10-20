@@ -34,6 +34,7 @@ from openai import AsyncOpenAI
 
 
 from .agent_loader import get_cached_agent, filter_tools_for_agent, list_available_agents_from_yaml
+from .llm_client import apply_reasoning_mode, build_default_headers, keep_max_effort, shaping_from_provider
 from .context_compressor import (
     # Token 计数（tiktoken + 中英文比例降级）
     estimate_tokens,
@@ -65,6 +66,7 @@ logger = logging.getLogger(__name__)
 MODEL_CONTEXT_LIMITS = {
     'deepseek': 1_000_000,
     'mimo': 1_000_000,
+    'minimax': 1_000_000,
     'gpt-4': 128_000,
     'gpt-3.5': 16_000,
     'sonnet': 200_000,
@@ -168,18 +170,19 @@ def _read_json_config(filename: str) -> Optional[dict]:
     return None
 
 
-def build_thinking_params(model: str, thinking_enabled: bool, reasoning_effort: str) -> Dict[str, Any]:
+def build_thinking_params(model: str, thinking_enabled: bool, reasoning_effort: str, keep_max: bool = False) -> Dict[str, Any]:
     """构建思考模式相关的请求参数（所有厂商统一处理）。
 
     - 开启：thinking={"type": "enabled"} + reasoning_effort（全厂商发送，不再限 DeepSeek）
       - 非 DeepSeek 模型的 "max" 档降级为 "high"：小米 MiMo 仅接受 low/medium/high
-        （max 会 400），OpenAI/Gemini 值域亦不含 max
+        （max 会 400），OpenAI/Gemini 值域亦不含 max；provider 配 maxEffort=keep
+        时跳过降级（如 OpenCode Go 的 GLM-5.3 支持 max）
     - 关闭：thinking={"type": "disabled"}（显式关闭，不再发送 reasoning_effort）
     """
     if not thinking_enabled:
         return {"extra_body": {"thinking": {"type": "disabled"}}}
     effort = reasoning_effort
-    if effort == "max" and "deepseek" not in (model or "").lower():
+    if not keep_max and effort == "max" and "deepseek" not in (model or "").lower():
         effort = "high"
     return {
         "extra_body": {"thinking": {"type": "enabled"}},
@@ -421,6 +424,41 @@ class AgentChatServiceV2:
     def _calculate_cost(self, model: str, usage) -> Optional[dict]:
         return self._ensure_usage().calculate_cost(model, usage)
 
+    @staticmethod
+    def _cache_hit_tokens(usage) -> int:
+        """缓存命中 token：兼容两种字段约定。
+
+        DeepSeek 用私有字段 prompt_cache_hit_tokens；OpenAI 兼容网关
+        （OpenCode Go 等）用标准字段 prompt_tokens_details.cached_tokens。
+        """
+        hit = getattr(usage, "prompt_cache_hit_tokens", 0) or 0
+        if hit:
+            return int(hit)
+        details = getattr(usage, "prompt_tokens_details", None)
+        cached = getattr(details, "cached_tokens", 0) if details is not None else 0
+        return int(cached or 0)
+
+    def _unpriced_cost_info(self, usage) -> dict:
+        """无价格条目的模型（订阅制 provider）：上报真实用量，费用恒为 0。
+
+        返回结构与 UsageTracker.calculate_cost 一致，使累计、持久化和前端
+        展示走同一条路径；token 数为 API 原始值，上下文占用由此恢复。
+        """
+        prompt = getattr(usage, "prompt_tokens", 0) or 0
+        completion = getattr(usage, "completion_tokens", 0) or 0
+        cache_hit = min(self._cache_hit_tokens(usage), prompt)
+        return {
+            "input_tokens": prompt - cache_hit,
+            "cache_hit_tokens": cache_hit,
+            "output_tokens": completion,
+            "input_cost": 0.0,
+            "cache_hit_cost": 0.0,
+            "output_cost": 0.0,
+            "total_cost": 0.0,
+            "period": None,
+            "pricing_used": None,
+        }
+
     def _accumulate_cost(self, conversation_uuid: str, cost_info: dict, model_name: str = None) -> dict:
         return self._ensure_usage().accumulate(conversation_uuid, cost_info, model_name)
 
@@ -518,7 +556,8 @@ class AgentChatServiceV2:
         messages: List[Dict[str, str]],
         model: str | None = None,
         thinking_enabled: bool = True,
-        reasoning_effort: str = "high"
+        reasoning_effort: str = "high",
+        conversation_uuid: str = "",
     ) -> str:
         """根据对话内容生成标题"""
         if not messages or len(messages) < 2:
@@ -553,7 +592,8 @@ class AgentChatServiceV2:
             client = AsyncOpenAI(
                 api_key=llm_config['api_key'],
                 base_url=llm_config['base_url'],
-                timeout=30.0
+                timeout=30.0,
+                default_headers=build_default_headers(llm_config, conversation_uuid),
             )
             
             title_params = {
@@ -565,7 +605,8 @@ class AgentChatServiceV2:
             }
             
             # 思考模式参数（与主聊天一致：开关 + 强度，非 DeepSeek 的 max 档自动降级）
-            title_params.update(build_thinking_params(use_model, thinking_enabled, reasoning_effort))
+            title_params.update(build_thinking_params(use_model, thinking_enabled, reasoning_effort, keep_max_effort(llm_config)))
+            apply_reasoning_mode(title_params, llm_config)
             
             raw_content = ""
             async for chunk in await client.chat.completions.create(**title_params):
@@ -707,6 +748,9 @@ class AgentChatServiceV2:
                         'provider': selected_provider.get('provider'),
                         'temperature': selected_provider.get('temperature'),
                         'top_p': selected_provider.get('topP'),
+                        # Request shaping (headers / reasoning mode / max tier) must
+                        # travel with the provider the model belongs to.
+                        **shaping_from_provider(selected_provider),
                     }
         except Exception as e:
             logger.warning(f"[AgentChatServiceV2] Failed to load LLM config: {e}")
@@ -718,6 +762,10 @@ class AgentChatServiceV2:
             'provider': None,
             'temperature': None,
             'top_p': None,
+            'extra_headers': {},
+            'session_header': '',
+            'reasoning_mode': 'thinking',
+            'max_effort': 'downgrade',
         }
     
     def get_available_agents(self) -> List[Dict[str, Any]]:
@@ -1043,7 +1091,8 @@ class AgentChatServiceV2:
                 }
                 
                 # 思考模式参数（所有厂商统一：开关 + 强度；非 DeepSeek 的 max 档自动降级）
-                stream_params.update(build_thinking_params(use_model, final_thinking_enabled, final_reasoning_effort))
+                stream_params.update(build_thinking_params(use_model, final_thinking_enabled, final_reasoning_effort, keep_max_effort(state.llm_config)))
+                apply_reasoning_mode(stream_params, state.llm_config)
                 
                 if tools:
                     stream_params["tools"] = tools
@@ -1101,21 +1150,24 @@ class AgentChatServiceV2:
                 if consumer.usage:
                     try:
                         cost_info = self._calculate_cost(use_model, consumer.usage)
-                        if cost_info:
-                            session_usage = self._accumulate_cost(conversation_uuid, cost_info, model_name=use_model)
-                            # 环显示用完整 prompt_tokens（已含缓存），面板用 cost_info.input_tokens（非缓存输入）
-                            latest_input = getattr(consumer.usage, 'prompt_tokens', 0)
-                            
-                            yield {
-                                "type": "usage",
-                                "model": use_model,
-                                "session_cost_cny": round(session_usage["total_cost"], 4),
-                                "latest_input_tokens": latest_input,
-                                "latest_output_tokens": cost_info.get("output_tokens", 0),
-                                "model_context_limit": get_model_context_limit(use_model),
-                                "period": cost_info.get("period"),  # 本次计费时段 peak/offpeak（分时模型）
-                                "this_call": {**cost_info, "model": use_model}
-                            }
+                        if cost_info is None:
+                            # 无价格条目（订阅制 provider）：仍上报用量，费用记 0。
+                            # token 统计、上下文占用与会话历史不因缺少定价而中断。
+                            cost_info = self._unpriced_cost_info(consumer.usage)
+                        session_usage = self._accumulate_cost(conversation_uuid, cost_info, model_name=use_model)
+                        # 环显示用完整 prompt_tokens（已含缓存），面板用 cost_info.input_tokens（非缓存输入）
+                        latest_input = getattr(consumer.usage, 'prompt_tokens', 0)
+
+                        yield {
+                            "type": "usage",
+                            "model": use_model,
+                            "session_cost_cny": round(session_usage["total_cost"], 4),
+                            "latest_input_tokens": latest_input,
+                            "latest_output_tokens": cost_info.get("output_tokens", 0),
+                            "model_context_limit": get_model_context_limit(use_model),
+                            "period": cost_info.get("period"),  # 本次计费时段 peak/offpeak（分时模型）
+                            "this_call": {**cost_info, "model": use_model}
+                        }
                     except Exception as e:
                         logger.warning(f"[Cost] Failed to calculate cost: {e}", exc_info=True)
                 # ========================================
@@ -1262,7 +1314,7 @@ class AgentChatServiceV2:
                 
                 if need_generate_title:
                     try:
-                        new_title = await self.generate_conversation_title(current_messages, use_model, final_thinking_enabled, final_reasoning_effort)
+                        new_title = await self.generate_conversation_title(current_messages, use_model, final_thinking_enabled, final_reasoning_effort, conversation_uuid)
                         history.update_agent_conversation_title(conversation_uuid, new_title)
                         yield {
                             "type": "title_updated",

@@ -192,8 +192,9 @@ def main() -> int:
         sid = created["session_id"]
         calls = {"n": 0}
 
-        async def fake_generate(llm_config, user_text, assistant_text):
+        async def fake_generate(llm_config, user_text, assistant_text, session_id=""):
             calls["n"] += 1
+            calls["session_id"] = session_id
             return "登录问题排查"
 
         original = srv.generate_session_title

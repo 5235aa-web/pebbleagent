@@ -4,9 +4,14 @@ import asyncio
 import logging
 from typing import Any, AsyncIterator, Dict, List, Optional
 
-from ..context_compressor import is_prompt_too_long_error
+from ..context_compressor import estimate_tokens, is_prompt_too_long_error
 
 logger = logging.getLogger(__name__)
+
+# Cumulative token re-estimation interval (characters). Encoding the whole
+# buffer on every chunk is quadratic; re-encoding after enough new text keeps
+# the live rate display smooth at a negligible CPU cost.
+_TOKEN_RECALC_CHARS = 32
 
 
 class PromptTooLong(RuntimeError):
@@ -78,6 +83,19 @@ class StreamConsumer:
         self.tool_call_chunk_count = 0
         self._chunk_type: Optional[str] = None
         self._chunk_content = ""
+        # Cumulative output tokens (reasoning + content) for the live rate
+        # display: providers report exact usage only at stream end.
+        self.output_tokens = 0
+        self._token_text = ""
+        self._token_counted_chars = 0
+
+    def _count_tokens(self, piece: str) -> int:
+        """Return cumulative estimated output tokens after `piece` arrived."""
+        self._token_text += piece
+        if len(self._token_text) - self._token_counted_chars >= _TOKEN_RECALC_CHARS:
+            self.output_tokens = estimate_tokens(self._token_text)
+            self._token_counted_chars = len(self._token_text)
+        return self.output_tokens
 
     def _flush_chunk(self) -> None:
         if not (self._chunk_type and self._chunk_content):
@@ -115,7 +133,8 @@ class StreamConsumer:
                     self._chunk_type = "reasoning"
                     self._chunk_content += delta.reasoning_content
                     self.reasoning += delta.reasoning_content
-                    yield {"type": "reasoning", "content": delta.reasoning_content, "order": self.order_index}
+                    tokens = self._count_tokens(delta.reasoning_content)
+                    yield {"type": "reasoning", "content": delta.reasoning_content, "order": self.order_index, "tokens": tokens}
                     await asyncio.sleep(0)
 
                 if delta.content:
@@ -124,7 +143,8 @@ class StreamConsumer:
                     self._chunk_type = "content"
                     self._chunk_content += delta.content
                     self.content += delta.content
-                    yield {"type": "content", "content": delta.content, "order": self.order_index}
+                    tokens = self._count_tokens(delta.content)
+                    yield {"type": "content", "content": delta.content, "order": self.order_index, "tokens": tokens}
                     await asyncio.sleep(0)
 
                 if getattr(delta, "tool_calls", None):
@@ -143,6 +163,7 @@ class StreamConsumer:
                                 self.tool_calls_chunks[idx]["function"]["name"] = tc.function.name
                             if tc.function.arguments:
                                 self.tool_calls_chunks[idx]["function"]["arguments"] += tc.function.arguments
+                                self._count_tokens(tc.function.arguments)
                         current_tool_id = self.tool_calls_chunks[idx]["id"] or f"temp_{idx}"
                         current_tool_name = self.tool_calls_chunks[idx]["function"]["name"] or ""
                         if current_tool_name:
@@ -153,6 +174,7 @@ class StreamConsumer:
                                 "arguments_chunk": tc.function.arguments if tc.function and tc.function.arguments else "",
                                 "arguments_full": self.tool_calls_chunks[idx]["function"]["arguments"],
                                 "index": idx,
+                                "tokens": self.output_tokens,
                             }
                             await asyncio.sleep(0)
         except Exception as stream_err:
