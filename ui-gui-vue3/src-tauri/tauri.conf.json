@@ -23,7 +23,8 @@
     ],
     "security": {
       "csp": "default-src 'self'; script-src 'self' 'unsafe-inline' 'unsafe-eval' https:; style-src 'self' 'unsafe-inline' https:; img-src 'self' data: blob: https: http:; font-src 'self' data: https:; media-src 'self' data: blob: https:; connect-src 'self' ws://127.0.0.1:19876 http://127.0.0.1:19876; frame-src 'self'; object-src 'none'; base-uri 'none'",
-      "devCsp": "default-src 'self'; script-src 'self' 'unsafe-inline' 'unsafe-eval' https:; style-src 'self' 'unsafe-inline' https:; img-src 'self' data: blob: https: http:; font-src 'self' data: https:; media-src 'self' data: blob: https:; connect-src 'self' ws://127.0.0.1:19876 http://127.0.0.1:19876 ws://localhost:5174 http://localhost:5174; frame-src 'self'; object-src 'none'; base-uri 'none'"
+      "devCsp": "default-src 'self'; script-src 'self' 'unsafe-inline' 'unsafe-eval' https:; style-src 'self' 'unsafe-inline' https:; img-src 'self' data: blob: https: http:; font-src 'self' data: https:; media-src 'self' data: blob: https:; connect-src 'self' ws://127.0.0.1:19876 http://127.0.0.1:19876 ws://localhost:5174 http://localhost:5174; frame-src 'self'; object-src 'none'; base-uri 'none'",
+      "dangerousDisableAssetCspModification": ["script-src"]
     }
   },
   "plugins": {
