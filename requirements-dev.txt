@@ -1,0 +1,16 @@
+# ============================================================
+# PebbleAgent - Development and packaging dependencies
+# Install: pip install -r requirements-dev.txt
+# ------------------------------------------------------------
+# Superset of the optional set. PyInstaller needs the PDF/OCR modules to be
+# importable at build time, otherwise they are missing from the packaged exe.
+# ============================================================
+
+-r requirements-optional.txt
+
+# Packaging (pebble-backend.spec -> dist/pebble-backend.exe)
+pyinstaller>=6.21.0
+pyinstaller-hooks-contrib>=2026.6
+
+# Lint (CI pins the same version)
+ruff==0.17.1

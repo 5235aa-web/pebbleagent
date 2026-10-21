@@ -66,6 +66,10 @@ npm install
 cd ..
 ```
 
+`requirements.txt` is the core set — enough to start the backend and chat. PDF
+reading and image OCR are optional and lazy-imported; install them with
+`pip install -r requirements-optional.txt` when you need those tools.
+
 Then launch both services with the provided script:
 
 ```bash

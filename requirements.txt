@@ -1,17 +1,13 @@
 # ============================================================
-# PebbleAgent — Python Requirements (requirements.txt)
+# PebbleAgent - Python Requirements (core)
 # Environment: Python 3.11+ (verified on 3.14, Windows)
 # Install: pip install -r requirements.txt
 # ------------------------------------------------------------
-# Notes:
-#   1. Core dependencies — required to run; the backend service will not start if missing
-#   2. Optional dependencies — corresponding features degrade or become unavailable if missing (try/fallback in code)
-#   3. Version pins = versions verified in the current development environment, used as minimum requirements
-#   4. Transitive dependencies (certifi / anyio / pydantic / yarl, etc.) are resolved automatically by pip
-#   5. Minimum Python = 3.11: numpy>=2.4 requires it.
+# Core only: enough to start the backend and chat. PDF parsing, image OCR and
+# packaging tools live in requirements-optional.txt / requirements-dev.txt.
+# They are lazy-imported, so their absence degrades the matching tool instead
+# of blocking startup.
 # ============================================================
-
-# ---------- Core Dependencies (required to run) ----------
 
 # WebSocket server (gateway/ws_server.py, ws://127.0.0.1:19876)
 websockets>=16.0
@@ -25,51 +21,10 @@ httpx>=0.28.1
 # Agent YAML config loading (agent_core/agent_loader.py)
 PyYAML>=6.0.3
 
-# ---------- Optional Feature Dependencies ----------
-#
-# The full set is only needed for the OCR/PDF pipeline: easyocr pulls in torch
-# (~2 GB). Backend-only and test runs do not need this section.
+# Exact token counting for context compaction (falls back to a len//3 estimate
+# when missing)
+tiktoken>=0.1
 
-# Exact token counting (falls back to len//3 estimation if missing)
-tiktoken>=0.13.0
-
-# MCP HTTP transport (agent_core/mcp/mcp_client.py)
+# MCP HTTP/SSE transport (agent_core/mcp/mcp_client.py; the stdio transport
+# works without it)
 aiohttp>=3.14.1
-
-# Image / array processing (PDF OCR pipeline; numpy>=2.4 requires Python 3.11+)
-numpy>=2.4.6
-
-# Image processing (PDF OCR)
-Pillow>=12.2.0
-
-# PDF text extraction (third tier of the fallback chain)
-pypdf>=6.15.0
-
-# Word document parsing
-python-docx>=1.2.0
-
-# Excel parsing
-openpyxl>=3.1.5
-
-# PDF parsing primary engine
-PyMuPDF
-
-# PDF parsing fallback engine
-pdfplumber
-
-# Image OCR recognition
-easyocr
-
-# System information utilities
-psutil
-
-# ---------- Skill Tool Dependencies (optional) ----------
-
-# huashu-design skill verification script (skills/huashu-design/scripts/verify.py)
-playwright
-
-# ---------- Build Tools (for packaging the exe) ----------
-
-# PyInstaller packaging (pebble-backend.spec → dist/pebble-backend.exe)
-pyinstaller>=6.21.0
-pyinstaller-hooks-contrib>=2026.6

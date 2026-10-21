@@ -1,0 +1,29 @@
+# ============================================================
+# PebbleAgent - Optional feature dependencies
+# Install: pip install -r requirements-optional.txt
+# ------------------------------------------------------------
+# Needed for PDF reading, image OCR and the CPU/memory fields of
+# get_system_info. All of them are lazy-imported: without them the matching
+# tool returns an error or a reduced result and the rest of the app keeps
+# working.
+#
+# easyocr pulls in torch (~2 GB), which is why this file is separate from
+# requirements.txt.
+# ============================================================
+
+-r requirements.txt
+
+# PDF parsing, primary engine
+PyMuPDF
+
+# PDF parsing, fallback engine (text-only PDFs)
+pdfplumber
+
+# Image OCR (pulls torch)
+easyocr
+
+# CPU / memory details in get_system_info
+psutil
+
+# skills/huashu-design/scripts/verify.py
+playwright
