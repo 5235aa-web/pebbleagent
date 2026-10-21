@@ -1,27 +1,51 @@
 @echo off
-chcp 936 >nul
-title PebbleAgent 后端服务
+title PebbleAgent Backend
 cd /d "%~dp0"
 
 echo ========================================
-echo   PebbleAgent 后端服务 - 启动中...
+echo   PebbleAgent Backend - starting...
 echo ========================================
 echo.
 
-:: 清理残留的后端进程（端口 19876）
-echo [1/3] 清理残留进程...
+:: Preflight. Fail fast with an actionable message instead of letting
+:: python emit a traceback from a missing dependency.
+echo [1/3] Checking environment...
+
+where python >nul 2>&1
+if errorlevel 1 (
+    echo   [ERROR] python was not found in PATH.
+    echo   Install Python 3.11+ and make sure it is on PATH.
+    echo.
+    pause
+    exit /b 1
+)
+
+python -c "import websockets, openai, httpx, yaml" >nul 2>&1
+if errorlevel 1 (
+    echo   [ERROR] Python dependencies are not installed.
+    echo   Run from the project root:
+    echo     pip install -r requirements.txt
+    echo.
+    pause
+    exit /b 1
+)
+
+echo   OK - environment ready
+echo.
+
+:: Clean up any stale backend holding port 19876
+echo [2/3] Cleaning up stale processes...
 for /f "tokens=5" %%a in ('netstat -ano ^| find "127.0.0.1:19876"') do (
-    echo       发现残留进程 PID=%%a，正在终止...
+    echo       found PID=%%a, terminating...
     taskkill /f /pid %%a >nul 2>&1
 )
 timeout /t 1 /nobreak >nul
 
-:: 启动 Python WebSocket 后端
-echo [2/3] 启动后端服务...
+:: Start the backend
+echo [3/3] Starting backend...
 start "PebbleAgent-Backend" cmd /c "python run_backend.py ^& pause"
 
-:: 等待后端就绪（检测端口 19876）
-echo [3/3] 等待后端就绪...
+echo       waiting for ws://127.0.0.1:19876 ...
 :wait_loop
 timeout /t 1 /nobreak >nul
 netstat -an | find "127.0.0.1:19876" >nul 2>&1
@@ -29,17 +53,16 @@ if errorlevel 1 goto wait_loop
 
 echo.
 echo ========================================
-echo   后端服务已就绪
-echo   地址: ws://127.0.0.1:19876
+echo   Backend is ready
+echo   ws://127.0.0.1:19876
 echo.
-echo   按任意键停止后端服务
+echo   Press any key to stop the backend
 echo ========================================
 echo.
 
 pause >nul
 
-:: 关闭后端进程
-echo 正在关闭后端服务...
+echo Stopping backend...
 taskkill /f /fi "WINDOWTITLE eq PebbleAgent-Backend" >nul 2>&1
-echo 后端服务已停止。
+echo Backend stopped.
 timeout /t 1 /nobreak >nul
