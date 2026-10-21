@@ -1,0 +1,8 @@
+{
+  "name": "pebbleagent-node-tools",
+  "private": true,
+  "description": "Node-side tooling only: the Hyperframes video renderer used by the brag skill. Not a build target - the application itself is Python + Vue 3.",
+  "dependencies": {
+    "hyperframes": "^0.8.181"
+  }
+}

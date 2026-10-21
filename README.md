@@ -137,8 +137,12 @@ Three billing/holiday regression scripts (`peb_check_*.py`) sit at the repo root
 ## Credits
 
 PebbleAgent bundles 114 skills. Third-party skills and materials
-(4 Apache-2.0 skills, 3 MIT skills, 1 reference set) are listed in
+(10 Apache-2.0 skills, 3 MIT skills, 1 reference set) are listed in
 [THIRD_PARTY_NOTICES.md](THIRD_PARTY_NOTICES.md).
+
+Video rendering (the `brag` skill) is powered by
+[HyperFrames](https://github.com/heygen-com/hyperframes), Copyright 2026
+HeyGen, Inc., licensed under Apache-2.0.
 
 ## License
 

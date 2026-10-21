@@ -34,6 +34,8 @@ ui-gui-vue3/src-tauri/binaries/*.exe
 gateway/permission_audit.db
 gateway/err.txt
 /.claude/
+/brag-output/
+/brag-output-*/
 
 # ---------- Personal config / backups / logs ----------
 *.bak
