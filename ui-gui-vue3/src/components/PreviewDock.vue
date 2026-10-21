@@ -138,9 +138,9 @@ function startResize(e: MouseEvent): void {
             <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8"><path d="M21 12a9 9 0 1 1-3-6.7"/><polyline points="21 3 21 9 15 9"/></svg>
           </button>
         </Tooltip>
-        <Tooltip text="Close" position="bottom">
+        <Tooltip text="Collapse" position="bottom">
           <button class="pvd-btn" @click="pv.closeDock()">
-            <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8"><line x1="6" y1="6" x2="18" y2="18"/><line x1="18" y1="6" x2="6" y2="18"/></svg>
+            <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8"><polyline points="9 6 15 12 9 18"/></svg>
           </button>
         </Tooltip>
       </div>
@@ -157,14 +157,10 @@ function startResize(e: MouseEvent): void {
     </div>
   </aside>
 
-  <div v-else class="pvd-reopen-wrap">
-    <Tooltip text="Open preview" position="top">
-      <button class="pvd-reopen" @click="pv.openDock()">
-        <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.6"><rect x="2" y="3" width="20" height="14" rx="2"/><line x1="8" y1="21" x2="16" y2="21"/><line x1="12" y1="17" x2="12" y2="21"/></svg>
-        <span v-if="pv.staleCount > 0" class="pvd-reopen-dot" />
-      </button>
-    </Tooltip>
-  </div>
+  <button v-else class="pvd-rail" @click="pv.openDock()">
+    <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.6"><rect x="2" y="3" width="20" height="14" rx="2"/><line x1="8" y1="21" x2="16" y2="21"/><line x1="12" y1="17" x2="12" y2="21"/></svg>
+    <span v-if="pv.staleCount > 0" class="pvd-rail-dot" />
+  </button>
 </template>
 
 <style scoped>
@@ -304,38 +300,47 @@ function startResize(e: MouseEvent): void {
   border-top: none;
 }
 .pvd-body :deep(.ht-preview-wrapper) { flex: 1; height: 100%; min-height: 0; }
-.pvd-body :deep(.ht-frame) { min-width: 0; min-height: 0; height: 100%; }
+/* The preview bridge forces `body { min-width: 800px }` and `overflow: clip`
+   inside the frame, so the iframe itself never scrolls — it clips. The frame
+   must therefore be at least as wide as that floor and the scroll container
+   owns both axes. */
+.pvd-body :deep(.ht-frame) { min-width: 800px; min-height: 400px; height: auto; }
+.pvd-body :deep(.ht-frame-scroll) { flex: 1; overflow: auto; }
+.pvd-body :deep(.ht-frame-scroll)::-webkit-scrollbar { width: 9px; height: 9px; }
+.pvd-body :deep(.ht-frame-scroll)::-webkit-scrollbar-thumb {
+  background: var(--border-hover);
+  border-radius: 5px;
+}
 .pvd-body :deep(.ht-code) { flex: 1; overflow: auto; min-height: 0; }
 
-/* Reopen affordance: messages can be folded into a compacted segment, so the
-   in-flow reference chip is not a reliable way back to the dock. */
-.pvd-reopen-wrap {
+/* Collapsed state: a small fixed button on the right edge. It is a direct v-else
+   sibling of the dock, so it must carry its own fixed positioning. */
+.pvd-rail {
   position: fixed;
-  right: 16px;
-  bottom: calc(var(--statusbar-height) + 16px);
-  z-index: 25;
-}
-.pvd-reopen {
-  position: relative;
+  right: 12px;
+  top: 50%;
+  transform: translateY(-50%);
+  z-index: 26;
   display: flex;
   align-items: center;
   justify-content: center;
-  width: 34px;
-  height: 34px;
-  border-radius: 50%;
+  width: 32px;
+  height: 32px;
+  padding: 0;
   border: 1px solid var(--border-subtle);
+  border-radius: 8px;
   background: var(--bg-surface);
   color: var(--text-body);
   cursor: pointer;
-  box-shadow: 0 4px 14px rgba(0, 0, 0, 0.3);
+  box-shadow: 0 2px 10px rgba(0, 0, 0, 0.25);
   transition: background 0.15s, color 0.15s, border-color 0.15s;
 }
-.pvd-reopen:hover {
+.pvd-rail:hover {
   background: var(--bg-hover);
   color: var(--accent);
   border-color: color-mix(in srgb, var(--accent) 45%, transparent);
 }
-.pvd-reopen-dot {
+.pvd-rail-dot {
   position: absolute;
   top: 4px;
   right: 4px;

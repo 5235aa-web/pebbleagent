@@ -134,7 +134,7 @@ function activateFeedback(){const i=ir.value;if(!i?.contentWindow)return;const r
 function tryActivateFeedback(){if(!canActivateFeedback())return;activateFeedback()}
 // 预览 iframe 消息统一入口（校验来源窗口身份；不透明源下 e.origin 为 "null"）
 function handlePreviewMessage(e:MessageEvent){const i=ir.value;if(!i||e.source!==i.contentWindow)return;const d=e.data as Record<string,unknown>|undefined;if(!d||typeof d!=='object')return;const t=d.type as string
-  if(t==='pebble-preview-height'){if(p.dockMode)return;const h=Number(d.height)||0;if(h>100){i.style.height=h+'px';if(!cl.value&&br.value)bh.value=br.value.scrollHeight+'px'}}
+  if(t==='pebble-preview-height'){const h=Number(d.height)||0;if(h>100){const mh=p.dockMode&&sr.value?sr.value.clientHeight:0;i.style.height=Math.max(h,mh)+'px';if(!cl.value&&br.value)bh.value=br.value.scrollHeight+'px'}}
   else if(t==='pebble-preview-capture-result'){const p=_capPending;if(p&&d.id===p.id){_capPending=null;window.clearTimeout(p.timer);if(d.ok&&typeof d.dataUrl==='string')p.resolve(d.dataUrl);else p.reject(new Error(String(d.error||'capture failed')))}}
   else if(t==='pebble-feedback-update'&&Array.isArray(d.comments)){cs.clearComments();(d.comments as HtmlComment[]).forEach(c=>cs.addComment(c))}
 }
