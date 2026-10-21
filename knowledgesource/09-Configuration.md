@@ -69,7 +69,7 @@ Shell = Tauri 2 (Rust), productName "pebble-agent", identifier com.pebble.agent.
 
 > Retention: these assets are used passively only when diagnosing and cost nothing at rest; they are kept wholesale. Companion long-term logs: backend "Stream events dropped" (Chapter 4 ws_server.py) and frontend [WS] lifecycle (Chapter 8 gatewayClient.ts).
 
-### Built-in Skills (114 skill directories total)
+### Built-in Skills (120 skill directories total)
 
 | Skill | Path | Function |
 |-------|------|------|

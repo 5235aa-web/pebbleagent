@@ -21,7 +21,7 @@
 - **Cross-session experience ledger.** Corrections, constraints, and preferences you express during work become evidence-backed entries in a local SQLite ledger. Later turns recall the relevant ones by full-text relevance plus tool and path context, and superseded entries are retired automatically. Capture and recall run on rules, not extra model calls.
 - **Snapshot & rollback.** Every write is snapshotted before it happens; diffs are tracked per file, and you can roll back a single file or an entire change set — with an undo for the rollback itself.
 - **Permission & audit system.** Three permission modes (manual, auto, read-only), rule sets with `tool:pattern` matching, a path whitelist, fail-closed checks, and a tamper-evident audit log (chained checksums) for every sensitive operation.
-- **Skills and MCP servers.** 114 bundled skills load on demand; MCP servers over stdio, SSE, HTTP, or WebSocket are installed with sha256 verification and approved per project.
+- **Skills and MCP servers.** 120 bundled skills load on demand; MCP servers over stdio, SSE, HTTP, or WebSocket are installed with sha256 verification and approved per project.
 - **Real-time cost tracking.** Per-model pricing with peak/off-peak tiers (including Chinese statutory holidays) and cache-hit accounting, updated live per conversation.
 - **HTML preview with feedback bridge.** Generated HTML pages render in a sandboxed preview; click any element to leave a comment, and the agent iterates on the page from your annotations.
 - **Streaming agent chat with full execution visibility.** Reasoning, tool calls, file changes, and results unfold as a step-by-step timeline instead of a black box.
@@ -136,7 +136,7 @@ Three billing/holiday regression scripts (`peb_check_*.py`) sit at the repo root
 
 ## Credits
 
-PebbleAgent bundles 114 skills. Third-party skills and materials
+PebbleAgent bundles 120 skills. Third-party skills and materials
 (10 Apache-2.0 skills, 3 MIT skills, 1 reference set) are listed in
 [THIRD_PARTY_NOTICES.md](THIRD_PARTY_NOTICES.md).
 
