@@ -1,6 +1,6 @@
 # PebbleAgent — Version Notes
 
-> Last updated: 2026-10-20
+> Last updated: 2026-10-21
 
 ## Platform
 
@@ -51,6 +51,7 @@
 - Message flow: execution-order rendering (thinking / tool / question / content), inline clarify cards (title / prompt / options label+detail / multiple), multi-question answers, image attachments with viewer
 - Compaction card: 任务 / 现状 / 决定 / 待办 / 线索 sections with counts
 - HTML preview: sandboxed iframe (allow-scripts only), injected meta CSP, postMessage bridge, PNG capture, interactive comment layer
+- Preview dock (`PreviewDock.vue` + `stores/preview.ts`): the only live preview iframe lives in a right-side dock, outside the message flow; every `@pebble-file` in the conversation is registered with tabs to switch between generated files, dock width/open state persist to localStorage, non-active files get a stale dot, a floating button reopens a closed dock; message flow renders `html-file` blocks as reference chips so two iframes never share the global comment store
 - Config panels: LLM providers/models, thinking toggle and reasoning effort, price editor with hot reload, MCP panel, permission mode (three options: manual / auto / read-only; a mode the panel does not recognize is shown verbatim with an explicit warning instead of silently falling back to Manual)
 - Permission dialog: blocking request queue (overlay clicks do not dismiss), per-request remember duration, Deny / Deny Current / Allow All
 - Overlay guards: panels keep unsaved input (pricing warns once before discarding, path whitelist saves on close, rename / add-path / Set path inputs block outside dismissal)
@@ -113,3 +114,5 @@
 - 2026-10-20 Context-ring denominator: `MODEL_CONTEXT_LIMITS` gained a `minimax` entry at 1,000,000 so `minimax-m3.1-flash-free` (OpenCode Go) no longer falls back to the 128K default and matches `deepseek-v4.1-flash`. Vendor-prefix substring match, first hit wins, unmatched names still fall back to 128K. Display-only value: it sets the frontend ring denominator and does not gate compaction
 
 - 2026-10-21 Tauri CSP hardening vs. the srcdoc preview. `tauri.conf.json` sets `dangerousDisableAssetCspModification` to `["script-src"]`. `dist/index.html` carries one build-injected inline script (the gateway token), so the default asset hardening adds a nonce-source to `script-src` and, per CSP3, any nonce/hash in a source list voids `'unsafe-inline'`. The srcdoc preview inherits the host policy but cannot carry a compile-time nonce, so in packaged builds every inline script the preview injects was rejected (html-to-image capture, preview bridge, feedback engine): the comment layer stayed inert and PNG export timed out after 15s with `failed`. Browser dev was unaffected because it runs without the Tauri policy. The `style-src` hardening is retained — `dist` has no inline style, so `'unsafe-inline'` there still applies and preview styling was never affected.
+
+- 2026-10-21 Comment layer inert: ASI across concatenated bridge scripts. `buildSrcdoc` inlines `PREVIEW_CORE_JS + '\n' + FEEDBACK_JS` into one `<script>`; `PREVIEW_CORE_JS` closed with `})()` and no semicolon while `FEEDBACK_JS` opened with `(function(){`, so the parser read them as a call chain `(intermediate value)(...)()`. The preview bridge ran, the feedback engine was passed as an argument and never evaluated — PNG capture and height reporting worked, but no hover highlight, no crosshair cursor and no comment editor existed, while the host still set `fbActive` unconditionally after its one-way postMessage. Fix: `PREVIEW_CORE_JS` closes with `})();`, `FEEDBACK_JS` opens with `;(function(){`, and the concatenation site inserts `'\n;\n'`, so neither snippet depends on how a caller joins them.

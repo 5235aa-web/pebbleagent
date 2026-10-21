@@ -33,7 +33,8 @@
     "execute_shell:dir",
     "execute_shell:python --version",
     "execute_shell:node --version",
-    "execute_shell:npm --version"
+    "execute_shell:npm --version",
+    "execute_shell:npx hyperframes *"
   ],
   "deny": [],
   "ask": [

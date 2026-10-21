@@ -14,10 +14,13 @@ import TimelineBar from './components/TimelineBar.vue'
 import Backdrop from './components/Backdrop.vue'
 import PermissionDialog from './components/PermissionDialog.vue'
 import MemoryCenterPanel from './components/MemoryCenterPanel.vue'
+import PreviewDock from './components/PreviewDock.vue'
+import { usePreviewStore } from './stores/preview'
 import { buildThemeColors, type ThemeColors } from './utils/themeColors'
 
 const gateway = useGatewayStore()
 const chatStore = useChatStore()
+const preview = usePreviewStore()
 const fileDrop = useFileDrop()
 const sidebarCollapsed = ref(false)
 const vlistRef = ref<InstanceType<typeof SegmentedMessageList> | null>(null)
@@ -92,7 +95,7 @@ watch(() => gateway.connected, v => { if (v) { chatStore.initConversations().cat
 </script>
 <template>
   <Backdrop />
-  <div :class="['app', { 'sidebar-collapsed': sidebarCollapsed }]">
+  <div :class="['app', { 'sidebar-collapsed': sidebarCollapsed }]" :style="{ '--dock-w': (preview.dockOpen ? preview.dockWidth : 0) + 'px' }">
     <!-- drag overlay -->
     <Teleport to="body">
       <div v-if="fileDrop.state.value.over" class="drag-overlay">
@@ -128,6 +131,7 @@ watch(() => gateway.connected, v => { if (v) { chatStore.initConversations().cat
     <StatusBar />
     <PermissionDialog />
     <MemoryCenterPanel />
+    <PreviewDock />
 
     <div class="resize-n" data-tauri-resize-edge="north" /><div class="resize-s" data-tauri-resize-edge="south" />
     <div class="resize-e" data-tauri-resize-edge="east" /><div class="resize-w" data-tauri-resize-edge="west" />

@@ -16,6 +16,7 @@
 }
 .main {
   margin-left: calc(var(--sidebar-width-real) + 14px);
+  margin-right: var(--dock-w, 0px);
   transition: margin-left 0.25s cubic-bezier(0.4, 0, 0.2, 1);
 }
 .app.sidebar-collapsed .main { margin-left: 14px; }

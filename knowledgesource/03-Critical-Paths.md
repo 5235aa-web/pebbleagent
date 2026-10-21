@@ -64,7 +64,9 @@ Agent generates HTML → write_file(project relative path/xxx.html)
   → chat_stream suspends waiting for user reply
     │
 Frontend: contentParser detects @pebble-file → type='html-file' block
-  → MessageContent renders <HtmlPreview :file-path="xxx.html" />
+  → MessageContent renders only a reference chip (no iframe in the message flow)
+  → PreviewDock scans the same marker → preview store registers xxx.html → setActive
+  → the dock hosts the single <HtmlPreview :file-path="xxx.html" dock-mode>
   → HtmlPreview.watch(filePath) → loadFromFile
   → RPC file.read_text(projectPath + filePath) → resolvedContent
   → srcdoc assembled (buildSrcdoc: meta CSP + preview bridge + feedback engine inlined)
@@ -75,10 +77,13 @@ User: clicks element in iframe → comment popup → save
   → AskQuestionCard "Modify" → gateway store attaches comments → clarify.respond
     │
 Agent: receives comments → read_file → edit_file(search_block) → file modified
+  → gateway.ts 'file.change' → window 'gateway:file-change'
+  → dock HtmlPreview reloadIframe (clears consumed comments) + preview store markChanged
   → clarify again → pendingClarify changes → HtmlPreview re-reads → refresh
   → loop until user clicks "Accept"
 
-Key files: feedbackBridgeContent.ts (inlined CSS/JS), previewBridgeContent.ts (height/capture/theme bridge), comment.ts (Pinia store)
+Key files: PreviewDock.vue (hosts the only preview iframe), preview.ts (registry of generated files + active path), feedbackBridgeContent.ts (inlined CSS/JS), previewBridgeContent.ts (height/capture/theme bridge), comment.ts (Pinia store)
+Single-instance invariant: the comment store is one flat global array and every iframe overwrites it wholesale on change, so the dock must stay the only live preview — message flow renders `html-file` blocks as reference chips for this reason
 Backend addition: server.py file.read_text method (project-boundary/whitelist guard)
 Security note: preview runs sandboxed without allow-same-origin — the host and the preview communicate only via postMessage (source-checked); PNG capture executes inside the iframe and returns a dataURL
 Note: file.read_text uses the module-level `os` import; file.read_base64 binds `os` locally as `_os`.

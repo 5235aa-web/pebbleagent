@@ -11,10 +11,10 @@ import htmlToImageCode from 'html-to-image/dist/html-to-image.js?raw'
 const gs=useGatewayStore();const cs=useCommentStore();const cfg=useConfigStore()
 // console.log('[HtmlPreview] COMPONENT INIT, projectPath=',cfg.projectPath) // 调试
 
-const p=defineProps<{htmlContent?:string;isStreaming?:boolean;filePath?:string}>()
+const p=defineProps<{htmlContent?:string;isStreaming?:boolean;filePath?:string;dockMode?:boolean}>()
 // console.log('[HtmlPreview] PROPS: filePath=',p.filePath,'htmlContent=',p.htmlContent?p.htmlContent.slice(0,80):'(none)','isStreaming=',p.isStreaming) // 调试
 
-const cl=ref(true);const vm=ref<'preview'|'code'>('preview');const cp=ref(false);const ps=ref(false);const psMsg=ref('');const isTauri=typeof window!=='undefined'&&'__TAURI_INTERNALS__' in window
+const cl=ref(!p.dockMode);const vm=ref<'preview'|'code'>('preview');const cp=ref(false);const ps=ref(false);const psMsg=ref('');const isTauri=typeof window!=='undefined'&&'__TAURI_INTERNALS__' in window
 const br=ref<HTMLDivElement|null>(null);const ir=ref<HTMLIFrameElement|null>(null);const sr=ref<HTMLDivElement|null>(null)
 const bh=ref('0px');const sl=ref(0);const sw=ref(0);const cw=ref(0)
 const fbActive=ref(false);const resolvedContent=ref('')
@@ -43,7 +43,7 @@ function buildSrcdoc(raw:string):string{
   const head='<meta http-equiv="Content-Security-Policy" content="'+PREVIEW_CSP+'">'
   const scripts='<script>window.__PEBBLE_FEEDBACK_CSS='+escScript(JSON.stringify(FEEDBACK_CSS))+'<\/script>'
     +'<script>'+escScript(htmlToImageCode)+'<\/script>'
-    +'<script>'+escScript(PREVIEW_CORE_JS+'\n'+FEEDBACK_JS)+'<\/script>'
+    +'<script>'+escScript(PREVIEW_CORE_JS+'\n;\n'+FEEDBACK_JS)+'<\/script>'
   return injectHead(injectTail(raw,scripts),head)
 }
 
@@ -84,7 +84,7 @@ const ic=computed(()=>{
   return buildSrcdoc(result)
 })
 
-watch(effectiveFilePath,(nv,ov)=>{/*console.log('[HtmlPreview] watch filePath:',ov,'->',nv);*/if(nv)setTimeout(loadFromFile,500)},{immediate:true})
+watch(effectiveFilePath,(nv,ov)=>{/*console.log('[HtmlPreview] watch filePath:',ov,'->',nv);*/if(ov&&nv!==ov)cs.clearComments();if(nv)setTimeout(loadFromFile,500)},{immediate:true})
 watch(()=>gs.pendingClarify,(nv,ov)=>{/*console.log('[HtmlPreview] watch pendingClarify:',!!ov,'->',!!nv);*/if(nv!==null&&ov===null&&effectiveFilePath.value){reloadIframe()}})
 // watch(resolvedContent,(nv)=>{console.log('[HtmlPreview] resolvedContent changed len=',nv.length,'title=',(nv.match(/<title>(.*?)<\/title>/)||[])[1],'bodyBg=',(nv.match(/background:\s*([^;]+)/)||[])[1])}) // 调试
 
@@ -134,7 +134,7 @@ function activateFeedback(){const i=ir.value;if(!i?.contentWindow)return;const r
 function tryActivateFeedback(){if(!canActivateFeedback())return;activateFeedback()}
 // 预览 iframe 消息统一入口（校验来源窗口身份；不透明源下 e.origin 为 "null"）
 function handlePreviewMessage(e:MessageEvent){const i=ir.value;if(!i||e.source!==i.contentWindow)return;const d=e.data as Record<string,unknown>|undefined;if(!d||typeof d!=='object')return;const t=d.type as string
-  if(t==='pebble-preview-height'){const h=Number(d.height)||0;if(h>100){i.style.height=h+'px';if(!cl.value&&br.value)bh.value=br.value.scrollHeight+'px'}}
+  if(t==='pebble-preview-height'){if(p.dockMode)return;const h=Number(d.height)||0;if(h>100){i.style.height=h+'px';if(!cl.value&&br.value)bh.value=br.value.scrollHeight+'px'}}
   else if(t==='pebble-preview-capture-result'){const p=_capPending;if(p&&d.id===p.id){_capPending=null;window.clearTimeout(p.timer);if(d.ok&&typeof d.dataUrl==='string')p.resolve(d.dataUrl);else p.reject(new Error(String(d.error||'capture failed')))}}
   else if(t==='pebble-feedback-update'&&Array.isArray(d.comments)){cs.clearComments();(d.comments as HtmlComment[]).forEach(c=>cs.addComment(c))}
 }
@@ -145,8 +145,8 @@ onMounted(()=>{window.addEventListener('message',handlePreviewMessage);window.ad
 onUnmounted(()=>{window.removeEventListener('message',handlePreviewMessage);window.removeEventListener('gateway:file-change',handleFileChange)})
 </script>
 
-<template><div class="ht-card"><div class="ht-inner" :class="{'is-open':!cl}">
-<div class="ht-hdr" @click="tc"><svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5" style="color:var(--accent)"><rect x="2" y="3" width="20" height="14" rx="2"/><line x1="8" y1="21" x2="16" y2="21"/><line x1="12" y1="17" x2="12" y2="21"/></svg><span class="ht-title">HTML Preview</span>
+<template><div class="ht-card" :class="{'is-dock':p.dockMode}"><div class="ht-inner" :class="{'is-open':!cl}">
+<div class="ht-hdr" @click="!p.dockMode&&tc()"><svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5" style="color:var(--accent)"><rect x="2" y="3" width="20" height="14" rx="2"/><line x1="8" y1="21" x2="16" y2="21"/><line x1="12" y1="17" x2="12" y2="21"/></svg><span class="ht-title">{{ p.dockMode && effectiveFilePath ? effectiveFilePath : 'HTML Preview' }}</span>
 <div class="ht-actions" @click.stop>
 <Tooltip text="Preview" position="bottom"><button class="icn-btn" :class="{active:vm==='preview'}" @click="vm='preview'"><svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5"><path d="M1 12s4-8 11-8 11 8 11 8-4 8-11 8-11-8-11-8z"/><circle cx="12" cy="12" r="3"/></svg></button></Tooltip>
 <Tooltip text="Source" position="bottom"><button class="icn-btn" :class="{active:vm==='code'}" @click="vm='code'"><svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5"><polyline points="16 18 22 12 16 6"/><polyline points="8 6 2 12 8 18"/></svg></button></Tooltip>
@@ -158,7 +158,7 @@ onUnmounted(()=>{window.removeEventListener('message',handlePreviewMessage);wind
 <span v-if="ps" class="ht-badge ht-png">{{psMsg||'saving...'}}</span>
 <span v-if="fbActive" class="ht-badge" style="background:var(--accent);color:#fff">feedback active</span>
 <span class="ht-status">{{vm==='preview'?'preview':'source'}}</span>
-<span class="svg-arrow" :class="{open:!cl}"><svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><polyline points="6 9 12 15 18 9"/></svg></span></div>
-<div ref="br" class="ht-body" :style="{maxHeight:cl?'0px':bh||'400px'}">
+<span v-if="!p.dockMode" class="svg-arrow" :class="{open:!cl}"><svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><polyline points="6 9 12 15 18 9"/></svg></span></div>
+<div ref="br" class="ht-body" :style="{maxHeight:cl?'0px':(p.dockMode?'none':(bh||'400px'))}">
 <div v-if="vm==='preview'" class="ht-preview-wrapper"><div ref="sr" class="ht-frame-scroll" @scroll="uh"><iframe ref="ir" class="ht-frame" :srcdoc="ic" sandbox="allow-scripts" title="HTML preview" @load="onLoad"/></div></div>
 <pre v-else class="ht-code">{{ic}}</pre></div></div></div></template>
