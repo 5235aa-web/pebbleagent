@@ -1,26 +1,26 @@
 @echo off
-chcp 65001 >nul
+chcp 936 >nul
 title PebbleAgent GUI
 cd /d "%~dp0"
 
 echo ========================================
-echo   PebbleAgent GUI - å¯åŠ¨ä¸­...
+echo   PebbleAgent GUI - Æô¶¯ÖÐ...
 echo ========================================
 echo.
 
-:: æ¸…ç†æ®‹ç•™çš„åŽç«¯è¿›ç¨‹ï¼ˆç«¯å£ 19876ï¼‰
-echo [1/3] æ¸…ç†æ®‹ç•™è¿›ç¨‹...
+:: ÇåÀí²ÐÁôµÄºó¶Ë½ø³Ì£¨¶Ë¿Ú 19876£©
+echo [1/3] ÇåÀí²ÐÁô½ø³Ì...
 for /f "tokens=5" %%a in ('netstat -ano ^| find "127.0.0.1:19876"') do (
-    echo       å‘çŽ°æ®‹ç•™è¿›ç¨‹ PID=%%aï¼Œæ­£åœ¨ç»ˆæ­¢...
+    echo       ·¢ÏÖ²ÐÁô½ø³Ì PID=%%a£¬ÕýÔÚÖÕÖ¹...
     taskkill /f /pid %%a >nul 2>&1
 )
 timeout /t 1 /nobreak >nul
 
-:: å¯åŠ¨ Python WebSocket åŽç«¯ï¼ˆæ–°çª—å£ï¼‰
-echo [2/3] å¯åŠ¨åŽç«¯æœåŠ¡...
+:: Æô¶¯ Python WebSocket ºó¶Ë£¨ÐÂ´°¿Ú£©
+echo [2/3] Æô¶¯ºó¶Ë·þÎñ...
 start "PebbleAgent-Backend" cmd /c "python run_backend.py ^& pause"
 
-:: ç­‰å¾…åŽç«¯å°±ç»ªï¼ˆæ£€æµ‹ç«¯å£ 19876ï¼Œæœ€å¤š 60 ç§’ï¼‰
+:: µÈ´ýºó¶Ë¾ÍÐ÷£¨¼ì²â¶Ë¿Ú 19876£¬×î¶à 60 Ãë£©
 set tries=0
 :wait_loop
 timeout /t 1 /nobreak >nul
@@ -28,27 +28,27 @@ set /a tries+=1
 netstat -an | find "127.0.0.1:19876" >nul 2>&1
 if not errorlevel 1 goto backend_ready
 if %tries% lss 60 goto wait_loop
-echo       åŽç«¯ 60 ç§’å†…æœªå°±ç»ªï¼Œè¯·æŸ¥çœ‹ PebbleAgent-Backend çª—å£æ—¥å¿—
+echo       ºó¶Ë 60 ÃëÄÚÎ´¾ÍÐ÷£¬Çë²é¿´ PebbleAgent-Backend ´°¿ÚÈÕÖ¾
 goto start_frontend
 
 :backend_ready
-echo       åŽç«¯å·²å°±ç»ª (ws://127.0.0.1:19876)
+echo       ºó¶ËÒÑ¾ÍÐ÷ (ws://127.0.0.1:19876)
 echo.
 
 :start_frontend
-:: å¯åŠ¨å‰ç«¯ dev serverï¼ˆæ–°çª—å£ï¼‰
-echo [3/3] å¯åŠ¨å‰ç«¯å¼€å‘æœåŠ¡å™¨...
+:: Æô¶¯Ç°¶Ë dev server£¨ÐÂ´°¿Ú£©
+echo [3/3] Æô¶¯Ç°¶Ë¿ª·¢·þÎñÆ÷...
 cd ui-gui-vue3
 start "PebbleAgent-Frontend" cmd /c "npm run dev ^& pause"
 
 echo.
 echo ========================================
-echo   åœ¨æµè§ˆå™¨æ‰“å¼€ http://localhost:5174
-echo   åŽç«¯æ—¥å¿—: PebbleAgent-Backend çª—å£
-echo   å‰ç«¯æ—¥å¿—: PebbleAgent-Frontend çª—å£
-echo   åœæ­¢æœåŠ¡: å…³é—­ä¸Šé¢ä¸¤ä¸ªçª—å£å³å¯
+echo   ÔÚä¯ÀÀÆ÷´ò¿ª http://localhost:5174
+echo   ºó¶ËÈÕÖ¾: PebbleAgent-Backend ´°¿Ú
+echo   Ç°¶ËÈÕÖ¾: PebbleAgent-Frontend ´°¿Ú
+echo   Í£Ö¹·þÎñ: ¹Ø±ÕÉÏÃæÁ½¸ö´°¿Ú¼´¿É
 echo ========================================
 echo.
-echo æœ¬çª—å£ 3 ç§’åŽè‡ªåŠ¨å…³é—­...
+echo ±¾´°¿Ú 3 Ãëºó×Ô¶¯¹Ø±Õ...
 timeout /t 3 /nobreak >nul
 exit /b

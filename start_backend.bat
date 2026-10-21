@@ -1,27 +1,27 @@
 @echo off
-chcp 65001 >nul
-title PebbleAgent åŽç«¯æœåŠ¡
+chcp 936 >nul
+title PebbleAgent ºó¶Ë·þÎñ
 cd /d "%~dp0"
 
 echo ========================================
-echo   PebbleAgent åŽç«¯æœåŠ¡ - å¯åŠ¨ä¸­...
+echo   PebbleAgent ºó¶Ë·þÎñ - Æô¶¯ÖÐ...
 echo ========================================
 echo.
 
-:: æ¸…ç†æ®‹ç•™çš„åŽç«¯è¿›ç¨‹ï¼ˆç«¯å£ 19876ï¼‰
-echo [1/3] æ¸…ç†æ®‹ç•™è¿›ç¨‹...
+:: ÇåÀí²ÐÁôµÄºó¶Ë½ø³Ì£¨¶Ë¿Ú 19876£©
+echo [1/3] ÇåÀí²ÐÁô½ø³Ì...
 for /f "tokens=5" %%a in ('netstat -ano ^| find "127.0.0.1:19876"') do (
-    echo       å‘çŽ°æ®‹ç•™è¿›ç¨‹ PID=%%aï¼Œæ­£åœ¨ç»ˆæ­¢...
+    echo       ·¢ÏÖ²ÐÁô½ø³Ì PID=%%a£¬ÕýÔÚÖÕÖ¹...
     taskkill /f /pid %%a >nul 2>&1
 )
 timeout /t 1 /nobreak >nul
 
-:: å¯åŠ¨ Python WebSocket åŽç«¯
-echo [2/3] å¯åŠ¨åŽç«¯æœåŠ¡...
+:: Æô¶¯ Python WebSocket ºó¶Ë
+echo [2/3] Æô¶¯ºó¶Ë·þÎñ...
 start "PebbleAgent-Backend" cmd /c "python run_backend.py ^& pause"
 
-:: ç­‰å¾…åŽç«¯å°±ç»ªï¼ˆæ£€æµ‹ç«¯å£ 19876ï¼‰
-echo [3/3] ç­‰å¾…åŽç«¯å°±ç»ª...
+:: µÈ´ýºó¶Ë¾ÍÐ÷£¨¼ì²â¶Ë¿Ú 19876£©
+echo [3/3] µÈ´ýºó¶Ë¾ÍÐ÷...
 :wait_loop
 timeout /t 1 /nobreak >nul
 netstat -an | find "127.0.0.1:19876" >nul 2>&1
@@ -29,17 +29,17 @@ if errorlevel 1 goto wait_loop
 
 echo.
 echo ========================================
-echo   âœ… åŽç«¯æœåŠ¡å·²å°±ç»ª
-echo   åœ°å€: ws://127.0.0.1:19876
+echo   ºó¶Ë·þÎñÒÑ¾ÍÐ÷
+echo   µØÖ·: ws://127.0.0.1:19876
 echo.
-echo   æŒ‰ä»»æ„é”®åœæ­¢åŽç«¯æœåŠ¡
+echo   °´ÈÎÒâ¼üÍ£Ö¹ºó¶Ë·þÎñ
 echo ========================================
 echo.
 
 pause >nul
 
-:: å…³é—­åŽç«¯è¿›ç¨‹
-echo æ­£åœ¨å…³é—­åŽç«¯æœåŠ¡...
+:: ¹Ø±Õºó¶Ë½ø³Ì
+echo ÕýÔÚ¹Ø±Õºó¶Ë·þÎñ...
 taskkill /f /fi "WINDOWTITLE eq PebbleAgent-Backend" >nul 2>&1
-echo åŽç«¯æœåŠ¡å·²åœæ­¢ã€‚
+echo ºó¶Ë·þÎñÒÑÍ£Ö¹¡£
 timeout /t 1 /nobreak >nul
