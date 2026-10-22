@@ -15,12 +15,16 @@ import Backdrop from './components/Backdrop.vue'
 import PermissionDialog from './components/PermissionDialog.vue'
 import MemoryCenterPanel from './components/MemoryCenterPanel.vue'
 import PreviewDock from './components/PreviewDock.vue'
+import ProjectSetupDialog from './components/ProjectSetupDialog.vue'
 import { usePreviewStore } from './stores/preview'
+import { useConfigStore } from './stores/config'
 import { buildThemeColors, type ThemeColors } from './utils/themeColors'
 
 const gateway = useGatewayStore()
 const chatStore = useChatStore()
 const preview = usePreviewStore()
+const configStore = useConfigStore()
+const showProjectSetup = ref(false)
 const fileDrop = useFileDrop()
 const sidebarCollapsed = ref(false)
 const vlistRef = ref<InstanceType<typeof SegmentedMessageList> | null>(null)
@@ -86,12 +90,32 @@ function toMsg(e: Event) {
   if (i >= 0) vlistRef.value?.scrollToMessageIndex(i)
 }
 
+function openProjectSetup() { showProjectSetup.value = true }
+// Prompt once per app run: a reconnect must not re-open the dialog after the
+// user already dismissed it.
+let projectSetupPrompted = false
+
 onMounted(() => {
   window.addEventListener('gateway:scroll-to-message', toMsg)
+  window.addEventListener('pebble:request-project-setup', openProjectSetup)
   gateway.setupConnection()
 })
-onUnmounted(() => { window.removeEventListener('gateway:scroll-to-message', toMsg) })
-watch(() => gateway.connected, v => { if (v) { chatStore.initConversations().catch(console.error); loadTheme() } })
+onUnmounted(() => {
+  window.removeEventListener('gateway:scroll-to-message', toMsg)
+  window.removeEventListener('pebble:request-project-setup', openProjectSetup)
+})
+watch(() => gateway.connected, v => {
+  if (v) {
+    chatStore.initConversations().catch(console.error)
+    loadTheme()
+    // Fresh install with no project folder chosen: guide the user immediately,
+    // otherwise the session runs inside the sidecar's working directory.
+    if (!configStore.projectPath && !projectSetupPrompted) {
+      projectSetupPrompted = true
+      showProjectSetup.value = true
+    }
+  }
+})
 </script>
 <template>
   <Backdrop />
@@ -132,6 +156,7 @@ watch(() => gateway.connected, v => { if (v) { chatStore.initConversations().cat
     <PermissionDialog />
     <MemoryCenterPanel />
     <PreviewDock />
+    <ProjectSetupDialog :open="showProjectSetup" @close="showProjectSetup = false" @saved="showProjectSetup = false" />
 
     <div class="resize-n" data-tauri-resize-edge="north" /><div class="resize-s" data-tauri-resize-edge="south" />
     <div class="resize-e" data-tauri-resize-edge="east" /><div class="resize-w" data-tauri-resize-edge="west" />

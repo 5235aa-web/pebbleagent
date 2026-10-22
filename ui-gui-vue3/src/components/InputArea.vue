@@ -1,6 +1,7 @@
 <script setup lang="ts">
 import { ref, computed, inject, onMounted, onUnmounted } from 'vue'
 import { useGatewayStore, type AttachmentItem } from '../stores/gateway'
+import { useConfigStore } from '../stores/config'
 import { fileIcon, fileSize, type FileItem } from '../composables/useFileDrop'
 import Tooltip from './Tooltip.vue'
 import TodoWidget from './TodoWidget.vue'
@@ -13,6 +14,7 @@ import SoundSelect from './SoundSelect.vue'
 
 const p = defineProps<{ onScrollToIndex?: (idx: number) => void }>()
 const g = useGatewayStore()
+const cfg = useConfigStore()
 const t = ref('')
 const fi = ref<HTMLInputElement | null>(null)
 import type { Ref } from 'vue'
@@ -26,6 +28,9 @@ const send = () => {
   const files = fileDrop?.state.value.files?.length ? [...fileDrop.state.value.files] as unknown as AttachmentItem[] : undefined
   if (!x && (!files || files.length === 0)) return
   if (g.streaming) return
+  // No project folder yet: open the setup guide instead of sending, so the
+  // session never runs against the sidecar's working directory.
+  if (!cfg.projectPath) { window.dispatchEvent(new CustomEvent('pebble:request-project-setup')); return }
   // 图片细节级别：仅对图片附件生效，'' = 不传（Auto/等价 original）
   if (files && imgDetail.value) {
     for (const f of files) { if ((f as { isImage?: boolean }).isImage) (f as AttachmentItem).detail = imgDetail.value }
@@ -40,6 +45,7 @@ const hk = (e: KeyboardEvent) => {
 }
 
 const hasContent = computed(() => t.value.trim().length > 0 || (fileDrop?.state.value.files?.length || 0) > 0)
+const ph = computed(() => g.streaming ? 'Agent is responding...' : (!cfg.projectPath ? 'select a project folder first...' : 'enter message...'))
 
 function onQuickNote(e: Event) {
   const d = (e as CustomEvent).detail as { text: string } | undefined
@@ -147,7 +153,7 @@ onUnmounted(() => {
     <!-- input -->
     <div class="ih">
       <div class="ih-resize" :class="{ active: resizing }" @pointerdown="onResizeDown" @pointermove="onResizeMove" @pointerup="onResizeUp" @pointercancel="onResizeUp" />
-      <textarea ref="ta" :style="inputH ? { height: inputH + 'px' } : undefined" :placeholder="g.streaming ? 'Agent is responding...' : 'enter message...'" rows="1" v-model="t" @keydown="hk" />
+      <textarea ref="ta" :style="inputH ? { height: inputH + 'px' } : undefined" :placeholder="ph" rows="1" v-model="t" @keydown="hk" />
       <template v-if="g.streaming">
         <Tooltip text="Stop generation"><button class="btn-stop" @click="g.stopGeneration()"><svg width="14" height="14" viewBox="0 0 24 24" fill="currentColor"><rect x="6" y="6" width="12" height="12" rx="2"/></svg></button></Tooltip>
       </template>

@@ -389,7 +389,12 @@ def _validate_project_dir(path: str) -> tuple:
 
 
 def _read_projects() -> dict:
-    """读取项目列表 {active, projects[]}；文件不存在时用当前服务项目路径初始化"""
+    """读取项目列表 {active, projects[]}。
+
+    未选择项目时返回空列表，交给前端引导用户指定。用服务当前工作目录做
+    默认值是不可靠的：打包后它是 sidecar 的工作目录（取决于启动方式，
+    可能是安装目录），会诱使用户把文件写进安装位置。
+    """
     try:
         if _PROJECTS_PATH.exists():
             with open(_PROJECTS_PATH, "r", encoding="utf-8") as f:
@@ -402,9 +407,7 @@ def _read_projects() -> dict:
                     return {"active": active, "projects": projects}
     except Exception as e:
         logger.warning(f"[Server] Failed to read projects.json: {e}")
-    svc = _ensure_service()
-    cur = getattr(svc, "_current_project_path", None) or str(_PROJECT_ROOT)
-    return {"active": cur, "projects": [_norm_project_path(cur)]}
+    return {"active": "", "projects": []}
 
 
 def _write_projects(data: dict):

@@ -11,7 +11,10 @@ const DEFAULT_AGENTS: AgentInfo[] = [
   { name:'code_agent',displayName:'Code Agent',description:'Code expert for programming & debugging',modelSource:'deepseek-flash' },
   { name:'chat_agent',displayName:'Chat Agent',description:'Everyday chat assistant for casual talk & Q&A',modelSource:'deepseek-flash' },
 ]
-const LS_PROJECT_PATH='pebble:projectPath';const DEFAULT_PROJECT_PATH='E:\\workspace'
+// No default project path: a hardcoded one would ship the build machine's
+// directory layout to every user. Empty means "not chosen yet" and the user
+// picks a directory on first launch; the choice persists to localStorage.
+const LS_PROJECT_PATH='pebble:projectPath';const DEFAULT_PROJECT_PATH=''
 function loadProjectPath():string{try{return localStorage.getItem(LS_PROJECT_PATH)||DEFAULT_PROJECT_PATH}catch{return DEFAULT_PROJECT_PATH}}
 
 export const useConfigStore = defineStore('config',()=>{
@@ -37,7 +40,25 @@ export const useConfigStore = defineStore('config',()=>{
   // ===== 多项目 =====
   const projects=ref<string[]>([]);const activeProjectPath=ref(projectPath.value);const unassignedCount=ref(0)
   async function loadProjects(){try{const gw=getGateway();const r=await gw.request<{projects:string[];active:string}>('project.list',{});if(Array.isArray(r.projects)){projects.value=r.projects;if(r.active&&r.projects.includes(r.active)){activeProjectPath.value=r.active;projectPath.value=r.active;try{localStorage.setItem(LS_PROJECT_PATH,r.active)}catch{}}}}catch{}}
-  async function addProject(path:string){const p=(path||'').trim();if(!p)return;try{const gw=getGateway();const r=await gw.request<{projects:string[];active:string}>('project.add',{path:p});if(Array.isArray(r.projects)){projects.value=r.projects;if(r.active&&r.projects.includes(r.active)){activeProjectPath.value=r.active;projectPath.value=r.active;try{localStorage.setItem(LS_PROJECT_PATH,r.active)}catch{}}}}catch{}}
+  // Returns the outcome instead of swallowing it: the first-launch setup dialog
+  // needs to surface backend validation errors such as "not a directory".
+  async function addProject(path:string):Promise<{ok:boolean;error?:string;path?:string}>{
+    const p=(path||'').trim()
+    if(!p)return {ok:false,error:'path required'}
+    try{
+      const gw=getGateway()
+      const r=await gw.request<{projects:string[];active:string}>('project.add',{path:p})
+      if(Array.isArray(r.projects))projects.value=r.projects
+      if(r.active&&Array.isArray(r.projects)&&r.projects.includes(r.active)){
+        activeProjectPath.value=r.active;projectPath.value=r.active
+        try{localStorage.setItem(LS_PROJECT_PATH,r.active)}catch{}
+        return {ok:true,path:r.active}
+      }
+      return {ok:false,error:'project was not registered'}
+    }catch(e){
+      return {ok:false,error:e instanceof Error?e.message:String(e)}
+    }
+  }
   async function deleteProject(path:string){try{const gw=getGateway();const r=await gw.request<{projects:string[];active:string}>('project.delete',{path});if(Array.isArray(r.projects)){projects.value=r.projects;if(r.active&&r.projects.includes(r.active)){activeProjectPath.value=r.active;projectPath.value=r.active;try{localStorage.setItem(LS_PROJECT_PATH,r.active)}catch{}}}}catch{}}
   async function setActiveProject(path:string){if(!projects.value.includes(path))return;try{const gw=getGateway();await gw.request('project.set_active',{path});activeProjectPath.value=path;projectPath.value=path;try{localStorage.setItem(LS_PROJECT_PATH,path)}catch{};window.dispatchEvent(new CustomEvent('project-switched',{detail:{path}}))}catch{}}
   async function refreshUnassigned(){try{const gw=getGateway();const r=await gw.request<{count:number}>('session.unassigned_count',{});unassignedCount.value=r?.count??0}catch{}}

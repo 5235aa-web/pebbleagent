@@ -7,10 +7,14 @@ import path from 'node:path'
 // Dev-only: inject the gateway auth token, read fresh on every page load so a
 // backend started after the dev server still works after a refresh. Tauri
 // builds receive the token through the get_gateway_token command instead.
+// `apply: 'serve'` is mandatory: without it the plugin also runs during
+// `vite build`, baking the build machine's token into dist/index.html and into
+// the installer, which no other machine can ever match.
 function gatewayTokenPlugin() {
   const tokenPath = path.join(os.homedir(), '.pebble', 'gateway.token')
   return {
     name: 'gateway-token-inject',
+    apply: 'serve' as const,
     transformIndexHtml(html: string) {
       let token = ''
       try { token = fs.readFileSync(tokenPath, 'utf-8').trim() } catch { /* backend not started yet */ }

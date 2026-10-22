@@ -8,19 +8,26 @@ const REQUEST_TIMEOUT = 120_000
 let _gatewayToken = ''
 let _tokenLoaded = false
 
+// Resolution order is deliberate: inside the Tauri shell the token MUST come
+// from the Rust get_gateway_token command, which reads this machine's
+// ~/.pebble/gateway.token. window.__PEBBLE_GATEWAY_TOKEN__ is a dev-server
+// convenience only and must never win over it, otherwise a stale value baked
+// into a build would shadow the real token and every handshake would close 4401.
 async function loadGatewayToken(): Promise<void> {
   if (_tokenLoaded) return
   try {
-    const w = window as unknown as Record<string, unknown>
-    const injected = w.__PEBBLE_GATEWAY_TOKEN__
-    if (typeof injected === 'string' && injected) {
-      _gatewayToken = injected
-    } else if ('__TAURI_INTERNALS__' in window) {
+    if ('__TAURI_INTERNALS__' in window) {
       const { invoke } = await import('@tauri-apps/api/core')
       const t = await invoke<string | null>('get_gateway_token')
       if (t) _gatewayToken = t
+    } else {
+      const injected = (window as unknown as Record<string, unknown>).__PEBBLE_GATEWAY_TOKEN__
+      if (typeof injected === 'string' && injected) _gatewayToken = injected
     }
-    _tokenLoaded = true
+    // Latch only once a token was actually obtained. On first launch the
+    // sidecar may still be unpacking and the token file may not exist yet;
+    // latching on an empty result would make every reconnect send no token.
+    if (_gatewayToken) _tokenLoaded = true
   } catch (e) {
     console.warn('[WS] gateway token unavailable; will retry on next connect', e)
   }
