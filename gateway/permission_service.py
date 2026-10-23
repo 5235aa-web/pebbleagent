@@ -76,7 +76,8 @@ class PermissionService:
         # 锁
         self._lock = asyncio.Lock()
         # 信任的权限会话：键为 (session_id, permission_type.value)，按"会话+权限类型"粒度记忆
-        self._trusted_sessions: Dict[tuple, datetime] = {}
+        # value None means "trusted for the rest of the session" (no expiry)
+        self._trusted_sessions: Dict[tuple, Optional[datetime]] = {}
         # WebSocket 连接集合
         self._ws_connections: Set[Any] = set()
         # 等待决策的回调
@@ -161,11 +162,11 @@ class PermissionService:
         if not session_id:
             return False
         key = (session_id, permission_type.value)
-        expiration = self._trusted_sessions.get(key)
-        if expiration and expiration > datetime.utcnow():
-            return True
-        # 过期或不存在
+        # None marks a session-scoped trust with no expiry.
         if key in self._trusted_sessions:
+            expiration = self._trusted_sessions[key]
+            if expiration is None or expiration > datetime.utcnow():
+                return True
             del self._trusted_sessions[key]
         return False
     
@@ -219,11 +220,15 @@ class PermissionService:
             return
         
         # 如果记住，按"会话+权限类型"加入信任列表（例如"记住读取"不会放行命令执行）
-        if approved and remember_minutes > 0 and request.session_id:
-            expiration = datetime.utcnow() + timedelta(minutes=remember_minutes)
+        # remember_minutes: >0 表示定时过期，<0 表示本会话内一直信任（存 None 作无过期标记）
+        if approved and request.session_id and remember_minutes != 0:
+            if remember_minutes < 0:
+                expiration = None
+            else:
+                expiration = datetime.utcnow() + timedelta(minutes=remember_minutes)
             key = (request.session_id, request.permission_type.value)
             self._trusted_sessions[key] = expiration
-            logger.info(f"Session {request.session_id} trusted for {request.permission_type.value} for {remember_minutes} minutes")
+            logger.info(f"Session {request.session_id} trusted for {request.permission_type.value} ({'session' if expiration is None else f'{remember_minutes} minutes'})")
         
         # 通知等待者
         if request_id in self._decision_futures:
@@ -241,7 +246,7 @@ class PermissionService:
     def clear_expired_sessions(self):
         """清理过期的信任会话"""
         now = datetime.utcnow()
-        expired = [key for key, exp in self._trusted_sessions.items() if exp <= now]
+        expired = [key for key, exp in self._trusted_sessions.items() if exp is not None and exp <= now]
         for key in expired:
             del self._trusted_sessions[key]
 

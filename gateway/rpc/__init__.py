@@ -1,9 +1,11 @@
 """Domain handlers for the JSON-RPC surface."""
 
-from . import config, files, mcp, memory, misc, model, permission, project, session
+from . import config, files, mcp, memory, misc, model, pairing, permission, project, session, usage
 from .context import RpcContext
 
 _DOMAINS = {
+    "pairing": pairing.handle,
+    "usage": usage.handle,
     "session": session.handle,
     "mcp": mcp.handle,
     "file": files.handle,

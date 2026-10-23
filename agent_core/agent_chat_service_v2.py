@@ -1100,6 +1100,18 @@ class AgentChatServiceV2:
                     if not (is_deepseek and final_thinking_enabled):
                         stream_params["tool_choice"] = "auto"
                 
+                # DeepSeek 思考模式携带 tools 时，上游要求每条 assistant 消息都带
+                # reasoning_content 字段；字段缺失会被 400 拒绝，内容本身可以为空。
+                # 空推理用空字符串补齐。这只作用于本次请求的副本，不回写
+                # state.messages，也不改动数据库里保存的原始值。
+                if is_deepseek and final_thinking_enabled and tools:
+                    stream_params["messages"] = [
+                        {**m, "reasoning_content": ""}
+                        if m.get("role") == "assistant" and m.get("reasoning_content") is None
+                        else m
+                        for m in messages
+                    ]
+
                 logger.debug(f"[AgentChatServiceV2] Final stream_params keys: {list(stream_params.keys())}")
                 
                 # 调用 LLM（含重试与上下文超长处理）

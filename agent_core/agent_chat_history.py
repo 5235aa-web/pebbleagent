@@ -1043,6 +1043,109 @@ def get_conversation_cost_summary(conversation_id: int) -> dict:
     return summary
 
 
+def get_usage_stats(conversation_id: Optional[int] = None,
+                    since: Optional[str] = None,
+                    limit: int = 50) -> dict:
+    """Aggregate agent_chat_costs, optionally scoped to one conversation and a time window.
+
+    Args:
+        conversation_id: restrict to a single conversation, or None for all.
+        since: naive UTC timestamp string ("YYYY-MM-DD HH:MM:SS"). created_at is
+            written by SQLite's CURRENT_TIMESTAMP, which is UTC, so the bound
+            must be converted to UTC by the caller rather than compared against
+            local wall time.
+        limit: how many of the most recent calls to return in `calls`.
+
+    Returns:
+        Summary totals, a per-model breakdown, and the newest `limit` call rows
+        in chronological order.
+    """
+    where = []
+    args: list = []
+    if conversation_id is not None:
+        where.append("conversation_id = ?")
+        args.append(conversation_id)
+    if since:
+        where.append("created_at >= ?")
+        args.append(since)
+    clause = (" WHERE " + " AND ".join(where)) if where else ""
+
+    conn = _connect()
+    cursor = conn.cursor()
+
+    cursor.execute(f"""
+        SELECT COALESCE(SUM(total_cost), 0),
+               COALESCE(SUM(input_tokens + cache_hit_tokens), 0),
+               COALESCE(SUM(cache_hit_tokens), 0),
+               COALESCE(SUM(output_tokens), 0),
+               COUNT(*),
+               COALESCE(MAX(currency), 'CNY'),
+               MIN(created_at),
+               MAX(created_at)
+        FROM agent_chat_costs{clause}
+    """, tuple(args))
+    row = cursor.fetchone()
+
+    stats = {
+        "total_cost": round(row[0] or 0.0, 6),
+        "total_input_tokens": int(row[1] or 0),
+        "total_cache_hit_tokens": int(row[2] or 0),
+        "total_output_tokens": int(row[3] or 0),
+        "api_calls": int(row[4] or 0),
+        "currency": row[5] or "CNY",
+        "started_at": row[6],
+        "ended_at": row[7],
+    }
+
+    cursor.execute(f"""
+        SELECT model_name, COUNT(*),
+               COALESCE(SUM(total_cost), 0),
+               COALESCE(SUM(input_tokens + cache_hit_tokens), 0),
+               COALESCE(SUM(cache_hit_tokens), 0),
+               COALESCE(SUM(output_tokens), 0)
+        FROM agent_chat_costs{clause}
+        GROUP BY model_name
+        ORDER BY SUM(total_cost) DESC
+    """, tuple(args))
+    stats["models"] = [
+        {
+            "model_name": m[0],
+            "api_calls": int(m[1] or 0),
+            "total_cost": round(m[2] or 0.0, 6),
+            "total_input_tokens": int(m[3] or 0),
+            "total_cache_hit_tokens": int(m[4] or 0),
+            "total_output_tokens": int(m[5] or 0),
+        }
+        for m in cursor.fetchall()
+    ]
+
+    cursor.execute(f"""
+        SELECT model_name, api_call_index, input_tokens, cache_hit_tokens,
+               output_tokens, total_cost, currency, created_at
+        FROM agent_chat_costs{clause}
+        ORDER BY id DESC
+        LIMIT ?
+    """, tuple(args) + (max(1, int(limit)),))
+    calls = [
+        {
+            "model_name": c[0],
+            "api_call_index": c[1],
+            "input_tokens": int(c[2] or 0),
+            "cache_hit_tokens": int(c[3] or 0),
+            "output_tokens": int(c[4] or 0),
+            "total_cost": round(c[5] or 0.0, 6),
+            "currency": c[6] or "CNY",
+            "created_at": c[7],
+        }
+        for c in cursor.fetchall()
+    ]
+    calls.reverse()
+    stats["calls"] = calls
+
+    conn.close()
+    return stats
+
+
 def get_conversation_cost_history(conversation_id: int, limit: int = 50) -> list:
     """
     获取对话的费用历史明细（每次 API 调用的详细记录）

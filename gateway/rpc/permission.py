@@ -142,10 +142,53 @@ def handle(ctx, method):
             loop = asyncio.get_event_loop()
             loop.create_task(svc.process_decision(request_id, approved, remember_minutes))
             logger.info(f"[Server] Permission decision: {request_id} approved={approved}")
+            # Carried so the client can clear the prompt on the owning session
+            # even when the decision was made from a different one.
+            owner_sid = ""
+            try:
+                for r in svc.get_pending_requests():
+                    if r.request_id == request_id:
+                        owner_sid = r.session_id
+                        break
+            except Exception:
+                pass
+            # Tell every client, otherwise the other one keeps showing a sheet for
+            # a request that has already been answered.
+            srv.broadcast_event("permission.resolved", {
+                "request_id": request_id,
+                "session_id": owner_sid,
+                "approved": bool(approved),
+            })
             return {"id": rid, "result": {"ok": True}}
         except Exception as e:
             logger.warning(f"[Server] permission.decide error: {e}")
             return {"id": rid, "error": {"code": -32000, "message": str(e)}}
+
+    if method == "permission.list":
+        """Pending approvals, so a client that reconnects can rebuild its inbox.
+
+        The service keeps undecided requests in memory only; without this the
+        phone would show an empty inbox after a reconnect and let the request
+        time out unseen.
+        """
+        try:
+            from gateway.permission_service import get_permission_service, PERMISSION_LEVELS, PermissionLevel
+            svc = get_permission_service()
+            requests = []
+            for r in svc.get_pending_requests():
+                requests.append({
+                    "request_id": r.request_id,
+                    "session_id": r.session_id,
+                    "permission_type": r.permission_type.value,
+                    "target": r.target,
+                    "reason": r.reason,
+                    "timestamp": r.timestamp.isoformat(),
+                    "level": PERMISSION_LEVELS.get(r.permission_type, PermissionLevel.MEDIUM).value,
+                })
+            return {"id": rid, "result": {"requests": requests}}
+        except Exception as e:
+            logger.warning(f"[Server] permission.list error: {e}")
+            return {"id": rid, "result": {"requests": []}}
 
     if method == "permission.audit.verify":
         """校验权限审计日志完整性"""

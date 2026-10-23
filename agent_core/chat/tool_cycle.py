@@ -69,7 +69,7 @@ class ToolCycle:
                 "id": question_id,
                 "questions": questions,
                 "timestamp": time.time(),
-            })
+            }, session_id=self.conversation_uuid)
             logger.info(f"[ToolCycle] ask_question event {question_id}")
             yield {"type": "ask_question", "question_id": question_id, "questions": questions}
 

@@ -1,6 +1,6 @@
 # PebbleAgent — Version Notes
 
-> Last updated: 2026-10-21
+> Last updated: 2026-10-23
 
 ## Platform
 
@@ -119,3 +119,395 @@
 - 2026-10-21 Comment layer inert: ASI across concatenated bridge scripts. `buildSrcdoc` inlines `PREVIEW_CORE_JS + '\n' + FEEDBACK_JS` into one `<script>`; `PREVIEW_CORE_JS` closed with `})()` and no semicolon while `FEEDBACK_JS` opened with `(function(){`, so the parser read them as a call chain `(intermediate value)(...)()`. The preview bridge ran, the feedback engine was passed as an argument and never evaluated — PNG capture and height reporting worked, but no hover highlight, no crosshair cursor and no comment editor existed, while the host still set `fbActive` unconditionally after its one-way postMessage. Fix: `PREVIEW_CORE_JS` closes with `})();`, `FEEDBACK_JS` opens with `;(function(){`, and the concatenation site inserts `'\n;\n'`, so neither snippet depends on how a caller joins them.
 
 - 2026-10-22 Installer handoff fixes. `vite.config.ts` `gatewayTokenPlugin` gained `apply: 'serve'`: without it the plugin also ran during `vite build` and baked the build machine's `~/.pebble/gateway.token` into `dist/index.html` and the installer, so every other machine's handshake closed 4401. `gatewayClient.ts` now resolves the token through the Tauri `get_gateway_token` command first and only falls back to `window.__PEBBLE_GATEWAY_TOKEN__` in a plain browser, and `_tokenLoaded` latches only after a token is actually obtained (previously an early null from the still-starting sidecar made every reconnect send no token). `DEFAULT_PROJECT_PATH` is now empty instead of `E:\workspace`; `_read_projects()` returns `{"active":"","projects":[]}` instead of seeding the registry with the sidecar's working directory (which could be the install directory); `config.ts addProject` returns `{ok,error,path}` instead of swallowing failures. New `ProjectSetupDialog.vue` guides the first launch (opens once per run when the gateway connects with no project path, reuses the cfm-* dialog shell), `InputArea` intercepts send while no project is chosen and dispatches `pebble:request-project-setup`. Verified: vue-tsc clean, vite build clean, `dist` contains no token value and no `E:\workspace`.
+
+- 2026-10-22 Mobile LAN access. A second, opt-in TLS listener (`wss://0.0.0.0:19877`) now serves mobile clients while the desktop app keeps using plain `ws://127.0.0.1:19876`; loopback never leaves the machine, so the desktop path stays untouched and needs no certificate trust. `gateway/lan_access.py` owns a self-signed RSA-2048 certificate (10-year, SAN = localhost + every non-loopback IPv4, `{PEBBLE_HOME}/lan/cert.pem` + `key.pem` at 0600), its SHA-256 fingerprint (colon-separated uppercase, the shape Android displays for pinning), LAN IP discovery via a UDP connect that sends no packet, and single-use pairing codes (`secrets.token_urlsafe(24)`, 5-minute TTL, one live code at a time, unknown-code failures rate-limited to 10 per 60 s). The QR payload deliberately carries a pairing code rather than the gateway token: `handle_ws` accepts `?pair=` only when `_is_tls()` is true, replies with a `gateway.paired` event holding the token over the encrypted channel, then closes 1000 so the client reconnects with the token, so a photographed screen leaks nothing durable. `gateway/rpc/pairing.py` adds status / session / enable / disable / revoke / rotate_certificate, with enable and disable hot-applying through a `register_apply_hook` indirection (a direct import would cycle ws_server -> rpc -> ws_server); `_apply_lan_config` uses `loop.create_task` when it is already on the event loop, because `run_coroutine_threadsafe(...).result()` from the loop thread deadlocks. `cryptography` is optional: absent, `pairing.status` reports `supported=false` plus an install hint and loopback keeps working. Verified: ruff clean, syntax compiled, pairing lifecycle (single-use, replay rejected, new code invalidates the old, lockout after 10 failures) exercised against the live module; the TLS handshake itself is untested until `cryptography` is installed.
+- 2026-10-22 Desktop pairing UI, and the QR renderer turned out to be broken. `render_qr_svg` wrote segno's SVG output into an `io.StringIO`, but segno's serializer emits bytes, so every call raised `TypeError: string argument expected, got 'bytes'` and the helper swallowed it into `None`; the panel would have silently shown the URI fallback with no QR at all. Fixed by using `BytesIO` and decoding. `pairing.session` now also returns `uri` and `qr_svg` (previously it stopped at code/expires_in, so the desktop had nothing to render), and rejects the call when no LAN address is detected instead of emitting a `pebble://pair` URI with a null host. New `PairingPanel.vue` hangs off the TitleBar next to the pricing button: `pairing.status` on open, one-time code + inline SVG QR, enable/disable toggle, copy buttons for address/code/fingerprint, a local countdown that drops an expired code, and a footer stating the token is exchanged over TLS and never displayed. The QR is only rendered through `v-html` after an `<svg` prefix check; anything else falls back to the copyable URI. Because `pairing.enable` is applied on the gateway's own event loop, the panel waits 400 ms before re-reading status, otherwise a failed bind would look like a healthy "enabled" state. Verified end to end against a real TLS listener: handshake completes, the peer certificate's SHA-256 matches `certificate_fingerprint()` byte for byte, a valid code over TLS yields `gateway.paired` then close 1000, replaying that code gets 4401, the same code over plain ws gets 4403, and the plain-text attempt leaves the code still redeemable (an attacker cannot burn a legitimate code without TLS). `vue-tsc --noEmit` clean, `vite build` clean in 11.7 s, and the rebuilt dist still contains neither `yh21GLNO` nor `Z2jU0lSA` nor `E:\workspace` (the only `__PEBBLE_GATEWAY_TOKEN__` occurrence is the expected browser-fallback read).
+
+## Android client
+
+- Native companion app under `android-client/` (Kotlin + Jetpack Compose, single `:app` module, no XML layouts, no ViewModel layer)
+- Transport: hand-rolled JSON-RPC 2.0 over an OkHttp WebSocket with certificate-fingerprint pinning and a single-use pairing code; payloads read via `org.json` with explicit defaults. `GatewayClient` exposes `ConnState` (`Idle`/`Pairing`/`Connecting`/`Connected`/`Failed`) and a `SharedFlow<GatewayEvent>` for server pushes
+- Event routing is app-scoped in `GlobalChatStore` so a running stream survives tab switches. `permission.request` is routed by its `session_id` into `pendingApprovals` (deduplicated by `request_id`); `clarify.request` carries no session id and is attributed to `activeSessionId` into `pendingClarifies`; all remaining events go to `activeSessionId`'s `ConversationState`
+- Conversation: streamed `message.delta` / `thinking.delta` accumulation, tool cards driven by `tool.start` / `tool.complete`, `message.complete` reconciles the transcript to the authoritative final text, `session.interrupt` stops a run, `session.resume` loads history
+- Approval sheet is rendered by `AppShell` above every route, head of queue by default and pinned to a specific request when opened from the Inbox; decisions post `permission.decide` and move to `resolved`
+- Screens: Sessions (`session.list`), Conversation, Changes (`session.file_changes` / `session.file_diff` / `session.file_accept`), Usage (`usage.stats`), Inbox (aggregated approvals + clarifications with an "approve all" that skips high risk), Settings (connection, project/agent/model read back from the gateway, appearance, behaviour)
+- Accent theming is dynamic: `Prefs.accentKey` selects one of five `AccentTone`s, provided through `LocalAccentTone` and read at call sites via `Palette.primary`/`accent`/`border`; `PebbleColors` holds only fixed neutrals and status colours. Behaviour toggles persist in the same `Prefs` (SharedPreferences)
+- Fenced code is tokenized by `ui/common/CodeHighlight.kt`; blocks clip at 8000 characters before highlighting because tokenization happens on the UI thread inside `remember`
+- `:app:assembleDebug` is the verification gate; the APK builds clean
+
+## Mobile parity pass
+
+- Approval offers three remember chips (15 min / 1 hour / session). `remember_minutes = -1` stores a no-expiry trust entry keyed by session + permission type; `0` asks again; `0` is also what tapping the active chip restores
+- `model.options` returns `pricing` and `currency` alongside providers, read from `model_pricing.json` in the data dir, so the model picker shows `¥x in / ¥y out per 1M` without a second round trip
+- Sessions list groups into Today / Yesterday / date, badges sessions holding a pending approval, tints the session that owns the live stream, and shows a socket indicator in its header
+
+## Multi-device event flow
+
+- `session.resume` returns message rows whose identifier field is `message_id` (not `id`); the Android client reads `message_id` first and folds the row index into the render key so a duplicate or missing id can never collide in a lazy list
+- `ws_server.WebSocketWriter.write_event` broadcasts to every live connection rather than only the requester, and injects `session_id` into the payload. Stream deltas carry no session of their own, so both clients need that field to tell whose run they are looking at
+- The Vue store ignores stream frames whose `session_id` differs from the session on screen; non-stream events (`session.updated`, `file.change`, `todos.update`, clarify, permission) are handled regardless of origin
+- A completed pairing is stored in `Prefs` (host, port, fingerprint, code, token) and restored on launch, so the app reconnects instead of re-prompting; disconnecting clears it
+
+## Cross-client state sync
+
+- `server.set_event_broadcaster` / `broadcast_event` is the fan-out hook the WebSocket
+  server registers at startup; RPC handlers call it when state changes that every client
+  must see
+- `permission.decide` broadcasts `permission.resolved` and `clarify.respond` broadcasts
+  `clarify.resolved`; both carry `request_id`, so a prompt answered on one client
+  disappears on the other
+- Clients react: Android drops the matching `pendingApprovals` / `pendingClarifies` entry and
+  clears the in-conversation card; the Vue store marks the inline question answered and
+  dispatches `gateway:permission-resolved`
+- QR scanning: the one-shot latch only trips on payloads starting with `pebble://`, so a
+  stray QR cannot deaden the scanner; analysis resolution is 1280x720 and `ALSO_INVERTED` is
+  set so a code rendered on a dark panel still decodes
+
+## Model, agent and billing sync
+
+- `model.switch` and `model.provider.set` both write the same agent model config, so the two
+  clients share one source of truth; `agent.switch` sets the process-wide current agent.
+  Neither used to notify anyone, so an open screen kept showing the old value
+- Both now broadcast `model.changed` / `agent.changed`; Android mirrors them into
+  `GlobalChatStore.currentModel` / `currentAgent`, which the conversation header and the
+  Settings workspace card read instead of each fetching once on open
+- `message.usage` was only consumed by the desktop. Android now counts those frames and
+  re-queries `usage.stats` for the session range, so the Usage tab tracks a running turn
+  (the aggregate still comes from the backend, not from summed deltas)
+
+## Cross-client interaction hardening
+
+- Android routes every gateway frame by the `session_id` it carries instead of the active screen,
+  so a background run keeps its transcript; settled approval/clarify frames fan out to all sessions
+- `ConversationState` loads once per session (`ensureLoaded`) and resets its stream anchors on
+  load, so re-entering a conversation no longer appends deltas into a history message
+- `session.resume` reports `running`, letting the client restore the composer from gateway state
+  rather than from event traffic a dropped socket would have eaten
+- New `permission.list` / `clarify.list`; `AppShell` calls `syncPending` on every connect so a
+  reconnecting client rebuilds its inbox from gateway memory
+- `PebbleRoot` runs a capped-backoff reconnect loop; `GatewayClient` funnels frames through an
+  unbounded channel instead of losing them when the shared-flow buffer fills
+- Approval session ids are thread-local in `PermissionManager`, so two concurrent turns no longer
+  relabel each other's requests
+- `session.file_accept` / `session.file_revert` broadcast `files.accepted` / `files.reverted`, and
+  both clients refresh their change list from them
+- Desktop: a `clarify.request` belonging to another session is held per session instead of
+  hijacking the open transcript; `markQuestionState` (called twice but never defined) is
+  implemented, fixing a ReferenceError that aborted `clarify.resolved` handling
+
+## Cross-client message and permission parity
+
+- `prompt.submit` now broadcasts `user_message.saved` with `text` and `created_at`, not just the
+  id: the row that carries the text only exists on the client that sent it, so the other one had
+  nothing to render and showed the reply without the question
+- Desktop creates the streaming container on the first `message.delta` / `thinking.delta` /
+  `tool.start` when no run is open locally (`agentMsgIdRef` empty), so a reply produced by the
+  phone appears live instead of only after a reload
+- Desktop `PermissionDialog` subscribes to `gateway:permission-resolved`; a decision taken on the
+  phone now closes the sheet instead of leaving it asking about a settled request
+- Android `ConversationState` handles `user_message.saved`, appending the message unless the
+  trailing user row already carries the same text
+
+## Mobile localisation and text scale
+
+- `ui/i18n/Strings.kt` adds `L` (English-keyed dictionary, ~180 entries) and `FontScale`; Settings
+  gains Language and Text size cards, both persisted in `Prefs` and restored before the first frame
+- Every screen in the Android client now renders through `L.t(...)`, including reminder strings
+  built with templates (date separators, session message counts, risk tags, change counters)
+- Protocol values stay untranslated: `UsageScreen` range keys and `ApprovalSheet` remember minutes
+  keep their raw values, with labels built per composition instead of in a top-level val
+
+## Transcript restore, session fan-out and notifications
+
+- Android decoded stored messages with the wrong keys (`content`/`tool_name`/`tool_context`);
+  `session.resume` actually returns `text`/`name`/`context`, so a reopened conversation rendered
+  as empty bubbles and tool cards titled "tool". `ChatMessage.from` now accepts both spellings and
+  the gateway includes a tool row's output as `text`
+- `session.create` broadcasts `session.created`; the desktop adds the row to its sidebar (without
+  stealing focus) and Android refreshes its list instead of waiting for the 4s poll
+- `data/Notifier.kt` posts system notifications for replies, permission requests and questions when
+  the app is backgrounded; `AppVisibility` tracks foreground state via activity callbacks, the
+  channel owns sound and vibration, and Settings gained a Notifications toggle that requests
+  `POST_NOTIFICATIONS` on API 33+
+
+## Background delivery
+
+- Root cause of both reported symptoms was the same: a backgrounded Android process is frozen, so
+  WebSocket frames never reach the app — no notification and no transcript entry. `ConnectionService`
+  (foreground, `dataSync`) now keeps the process running while paired
+- `AppResume.tick` drives a foreground resync: `AppShell` re-pulls pending approvals/questions and
+  `ConversationScreen` reloads the transcript, guarded by `session.resume`'s `running` flag so a
+  live stream is never clobbered
+- `AppVisibility` now tracks resumed/paused instead of started/stopped
+
+## Notification dispatch, foreground reload and camera binding
+
+- Notifications moved from `GlobalChatStore` into `GatewayClient.onMessage` via `Notifier.dispatch`:
+  a backgrounded app can lose its composition while the process lives, so tying an alert to "a
+  screen is mounted" lost the notification entirely
+- `ConversationState.refresh` now waits up to 12s for a `Connected` state before reloading. The
+  old code fired immediately on resume, failed with "not connected", and left the previous rows and
+  the send-error banner on screen — the state that only a tab switch appeared to clear
+- A failed send now reports "Connection lost" when the socket is down instead of "Send failed"
+- QR scanner: `LocalContext` is unwrapped before the `LifecycleOwner` cast (a wrapper made it null
+  and rendered nothing), the deprecated `setTargetResolution` is gone (it refuses to bind on
+  sensors without that size, leaving a black box), and a binding exception is now shown on screen
+  instead of being swallowed
+
+## Notification icon, service start and QR decoding
+
+- Notification and foreground-service icons now use an app-owned drawable. The platform drawables
+  (`stat_sys_data_bluetooth`, `stat_notify_chat`) are not present on every OEM build, and a missing
+  one makes `startForeground` throw, killing the service with no trace and blocking every alert
+- `ConnectionService.start` moved from a Compose effect to `MainActivity.onCreate`, guarded by the
+  stored pairing; `running` and `lastError` are exposed so Settings can report whether it came up
+- Settings gains a `Send test notification` action that bypasses the enable flag and the foreground
+  check, separating "notifications are broken" from "no event fired"
+- `QrDecoder` converts frames with `ImageProxy.toBitmap()` and `RGBLuminanceSource` instead of
+  hand-assembling the YUV planes; a mis-assembled buffer still looks like a valid bitmap and simply
+  never decodes
+- A dropped socket now fails every in-flight request immediately instead of leaving each to time out
+
+## Making the two silent failures visible
+
+- `ConnectionService.status()` now distinguishes four outcomes: `running`, `start rejected: …`
+  (startForegroundService threw), `failed: …` (startForeground threw, caught as Throwable because
+  the failure type varies by Android version), and `not started` (onStartCommand never ran). The
+  previous version reported an empty reason for the last case, which was indistinguishable from a
+  dead button
+- `Notifier.testNow` returns its outcome instead of Unit and Settings shows it; a missing
+  POST_NOTIFICATIONS grant now also triggers the system permission prompt from the same tap
+- Service start is unconditional in `onCreate`; it no longer depends on a stored pairing
+
+## Service start diagnostics
+
+- `ConnectionState` (Compose state, in `data/Notifier.kt`) now holds `running`, `lastError`,
+  `launchError` and `lastLaunchAt`; the service writes it and Settings reads it, so the row updates
+  when the service comes up after the screen has already composed (the previous plain `@Volatile`
+  left a stale "not started" on screen)
+- `lastLaunchAt` separates "never asked" from "asked and the system ignored it", which is the
+  difference between a missing call and an OEM policy refusing the service
+- `ConnectionService.start` is retried from `Activity.onResume`: at `onCreate` the activity is not
+  yet visible, and some Android builds refuse a foreground service from that state
+
+## One-pass background and pairing hardening
+
+- QR: `QrDecoder` now decodes through `RGBLuminanceSource` from both a camera frame
+  (`ImageProxy.toBitmap()`) and a picked bitmap; PairingScreen gained a `Choose from gallery`
+  action that decodes a screenshot of the desktop panel, bypassing the camera entirely
+- Background: `onTaskRemoved` re-arms the service through `AlarmManager` (a direct start there is
+  rejected as a background start on API 31+); `REQUEST_IGNORE_BATTERY_OPTIMIZATIONS` and
+  `WAKE_LOCK` declared; Settings gained `Allow background running` (battery whitelist) and
+  `Auto-start settings` (probes the known OEM auto-start activities, falls back to app details)
+- `ConnectionState.describe()` distinguishes running / start rejected / failed / started but not
+  running / never started
+
+## Keeping the socket alive in the background
+
+- Root cause of the disappearing notifications: a foreground service raises priority but Android
+  still suspends the process. Once suspended, OkHttp stops sending its 20s pings, the gateway's
+  `ping_timeout=10` (with `ping_interval=30`) drops the link, and every later event is lost until
+  the app is opened. A `PARTIAL_WAKE_LOCK` held by `ConnectionService` is what actually keeps the
+  socket alive
+- The reconnect loop moved from `PebbleRoot`'s `LaunchedEffect` into `GatewayClient.startAutoReconnect`
+  (its own process-scoped coroutine): a loop tied to the composition stops retrying exactly when a
+  backgrounded app loses it
+- QR gallery decoding now tries several passes — as-is, downscaled, centre crop at two scales, four
+  corner crops, then the original resolution — because a screenshot puts the code in an arbitrary
+  part of a much larger image
+
+## Pairing QR was physically too small to decode
+
+- Root cause found by measuring instead of guessing: the 114-character payload produced a
+  **version 7** code (45x45 modules), rendered with `border=2` and capped at 190px by the panel
+  CSS, which works out to **3.9 pixels per module**. A phone camera cannot resolve that, so both
+  the live scan and a screenshot failed — the crop strategy added earlier was addressing a
+  problem that did not exist
+- Fix is fourfold: the certificate digest in the URI is truncated to 128 bits (82-char payload,
+  version 5), error correction dropped to L, the quiet zone restored to the spec's 4 modules, and
+  the panel width raised to 240px. Net result **5.33 px/module**, a 37% increase
+- `PairingUri` accepts a 32- or 64-hex digest and `GatewayClient` compares it as a prefix of the
+  certificate's SHA-256, so older full-length links still pair
+
+## QR decoder rewritten stateless; wakelock surfaced
+
+- `QrDecoder` no longer keeps a shared `MultiFormatReader`: ZXing's reader holds per-decode
+  state and is not thread-safe, so a second call could see a half-reset reader that finds
+  nothing. Each attempt now builds its own and runs three independent passes — plain
+  `QRCodeReader` with no hints, `MultiFormatReader` + TRY_HARDER, then an explicitly inverted
+  image — over the same ARGB pixels
+- `ConnectionState.wakeLockHeld` is reported alongside `running`, so Settings can show whether the
+  partial wake lock was actually acquired
+- `test-qr.png` (450x450, version 5, quiet zone 4) and `test-qr-desktop-params.png` (360x360, the
+  exact parameters the panel renders) are generated from the same payload for a decisive test:
+  if the app cannot decode the clean one either, the fault is the decoder, not the panel
+
+## Pairing code legible at camera distance; Wi-Fi kept awake
+
+- Confirmed the decoder works: the generated `test-qr.png` scans and attempts to connect, so the
+  earlier failure was the on-screen code, not ZXing
+- The panel renders the code at 240px, which leaves a phone camera one or two sensor pixels per
+  module. Two changes: `shape-rendering: crispEdges` so module edges are not anti-aliased, and
+  clicking the code opens a full-screen view at `min(80vmin, 600px)`
+- Background: added a `WIFI_MODE_FULL_HIGH_PERF` Wi-Fi lock next to the partial wake lock — Wi-Fi
+  power save throttles packets once the screen is off, which alone misses the ping window. The
+  gateway's `ping_timeout` also went from 10s to 60s so a delayed pong no longer drops the socket
+
+## Interleaved reasoning was flattened on Android
+
+- Three separate defects produced the reported shape. Streaming: `startTool` did not reset
+  `thinkingIdx` / `assistantIdx`, so every later `thinking.delta` kept appending to the first
+  card. History: `toItem` rendered only `content` and dropped `reasoning`, so every trace card
+  vanished on reload
+- The third is the interesting one: the gateway stores the whole interleaved sequence
+  (reasoning / text / tool_execution) in the `tool_calls` column, and the desktop rebuilds the
+  order from it. Android treated that column as tool output, which collapsed a multi-step turn
+  into one block and pushed all traces to the end. `toItems` now parses the same field and emits
+  one item per element, with fallbacks when a record lacks text or a trace
+- `completeMessage` no longer overwrites a block that already streamed: its `text` is the whole
+  turn, so writing it into the last block duplicated every earlier segment
+
+## Background reconnect no longer depends on a live coroutine
+
+- `ConnectionService` schedules a one-minute `setAndAllowWhileIdle` alarm that re-delivers its own
+  intent. Every tick calls `GatewayClient.wakeReconnect()`, which restarts the retry loop if it is
+  not active. A frozen process cannot advance its own `delay`, so without an external tick a
+  dropped socket stayed dropped until the user opened the app
+- `GatewayClient.current` is a process-wide reference so the service can drive reconnects without
+  holding the Activity; after a process kill the service rebuilds a client from the stored pairing
+  (`ensureClient`), and `MainActivity` reuses that instance instead of creating a second one
+- Combined with the wake lock, Wi-Fi high-performance lock and the 60s gateway `ping_timeout`, the
+  socket now has four independent reasons to stay up or come back
+
+## Pairing code rendered as PNG; exact-alarm watchdog
+
+- The panel now receives `qr_png` (base64) and renders it as an `<img>`; the SVG path draws modules
+  as stroked paths that every browser rasterises slightly differently, which is exactly what a
+  camera cannot resolve. The PNG is built from segno's matrix with PIL at scale 12 / border 4,
+  giving 540x540 for a version 5 code
+- `test-qr-from-panel.png` is the byte-identical output of that generator, so it can be compared
+  against what the panel shows
+- The reconnect watchdog uses `setExactAndAllowWhileIdle` when exact alarms are permitted and
+  falls back to `setAndAllowWhileIdle`; the foreground notification text now mirrors the real
+  socket state ("Connected to desktop" / "Reconnecting…")
+
+## Recording why the socket dies
+
+- `GatewayClient` keeps `lastDisconnectReason`, `lastDisconnectAt` and `reconnectAttempts`, and
+  Settings shows them as a `Link:` row. Every previous round added another keep-alive mechanism
+  without ever establishing whether the socket was being dropped by the gateway, by the network,
+  or whether the retry loop ran at all — these three values separate those cases
+- `onClosed` records the peer's close code; `onFailure` records the transport error; the reconnect
+  loop counts its attempts so a frozen loop (count stuck) is distinguishable from a blocked
+  network (count climbing, still failing)
+
+## Foreground service type was the reason it kept disappearing
+
+- The常驻 notification vanishing was the giveaway: the service itself was being stopped, and the
+  frozen process then lost the socket. `dataSync` is capped at a few hours per day on Android 14+
+  and is force-stopped without restart when the budget runs out
+- Switched to `foregroundServiceType="connectedDevice"` with
+  `FOREGROUND_SERVICE_CONNECTED_DEVICE`, which is the type intended for maintaining a link to a
+  paired device and carries no daily budget. `startForeground` passes the matching type constant
+- The exact-alarm watchdog, `START_STICKY` and `onTaskRemoved` restart all remain, so a service
+  killed for any other reason is still brought back
+
+## Background layer rewritten
+
+- Previous design killed itself: `startInForeground`'s catch called `stopSelf()`, so any refusal of
+  `startForeground` (OEM policy, revoked grant, unsupported type) turned a permission problem into
+  "service gone, notification gone, socket dead" within seconds. The service now degrades to an
+  ordinary background service and reports the reason instead of dying
+- `PebbleApp` (Application) owns `GatewayClient` and starts the service on process start, so the
+  connection no longer depends on an Activity ever running; `MainActivity` reuses that instance
+- `ConnectionService` is now deliberately dumb: it raises priority, holds the wake and Wi-Fi locks,
+  and ticks once a minute to reschedule a frozen retry loop. No connection state, no retry policy
+- `goForeground()` is re-asserted on every tick because the system can demote the service without
+  notice
+
+## The socket was closed by our own code on every task switch
+
+- `MainActivity.onDestroy()` called `client.close()`, and `PebbleRoot` had
+  `DisposableEffect { onDispose { client.stopAutoReconnect() } }`. Android destroys the Activity on
+  every task switch, so leaving the app actively closed the socket and cancelled the retry loop.
+  Every keep-alive mechanism added in earlier rounds was working correctly and being undone by
+  these two lines
+- Both removed. The connection is owned by `PebbleApp` and now genuinely outlives the UI; only the
+  explicit "disconnect pairing" actions close it
+- Remaining lifetime rule: anything that should survive a task switch must not be tied to an
+  Activity or a composition scope
+
+## Reconnect is fast, and missed messages are reported
+
+- Retry backoff now starts at 200ms (doubling to 30s) instead of 1s, so the one or two second gap
+  the user sees is as short as it can be
+- `PebbleApp` watches the connection and, on every transition into `Connected`, compares
+  `session.list`'s `last_message_at` against `Prefs.lastSeenAt` (updated while online). Anything
+  newer means a broadcast was produced while the phone was offline — those frames are
+  fire-and-forget and cannot be replayed — so one summary notification is raised
+- `software caused connection abort` is the transport reporting a locally aborted socket, which is
+  what a suspended network or a Wi-Fi hand-off looks like; it cannot always be prevented, so the
+  catch-up path is what makes the behaviour correct
+
+## Two bugs that made catch-up never fire
+
+- `Prefs.lastSeenAt` was written in milliseconds while `session.list` reports `last_message_at` in
+  seconds, so `last_message_at > lastSeenAt` was false for every session and the catch-up
+  notification could never trigger. Stored in seconds now, and a legacy millisecond value is
+  treated as absent
+- `Notifier.post` decided visibility from the Activity callbacks, which go stale once the Activity
+  is destroyed — a stale "foreground" silently swallowed every notification. It now asks the system
+  for this process's `IMPORTANCE_FOREGROUND`, falling back to the callback only if that fails
+
+## Half-open sockets hid every missed message
+
+- `broken pipe` means the peer had already closed while we kept writing: the socket is half-open,
+  `ConnState` still reads `Connected`, and no event arrives
+- `lastSeenAt` was refreshed on every `Connected` state emission, so during a half-open period it
+  kept advancing to "now" and `last_message_at > lastSeenAt` could never be true. The marker is now
+  refreshed only when a frame is actually delivered
+- Catch-up has three triggers: the disconnected→connected edge, a one-minute service tick, and the
+  per-frame marker. A half-open socket is caught by the tick plus the frozen marker
+
+## Notification path isolated from the socket reader, and made observable
+
+- `onMessage` no longer calls `Notifier.dispatch`. It parses, records, and hands
+  the event to a channel; dispatch runs on a separate coroutine. OkHttp's reader
+  treats any exception from a listener callback as a connection failure, so a
+  throw while posting a notification could close the socket that delivered it
+- `Diag` records per-stage counters: frames in, events delivered, sends ok and
+  failed, drops with their source (`onFailure`/`onClosed`/`close`), connect
+  attempts versus successes, live sockets, notification posts and the reason for
+  each suppression, service ticks, catch-up runs. Settings renders them and
+  offers a reset
+- `connect()` cancels the previous socket before opening a new one; without it a
+  reconnect leaked a WebSocket, and the gateway caps connections at 8
+- `pingInterval` raised to 30s to match the gateway's `ping_interval=30`
+- `ConnectionService` ticks every 30s and repaints its ongoing notification on
+  every connection state change
+- `catchUp` no longer gates on `AppVisibility`; `post()` decides visibility and
+  records which rule suppressed it
+
+## Reconnect loop is idempotent; timeline is measured in seconds
+
+- `startAutoReconnect` returns early when the target, token and live job are unchanged.
+  The Activity is recreated on every task switch and re-ran its `LaunchedEffect`,
+  which cancelled a healthy socket and dropped everything sent during the
+  reconnect window
+- `Diag.ago` always reports a number of seconds. Collapsing the first second into
+  "just now" made a drop on resume indistinguishable from one during background
+- `Diag.foregroundAt` / `backgroundAt` are recorded from the activity callbacks, so
+  the drop timestamp can be placed against the foreground transitions
+
+## Half-open sockets are now detected instead of waited out
+
+- `pingInterval` is 15s: a half-open link used to stay undetected for up to 30s,
+  and the failure only surfaced when the next write happened to hit the dead socket
+- `GatewayClient.dropIfStale()` runs on every service tick. A socket that reports
+  `Connected` but has delivered no frame for 45s is cancelled so the reconnect loop
+  starts, instead of sitting there silently losing frames
+- `ConnectionState` exposes `wifiLockHeld` and `wifiLockError`; acquiring the
+  high-performance Wi-Fi lock previously failed silently inside `runCatching`, and a
+  missing lock is what lets Wi-Fi power save abort the connection in the background
+
+- 2026-10-23 Android client transport and background keeping. Every socket teardown path goes through `invalidateSocket(expected, ...)`, which clears the reference, moves the state and fails pending calls as one step, and ignores a callback from a socket that has already been replaced. `connect()` bounds the opening handshake at 15 s. Forced restarts are gated: none while a handshake is inside its window, and at most one per 2 s while the loop is alive. `onFailure` restarts the loop only when the handshake had already completed. `ConnectionService` is a `connectedDevice` foreground service holding a partial wake lock and a high-performance Wi-Fi lock; a `startForeground` failure stops the service, so the platform FGS timeout has no process left to kill. `catchUpNow()` posts one notification per changed session. `gatewayReady` is `connState is ConnState.Connected`; `gateway.ready` is a one-shot frame and is not used as a latch. Settings exposes the battery-optimisation and auto-start entry points plus a test-notification button; the in-memory counter panel is removed, along with the `Diag` surface it read.

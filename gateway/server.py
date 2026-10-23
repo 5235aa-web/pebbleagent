@@ -5,6 +5,7 @@ import logging
 import os
 import sys
 import threading
+import time
 import uuid
 from datetime import datetime
 from pathlib import Path
@@ -438,6 +439,51 @@ def _ensure_service() -> AgentChatServiceV2:
     return _current_service
 
 
+# ---- cross-client event fan-out -------------------------------------------
+# The stdio entry point has no socket list, so the WebSocket server registers a
+# broadcaster here at startup. RPC handlers that change state every client cares
+# about (a clarification answered, a permission decided) call `broadcast_event`
+# so the phone and the desktop both hear about it.
+_event_broadcaster = None
+
+
+def set_event_broadcaster(fn):
+    global _event_broadcaster
+    _event_broadcaster = fn
+
+
+def broadcast_event(event_type: str, payload: dict):
+    fn = _event_broadcaster
+    if fn is None:
+        return
+    try:
+        fn(event_type, payload)
+    except Exception as e:
+        logger.warning(f"[Gateway] broadcast_event({event_type}) failed: {e}")
+
+
+# The prompt worker registry lives in the WebSocket server, which is not loaded
+# in every entry point (the stdio one has no sockets). RPC handlers ask through
+# this hook so `session.resume` can report whether a turn is still running
+# instead of guessing from client-side event traffic.
+_session_running_probe = None
+
+
+def set_session_running_probe(fn):
+    global _session_running_probe
+    _session_running_probe = fn
+
+
+def is_session_running(session_id: str) -> bool:
+    fn = _session_running_probe
+    if fn is None or not session_id:
+        return False
+    try:
+        return bool(fn(session_id))
+    except Exception:
+        return False
+
+
 def _submit_clarify_answer(answer: str, request_id: str = "", answers: dict = None):
     """提交用户对 clarify 的回答到 QuestionManager
 
@@ -458,12 +504,20 @@ def _submit_clarify_answer(answer: str, request_id: str = "", answers: dict = No
         if request_id and pending_id and request_id != pending_id:
             logger.warning(f"[Gateway] clarify.respond ignored (request_id mismatch: {request_id} != pending {pending_id})")
             return
+        # Read the owner before submitting: the answer clears the pending state.
+        owner_sid = QuestionManager.get_pending_session_id()
         if answers:
             # 新通道：完整答案对象（键=问题文本，自描述，agent 可精确对应）
             QuestionManager.submit_answers({"answers": answers})
         else:
             # 旧通道：单答案字符串（兼容单问题 / skip）
             QuestionManager.submit_answers({"answers": {"0": answer}})
+        # Every client must drop its clarify card, not just the one that answered.
+        broadcast_event("clarify.resolved", {
+            "request_id": pending_id,
+            "session_id": owner_sid,
+            "answer": answer,
+        })
     except Exception as e:
         logger.warning(f"[Gateway] Failed to submit clarify answer: {e}")
 
@@ -730,7 +784,15 @@ def handle_prompt_submit(
 
     async def run():
         try:
-            write_event("user_message.saved", {"message_id": user_msg_id, "session_id": sid})
+            write_event("user_message.saved", {
+                "message_id": user_msg_id,
+                "session_id": sid,
+                # The text travels with the id so the other client can render a
+                # message it never sent; an id alone only lets the sender stamp
+                # a row that already exists on its side.
+                "text": text,
+                "created_at": time.time(),
+            })
             gen = service.chat_stream(
                 agent_name=agent_name, message=text, conversation_uuid=sid,
                 model=llm_config.get("model", "gpt-4"), project_path=project_path,

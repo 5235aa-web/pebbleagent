@@ -41,7 +41,7 @@ export const useChatStore = defineStore('chat',()=>{
   function touchConversation(id:string,bumpCount=false){if(!id)return;const now=Date.now()/1000;conversations.value=conversations.value.map(c=>{if(c.id!==id)return c;const mc=(c.messageCount||0)+(bumpCount?1:0);return{...c,messageCount:mc,lastActivityAt:now,meta:buildMeta(now,mc)}})}
 
   function handleSessionLoaded(d:{sessionId:string;title?:string;messageCount?:number}){if(!d?.sessionId)return;activeConversationId.value=d.sessionId;conversations.value=conversations.value.map(c=>{if(c.id!==d.sessionId)return c;const mc=d.messageCount??c.messageCount??0;return{...c,messageCount:mc,title:d.title||c.title,meta:buildMeta(c.lastActivityAt??c.startedAt,mc)}})}
-  function handleSessionCreated(d:{sessionId:string;title?:string}){if(!d?.sessionId)return;const p=loadPinned();const now=Date.now()/1000;const c:Conversation={id:d.sessionId,title:d.title||'New conversation',meta:buildMeta(now,0),pinned:p.includes(d.sessionId),messageCount:0,startedAt:now,lastActivityAt:now};conversations.value=[c,...conversations.value];activeConversationId.value=d.sessionId}
+  function handleSessionCreated(d:{sessionId:string;title?:string}){if(!d?.sessionId)return;if(conversations.value.some(c=>c.id===d.sessionId))return;const p=loadPinned();const now=Date.now()/1000;const c:Conversation={id:d.sessionId,title:d.title||'New conversation',meta:buildMeta(now,0),pinned:p.includes(d.sessionId),messageCount:0,startedAt:now,lastActivityAt:now};conversations.value=[c,...conversations.value]}
   function handleSessionUpdated(d:{sessionId:string;title:string}){if(!d?.sessionId)return;conversations.value=conversations.value.map(c=>c.id===d.sessionId?{...c,title:d.title||c.title}:c)}
 
   if (typeof window !== 'undefined') {

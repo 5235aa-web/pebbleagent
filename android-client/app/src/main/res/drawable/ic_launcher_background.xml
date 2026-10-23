@@ -1,0 +1,61 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!--
+  Adaptive icon layer 1: the plate.
+
+  A near-black base with a warm bloom behind the glyph and a cool rim low right,
+  so the mark reads as lit from above rather than sitting on a flat square.
+  VectorDrawable has no blur, so the bloom is a radial gradient with a soft
+  alpha ramp instead of a filtered layer.
+-->
+<vector xmlns:android="http://schemas.android.com/apk/res/android"
+    xmlns:aapt="http://schemas.android.com/aapt"
+    android:width="108dp"
+    android:height="108dp"
+    android:viewportWidth="108"
+    android:viewportHeight="108">
+
+    <!-- base -->
+    <path android:pathData="M0,0h108v108h-108z">
+        <aapt:attr name="android:fillColor">
+            <gradient
+                android:type="linear"
+                android:startX="0"
+                android:startY="0"
+                android:endX="108"
+                android:endY="108">
+                <item android:offset="0.0" android:color="#FF1B1626" />
+                <item android:offset="0.52" android:color="#FF111017" />
+                <item android:offset="1.0" android:color="#FF06060A" />
+            </gradient>
+        </aapt:attr>
+    </path>
+
+    <!-- warm bloom behind the glyph -->
+    <path android:pathData="M0,0h108v108h-108z">
+        <aapt:attr name="android:fillColor">
+            <gradient
+                android:type="radial"
+                android:centerX="50"
+                android:centerY="40"
+                android:gradientRadius="66">
+                <item android:offset="0.0" android:color="#38FFA53C" />
+                <item android:offset="0.55" android:color="#12E84393" />
+                <item android:offset="1.0" android:color="#00000000" />
+            </gradient>
+        </aapt:attr>
+    </path>
+
+    <!-- cool rim low right, the counterpart that keeps the plate from feeling muddy -->
+    <path android:pathData="M0,0h108v108h-108z">
+        <aapt:attr name="android:fillColor">
+            <gradient
+                android:type="radial"
+                android:centerX="88"
+                android:centerY="96"
+                android:gradientRadius="58">
+                <item android:offset="0.0" android:color="#2E7B61FF" />
+                <item android:offset="1.0" android:color="#00000000" />
+            </gradient>
+        </aapt:attr>
+    </path>
+</vector>

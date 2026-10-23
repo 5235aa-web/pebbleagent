@@ -18,6 +18,7 @@ import json
 import logging
 import os
 import re
+import threading
 from dataclasses import dataclass, field
 from enum import Enum
 from typing import Dict, List, Optional
@@ -63,6 +64,13 @@ class PermissionRule:
     pattern: Optional[str] = None
     effect: PermissionBehavior = PermissionBehavior.ASK
     origin: str = "user"
+
+
+# The manager is a process-wide singleton, but a session id belongs to one run.
+# The phone and the desktop can each drive a conversation, and every prompt runs
+# on its own worker thread, so keeping the id in a thread-local stops one turn
+# from relabelling another turn's approval requests.
+_session_local = threading.local()
 
 
 @dataclass
@@ -457,17 +465,18 @@ class PermissionManager:
     ) -> tuple[bool, str]:
         """请求用户权限"""
         perm_type = self._get_permission_type(tool_name)
+        sid = self.get_session_id()
 
-        if self.context.session_id:
-            if await self.permission_service.check_permission(perm_type, self.context.session_id):
-                logger.info("[PermissionManager] session %s trusted, auto-approving %s", self.context.session_id, tool_name)
+        if sid:
+            if await self.permission_service.check_permission(perm_type, sid):
+                logger.info("[PermissionManager] session %s trusted, auto-approving %s", sid, tool_name)
                 return True, "trusted session"
 
         request = await self.permission_service.request_permission(
             permission_type=perm_type,
             target=target,
             reason=reason or f"调用工具 {tool_name}",
-            session_id=self.context.session_id,
+            session_id=sid,
         )
         if not request:
             return False, "failed to create permission request"
@@ -534,7 +543,14 @@ class PermissionManager:
 
     def set_session_id(self, session_id: str):
         """设置会话 ID"""
+        _session_local.session_id = session_id
+        # Mirrored onto the shared context for code that still reads it; the
+        # thread-local wins so concurrent sessions cannot overwrite each other.
         self.context.session_id = session_id
+
+    def get_session_id(self) -> str:
+        """Session owning the work on this thread (falls back to the context)."""
+        return getattr(_session_local, "session_id", "") or self.context.session_id
 
     def get_all_rules(self) -> Dict[str, List[str]]:
         """获取所有规则"""

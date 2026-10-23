@@ -27,6 +27,7 @@
 - **Streaming agent chat with full execution visibility.** Reasoning, tool calls, file changes, and results unfold as a step-by-step timeline instead of a black box.
 - **Full UI theming.** Pick any color and the whole palette adapts instantly across the entire interface.
 - **Desktop-grade shell.** A frameless Tauri 2 window, a WebSocket JSON-RPC 2.0 protocol, and a self-contained Python backend shipped as a sidecar.
+- **Optional Android client (experimental).** A Kotlin + Compose companion app that speaks the same gateway: pair it with a QR code, then follow a conversation, answer approvals and clarifications, and read file changes and usage from the phone. It is entirely optional. The desktop app has no dependency on it, and with the LAN listener off — the default — the desktop keeps using the same loopback socket as before.
 
 ## Screenshots
 
@@ -106,6 +107,34 @@ cd ui-gui-vue3
 npx tauri build
 ```
 
+### Build the Android app (optional)
+
+The phone app is a separate Gradle project in `android-client/`. Nothing in this section is needed to run or package the desktop app, and the desktop app works exactly the same whether or not the phone app is built or used.
+
+Extra requirements, none of them needed by the desktop app:
+
+- JDK 17 or newer (the JBR bundled with Android Studio works)
+- Android SDK with Platform 37 and its Build-Tools (`compileSdk` and `targetSdk` are 37, `minSdk` is 26)
+- Gradle 9.8.2 — the wrapper fetches it on the first build if it is missing
+- Internet access on the first build, so Gradle can resolve the Android Gradle Plugin, Compose, CameraX and OkHttp
+
+Point the build at your SDK by creating `android-client/local.properties`:
+
+```properties
+sdk.dir=C:/Users/<you>/AppData/Local/Android/Sdk
+```
+
+Then build:
+
+```bash
+cd android-client
+gradlew.bat assembleDebug
+```
+
+The APK is written to `android-client/app/build/outputs/apk/debug/app-debug.apk`. Later builds can pass `--offline`, since the dependencies are already in the Gradle cache.
+
+To connect a phone, turn on the LAN listener in the desktop settings (it serves `wss://<lan-ip>:19877`), then pair by scanning the QR code. With the listener off, nothing extra binds to the network and the desktop keeps its loopback-only socket, which is the default state.
+
 ## Configuration
 
 All runtime data lives in `%USERPROFILE%\.pebble\` (override with the `PEBBLE_HOME` environment variable).
@@ -124,6 +153,7 @@ tools/            Built-in tools
 skills/           Bundled skills
 knowledgesource/  Code knowledge base (chaptered)
 ui-gui-vue3/      Vue 3 frontend + Tauri 2 desktop shell
+android-client/   Kotlin + Compose phone app (optional, standalone Gradle project)
 tests/            Standalone verification tests (python tests/run_all.py)
 ```
 

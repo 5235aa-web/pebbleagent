@@ -105,6 +105,8 @@ def handle(ctx, method):
         logger.info(f"[Server] Agent switched to: {name}")
         # Reload LLM config for the new agent
         ctx.llm_config = srv.load_llm_config(srv._current_agent)
+        # The other client shows the agent in its header; let it refresh.
+        srv.broadcast_event("agent.changed", {"name": name})
         return {"id": rid, "result": {"ok": True, "agent": name}}
 
     if method == "clarify.respond":
@@ -113,6 +115,26 @@ def handle(ctx, method):
         answers = params.get("answers") or None  # 新：多问题结构化答案 {问题文本: 答案}
         srv._submit_clarify_answer(answer, request_id, answers)
         return {"id": rid, "result": {"ok": True}}
+
+    if method == "clarify.list":
+        """The pending question, so a reconnecting client does not lose it.
+
+        QuestionManager is a process-wide singleton and clears its state on
+        submit, so a client that comes back after a dropped socket has nothing
+        local to rebuild the card from.
+        """
+        try:
+            from agent_core.state.question import QuestionManager
+            pending = QuestionManager.get_pending_questions()
+            if not pending:
+                return {"id": rid, "result": {"questions": None, "session_id": ""}}
+            return {"id": rid, "result": {
+                "questions": pending,
+                "session_id": QuestionManager.get_pending_session_id(),
+            }}
+        except Exception as e:
+            logger.warning(f"[Server] clarify.list error: {e}")
+            return {"id": rid, "result": {"questions": None, "session_id": ""}}
 
     if method == "usernote.read":
         return {"id": rid, "result": {"content": srv._load_usernote()}}

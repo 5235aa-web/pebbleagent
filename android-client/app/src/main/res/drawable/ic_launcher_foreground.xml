@@ -1,0 +1,77 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!--
+  Adaptive icon layer 2: the glyph.
+
+  A capital P cut from a single path with an even-odd counter, filled with a four
+  stop gradient (gold -> amber -> magenta -> violet). Depth comes from two
+  stacked overlays on the same silhouette: a highlight sweeping in from the top
+  left and a shadow pooling at the foot, which is what makes the letter read as
+  raised rather than printed.
+-->
+<vector xmlns:android="http://schemas.android.com/apk/res/android"
+    xmlns:aapt="http://schemas.android.com/aapt"
+    android:width="108dp"
+    android:height="108dp"
+    android:viewportWidth="108"
+    android:viewportHeight="108">
+
+    <!-- letter body -->
+    <path
+        android:fillType="evenOdd"
+        android:pathData="M36,82 L36,26 L56,26 A16,16 0 0 1 56,58 L50,58 L50,82 Z M56,34 A8,8 0 1 0 56,50 A8,8 0 1 0 56,34 Z">
+        <aapt:attr name="android:fillColor">
+            <gradient
+                android:type="linear"
+                android:startX="38"
+                android:startY="24"
+                android:endX="66"
+                android:endY="84">
+                <item android:offset="0.0" android:color="#FFFFE082" />
+                <item android:offset="0.34" android:color="#FFFF9A3C" />
+                <item android:offset="0.68" android:color="#FFF0568C" />
+                <item android:offset="1.0" android:color="#FF8B5CF6" />
+            </gradient>
+        </aapt:attr>
+    </path>
+
+    <!-- highlight sweeping in from the top left -->
+    <path
+        android:fillType="evenOdd"
+        android:pathData="M36,82 L36,26 L56,26 A16,16 0 0 1 56,58 L50,58 L50,82 Z M56,34 A8,8 0 1 0 56,50 A8,8 0 1 0 56,34 Z">
+        <aapt:attr name="android:fillColor">
+            <gradient
+                android:type="linear"
+                android:startX="36"
+                android:startY="26"
+                android:endX="58"
+                android:endY="60">
+                <item android:offset="0.0" android:color="#66FFFFFF" />
+                <item android:offset="0.42" android:color="#1AFFFFFF" />
+                <item android:offset="1.0" android:color="#00FFFFFF" />
+            </gradient>
+        </aapt:attr>
+    </path>
+
+    <!-- shadow pooling at the foot -->
+    <path
+        android:fillType="evenOdd"
+        android:pathData="M36,82 L36,26 L56,26 A16,16 0 0 1 56,58 L50,58 L50,82 Z M56,34 A8,8 0 1 0 56,50 A8,8 0 1 0 56,34 Z">
+        <aapt:attr name="android:fillColor">
+            <gradient
+                android:type="linear"
+                android:startX="54"
+                android:startY="56"
+                android:endX="54"
+                android:endY="84">
+                <item android:offset="0.0" android:color="#00000000" />
+                <item android:offset="1.0" android:color="#40000000" />
+            </gradient>
+        </aapt:attr>
+    </path>
+
+    <!-- hairline edge, keeps the silhouette crisp against the bloom -->
+    <path
+        android:fillType="evenOdd"
+        android:pathData="M36,82 L36,26 L56,26 A16,16 0 0 1 56,58 L50,58 L50,82 Z M56,34 A8,8 0 1 0 56,50 A8,8 0 1 0 56,34 Z"
+        android:fillColor="#22FFFFFF" />
+</vector>

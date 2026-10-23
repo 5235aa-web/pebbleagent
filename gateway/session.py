@@ -461,7 +461,10 @@ class SessionStore:
             elif role == "tool":
                 ctx = r["tool_context"] or ""
                 name = r["tool_name"] or "tool"
-                result.append({"role": "tool", "name": name, "context": ctx, "tool_call_id": r["tool_call_id"] or "", "created_at": created, "message_id": msg_id, "is_compacted": is_compacted, "is_compact_summary": is_compact_summary})
+                # `text` carries the tool's output. Without it a restored
+                # transcript can show that a tool ran but not what it returned,
+                # while the live stream shows both.
+                result.append({"role": "tool", "name": name, "context": ctx, "text": r["content"] or "", "tool_call_id": r["tool_call_id"] or "", "created_at": created, "message_id": msg_id, "is_compacted": is_compacted, "is_compact_summary": is_compact_summary})
             elif role == "assistant":
                 entry = {"role": "assistant", "text": r["content"], "created_at": created, "message_id": msg_id, "is_compacted": is_compacted, "is_compact_summary": is_compact_summary, "interrupted": interrupted}
                 if r["reasoning"]:

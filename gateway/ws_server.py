@@ -22,6 +22,7 @@ sys.path.insert(0, os.path.join(os.path.dirname(__file__), ".."))
 
 from gateway.server import handle_request, handle_prompt_submit, set_ws_loop
 from gateway.permission_service import get_permission_service
+from gateway import lan_access
 
 logger = logging.getLogger("ws-gateway")
 
@@ -109,6 +110,28 @@ def _extract_ws_origin(ws) -> Optional[str]:
     return None
 
 
+def _extract_ws_pair(ws) -> str:
+    """Extract the single-use pairing code from the query string."""
+    try:
+        path = getattr(ws.request, "path", "") or ""
+        qs = parse_qs(urlparse(path).query)
+        return (qs.get("pair") or [""])[0]
+    except Exception:
+        pass
+    return ""
+
+
+def _is_tls(ws) -> bool:
+    """True when the connection arrived over the TLS listener."""
+    try:
+        transport = getattr(ws, "transport", None)
+        if transport is None:
+            return False
+        return transport.get_extra_info("ssl_object") is not None
+    except Exception:
+        return False
+
+
 def _check_payload_limits(text: str, attachments: Any) -> Optional[str]:
     """Return an error message when a prompt payload exceeds the limits, else None."""
     if isinstance(text, str) and len(text) > _MAX_TEXT_CHARS:
@@ -146,18 +169,45 @@ _prompt_tasks: dict[str, threading.Thread] = {}
 class WebSocketWriter:
     """Wraps a websocket connection to provide write_event() compatible with handle_prompt_submit."""
 
-    def __init__(self, ws):
+    def __init__(self, ws, session_id: str = ""):
         self.ws = ws
+        self.session_id = session_id
         self._send_failed = False  # 断线后事件会被丢弃：每个请求只记一次日志（防刷屏），前端重连后自行恢复
 
     def write_event(self, event_type: str, payload: dict):
-        """Called from handle_prompt_submit to stream events back."""
+        """Called from handle_prompt_submit to stream events back.
+
+        Broadcast to every connected client, not just the requester: the phone
+        and the desktop are separate sockets and both need the same stream.
+        `session_id` is injected because the delta events carry no session of
+        their own — without it a client cannot tell whose stream this is and
+        would append it to whatever conversation is on screen.
+        """
+        if self.session_id and "session_id" not in payload:
+            payload = {**payload, "session_id": self.session_id}
         msg = json.dumps({
             "jsonrpc": "2.0",
             "method": "event",
             "params": {"type": event_type, "payload": payload},
         }, ensure_ascii=False)
-        asyncio.run_coroutine_threadsafe(self._send(msg), _loop)
+        asyncio.run_coroutine_threadsafe(_broadcast(msg), _loop)
+
+
+async def _broadcast(msg: str):
+    """Send one serialized event to every live connection."""
+    if not _connections:
+        return
+    dead = set()
+    for ws in list(_connections):
+        try:
+            await ws.send(msg)
+        except websockets.ConnectionClosed:
+            dead.add(ws)
+        except Exception as e:
+            dead.add(ws)
+            logger.debug(f"[WS] Broadcast failed: {e}")
+    if dead:
+        _connections.difference_update(dead)
 
     async def _send(self, msg: str):
         try:
@@ -240,7 +290,38 @@ async def handle_ws(ws):
         await ws.close(code=4403, reason="origin not allowed")
         return
     presented = _extract_ws_token(ws)
-    if not presented or not _gateway_token or not hmac.compare_digest(presented, _gateway_token):
+    authenticated = (
+        bool(presented)
+        and bool(_gateway_token)
+        and hmac.compare_digest(presented, _gateway_token)
+    )
+
+    if not authenticated:
+        pair_code = _extract_ws_pair(ws)
+        if pair_code:
+            # Pairing trades a single-use code for the long-lived token. It is
+            # only accepted on the TLS listener, so the token never crosses the
+            # network in clear text, and the code is burned on first use.
+            if not _is_tls(ws):
+                logger.warning(f"[WS] Refused plaintext pairing attempt from {ws.remote_address}")
+                await ws.close(code=4403, reason="pairing requires TLS")
+                return
+            if lan_access.redeem_pairing_code(pair_code):
+                await ws.send(json.dumps({
+                    "jsonrpc": "2.0",
+                    "method": "event",
+                    "params": {
+                        "type": "gateway.paired",
+                        "payload": {"token": _gateway_token},
+                    },
+                }, ensure_ascii=False))
+                logger.info(f"[WS] Device paired from {ws.remote_address}")
+                await ws.close(code=1000, reason="paired")
+                return
+            logger.warning(f"[WS] Invalid or expired pairing code from {ws.remote_address}")
+            await ws.close(code=4401, reason="invalid pairing code")
+            return
+
         logger.warning(f"[WS] Rejected unauthenticated connection from {ws.remote_address}")
         await ws.close(code=4401, reason="unauthorized")
         return
@@ -321,7 +402,7 @@ async def handle_ws(ws):
                     }, ensure_ascii=False))
 
                 # Start streaming in background
-                writer = WebSocketWriter(ws)
+                writer = WebSocketWriter(ws, sid)
                 t = threading.Thread(
                     target=_prompt_worker,
                     args=(sid, text, writer, attachments, project_path),
@@ -353,6 +434,92 @@ async def handle_ws(ws):
         logger.error(f"[WS] Error: {e}")
     finally:
         _connections.discard(ws)
+
+
+# ===== LAN listener (TLS, opt-in) =====
+
+_lan_server = None
+
+
+async def _start_lan_server(cfg) -> bool:
+    """
+    Start, restart, or stop the TLS listener bound to the LAN.
+
+    The loopback listener is never touched here: the desktop app keeps using
+    plain ws on 127.0.0.1, which cannot be reached from another machine.
+    """
+    global _lan_server
+
+    if _lan_server is not None:
+        try:
+            _lan_server.close()
+            await _lan_server.wait_closed()
+        except Exception as exc:
+            logger.warning(f"[WS] Error closing LAN listener: {exc}")
+        _lan_server = None
+
+    if not cfg.enabled:
+        lan_access.set_runtime_error(None)
+        logger.info("[WS] LAN listener disabled")
+        return True
+
+    try:
+        ctx = lan_access.build_ssl_context()
+    except lan_access.LanUnavailable as exc:
+        lan_access.set_runtime_error(str(exc))
+        logger.error(f"[WS] LAN listener unavailable: {exc}")
+        return False
+    except Exception as exc:
+        lan_access.set_runtime_error(f"certificate error: {exc}")
+        logger.error(f"[WS] LAN certificate error: {exc}")
+        return False
+
+    try:
+        _lan_server = await websockets.serve(
+            handle_ws,
+            cfg.bind_host,
+            cfg.port,
+            ssl=ctx,
+            ping_interval=30,
+            ping_timeout=60,
+            max_size=_MAX_MESSAGE_SIZE,
+        )
+        lan_access.set_runtime_error(None)
+        logger.info(f"[WS] LAN listener on wss://{cfg.bind_host}:{cfg.port}")
+        return True
+    except OSError as exc:
+        lan_access.set_runtime_error(f"cannot bind {cfg.bind_host}:{cfg.port}: {exc}")
+        logger.error(f"[WS] {lan_access.get_runtime_error()}")
+        return False
+    except Exception as exc:
+        lan_access.set_runtime_error(str(exc))
+        logger.error(f"[WS] Failed to start LAN listener: {exc}")
+        return False
+
+
+def _apply_lan_config(cfg) -> bool:
+    """Apply a new LAN configuration coming from the RPC layer."""
+    loop = _loop
+    if loop is None:
+        return False
+    try:
+        running = asyncio.get_running_loop()
+    except RuntimeError:
+        running = None
+
+    if running is loop:
+        # Called from inside the event loop: scheduling is the only safe move,
+        # so report optimism and let the caller re-read status for the truth.
+        loop.create_task(_start_lan_server(cfg))
+        return True
+
+    try:
+        future = asyncio.run_coroutine_threadsafe(_start_lan_server(cfg), loop)
+        return bool(future.result(timeout=10))
+    except Exception as exc:
+        logger.error(f"[WS] LAN apply failed: {exc}")
+        return False
+
 
 async def main(host: str = "127.0.0.1", port: int = 19876):
     global _loop, _mcp_init_task, _gateway_token
@@ -403,6 +570,37 @@ async def main(host: str = "127.0.0.1", port: int = 19876):
     svc = get_permission_service()
     svc.register_push_callback(_on_permission_request)
     logger.info("[WS] Permission push callback registered")
+
+    # RPC handlers (permission.decide, clarify.respond) fan out through this hook
+    # so a decision made on one client clears the prompt on the other one too.
+    def _broadcast_event_sync(event_type: str, payload: dict):
+        if _loop is None:
+            return
+        msg = json.dumps({
+            "jsonrpc": "2.0",
+            "method": "event",
+            "params": {"type": event_type, "payload": payload},
+        }, ensure_ascii=False)
+        asyncio.run_coroutine_threadsafe(_broadcast(msg), _loop)
+
+    from gateway.server import set_event_broadcaster
+    set_event_broadcaster(_broadcast_event_sync)
+    logger.info("[WS] Cross-client event broadcaster registered")
+
+    def _session_running(sid: str) -> bool:
+        """True while a prompt worker for this session is still alive."""
+        task = _prompt_tasks.get(sid)
+        if task is None:
+            return False
+        if not task.is_alive():
+            # Finished workers would otherwise keep the registry growing.
+            _prompt_tasks.pop(sid, None)
+            return False
+        return True
+
+    from gateway.server import set_session_running_probe
+    set_session_running_probe(_session_running)
+    logger.info("[WS] Session running probe registered")
 
     # MCP 状态变化推送：连接/断开完成后前端无需轮询
     async def _broadcast_mcp_state(state):
@@ -457,7 +655,14 @@ async def main(host: str = "127.0.0.1", port: int = 19876):
     # max_size: allow large prompt.submit messages with base64 image attachments
     # (websockets default 1 MiB rejects them with close code 1009); the real
     # guard is _check_payload_limits plus the connection cap above.
-    async with websockets.serve(handle_ws, host, port, ping_interval=30, ping_timeout=10, max_size=_MAX_MESSAGE_SIZE):
+    lan_access.register_apply_hook(_apply_lan_config)
+
+    async with websockets.serve(handle_ws, host, port, ping_interval=30, ping_timeout=60, max_size=_MAX_MESSAGE_SIZE):
+        lan_cfg = lan_access.load_config()
+        if lan_cfg.enabled:
+            await _start_lan_server(lan_cfg)
+        else:
+            logger.info("[WS] LAN listener disabled (enable from Settings > Connection)")
         await asyncio.Future()  # run forever
 
 def run_server(host: str = "127.0.0.1", port: int = 19876):

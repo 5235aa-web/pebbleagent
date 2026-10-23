@@ -16,7 +16,13 @@ def handle(ctx, method):
         project_path = params.get("project_path", "")
         session = srv._session_store.create(project_path=project_path)
         if project_path:
-            srv._session_project_paths[session["session_id"]] = srv._norm_project_path(project_path)
+            srv._session_project_paths[session["session_id"]] = srv._norm_project_path(session["session_id"])
+        # A session started on one client has to show up in the other one's list
+        # without a manual refresh.
+        srv.broadcast_event("session.created", {
+            "session_id": session["session_id"],
+            "project_path": project_path,
+        })
         return {
         "id": rid,
         "result": {
@@ -83,6 +89,10 @@ def handle(ctx, method):
         "messages": messages,
         "message_count": session.get("message_count", 0),
         "cost_summary": cost_summary,
+        # A turn may still be running; the client uses this to decide whether the
+        # transcript is live instead of trusting event traffic that a dropped
+        # socket would have eaten.
+        "running": srv.is_session_running(sid),
         "info": {
         "model": ctx.active_model,
         "skills": srv.load_skills_info(),
@@ -371,6 +381,9 @@ def handle(ctx, method):
                 return {"id": rid, "result": {"accepted": 0}}
             accepted = manager.accept_all_active()
             logger.info(f"[Server] Accepted {accepted} file changes for session {sid}")
+            # The other client keeps its own change list; without this it goes on
+            # showing freshly accepted files as pending.
+            srv.broadcast_event("files.accepted", {"session_id": sid, "accepted": accepted})
             return {"id": rid, "result": {"accepted": accepted}}
         except Exception as e:
             logger.error(f"[Server] session.file_accept failed: {e}")
@@ -453,6 +466,8 @@ def handle(ctx, method):
                     1 for r in manager.query_all_active()
                     if srv._snapshot_record_matches(r, target_abs, actual_project)
                 )
+                # Let the other client drop the file from its change list too.
+                srv.broadcast_event("files.reverted", {"session_id": sid, "relative_path": raw_path, "remaining": remaining})
                 return {"id": rid, "result": {"success": True, "message": result.message, "remaining": remaining}}
         except Exception as e:
             logger.error(f"[Server] session.file_revert failed: {e}")

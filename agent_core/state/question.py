@@ -89,6 +89,10 @@ class QuestionManager:
     
     _instance: Optional["QuestionManager"] = None
     _pending_questions: Optional[Dict[str, Any]] = None
+    # The session that raised the pending question. The manager itself is a
+    # process-wide singleton, so without this the pending question cannot be
+    # attributed to a conversation when a client reconnects and asks for it.
+    _pending_session_id: str = ""
     _answer_event: Optional[asyncio.Event] = None
     _answers: Optional[Dict[str, Any]] = None
     
@@ -99,15 +103,22 @@ class QuestionManager:
         return cls._instance
     
     @classmethod
-    def set_pending_questions(cls, questions_data: Dict[str, Any]) -> None:
+    def set_pending_questions(cls, questions_data: Dict[str, Any], session_id: str = "") -> None:
         """设置待回答的问题"""
         cls._pending_questions = questions_data
+        if session_id:
+            cls._pending_session_id = session_id
         cls._answers = None
         if cls._answer_event:
             cls._answer_event.clear()
         else:
             cls._answer_event = asyncio.Event()
     
+    @classmethod
+    def get_pending_session_id(cls) -> str:
+        """Which session owns the pending question (empty when none)."""
+        return cls._pending_session_id
+
     @classmethod
     def get_pending_questions(cls) -> Optional[Dict[str, Any]]:
         """获取待回答的问题"""
@@ -146,6 +157,7 @@ class QuestionManager:
     def clear(cls) -> None:
         """清除状态"""
         cls._pending_questions = None
+        cls._pending_session_id = ""
         cls._answers = None
         if cls._answer_event:
             cls._answer_event.clear()

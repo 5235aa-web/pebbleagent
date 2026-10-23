@@ -62,6 +62,14 @@ export const useGatewayStore = defineStore('gateway', () => {
   const abortFlushingRef = ref(false)
   const initialLoadDone = ref(false)
   const pendingClarify = ref<{ requestId: string; question: string } | null>(null)
+  // Questions that arrived while a different session was open. Held here until
+  // the user switches to the owning session, instead of being rendered into the
+  // transcript that happens to be on screen.
+  const clarifyBySession = new Map<string, {
+    requestId: string
+    qs: Array<{ title: string; prompt: string; options: Array<{ label: string; detail: string }> }>
+    q: string
+  }>()
   const configStore = useConfigStore()
   let flushTimeoutRef: number | null = null
   let _lastFlushAt = 0
@@ -104,6 +112,18 @@ export const useGatewayStore = defineStore('gateway', () => {
         finalMsgs = []
       }
       streamingMessage.value = null; messages.value = finalMsgs; sessionId.value = sid; sessionIdRef.value = sid
+      // Hand this session the question that arrived while it was not open.
+      const heldQuestion = clarifyBySession.get(sid)
+      if (heldQuestion) {
+        clarifyBySession.delete(sid)
+        messages.value = [...messages.value, {
+          id: nextId(),
+          role: 'agent',
+          content: '',
+          executionOrder: [{ id: `q_${heldQuestion.requestId}`, type: 'question', questionId: heldQuestion.requestId, questions: heldQuestion.qs }],
+        }]
+        pendingClarify.value = { requestId: heldQuestion.requestId, question: heldQuestion.q }
+      }
       setLastSessionId(sid); persistMessages(finalMsgs)
       gateway.request<{ files: Array<{ relative_path: string; status: string; added_lines: number; removed_lines: number; active_count?: number }> }>('session.file_changes', { session_id: sid, project_path: configStore.projectPath }).then(fc => { if (fc?.files?.length) { fileChanges.value = fc.files.map(f => ({ id: `fc_restored_${f.relative_path.replace(/[\\/.]/g, '_')}`, relativePath: f.relative_path, operationType: (f.status === 'created' ? 'create' : f.status === 'deleted' ? 'delete' : 'modify') as 'create' | 'modify' | 'delete', toolName: '', toolId: '', addedLines: f.added_lines, removedLines: f.removed_lines, status: f.status, hunks: undefined, expanded: false, reverted: false, loadingDiff: false, activeCount: f.active_count ?? 1 })) } else { fileChanges.value = [] } }).catch(() => { fileChanges.value = [] })
       const cs = result.cost_summary; usage.value = { sessionCostCny: cs ? cs.total_cost_cny : 0, latestInputTokens: 0, latestOutputTokens: 0, modelContextLimit: 0, callHistory: [] }
@@ -124,8 +144,58 @@ export const useGatewayStore = defineStore('gateway', () => {
     try { const cachedSid = getLastSessionId(); if (cachedSid) { await resumeSession(cachedSid); return }; const recent = await gateway.request<{ session_id?: string }>('session.most_recent'); if (recent?.session_id) { await resumeSession(recent.session_id) } else { await createSessionInternal() } } catch { /* silent */ }
   }
 
+  const STREAM_EVENTS = new Set<string>([
+    'message.delta',
+    'thinking.delta',
+    'tool.start',
+    'tool.complete',
+    'tool.call_streaming',
+    'message.complete',
+    'message.usage',
+  ])
+
+  /**
+   * Write the settled state back to every carrier the UI reads from: the inline
+   * question element inside executionOrder, plus the message-level questionCard.
+   * A card lives in one or the other depending on whether it arrived mid-stream
+   * or was replayed from history, so both are updated.
+   */
+  function markQuestionState(questionId: string, state: 'answered' | 'skipped') {
+    const apply = (order: ExecutionOrderItem[] | undefined, card: Message['questionCard']) => {
+      if (order) {
+        for (const item of order) {
+          if (item.questionId === questionId) item.state = state
+        }
+      }
+      if (card && card.id === questionId) card.state = state
+    }
+    for (const m of messages.value) apply(m.executionOrder, m.questionCard)
+    const s = streamingMessage.value
+    if (s) apply(s.executionOrder, s.questionCard)
+    apply(streamRef.value.order as ExecutionOrderItem[] | undefined, undefined)
+  }
+
   function handleEvent(ev: GatewayEvent) {
     const { type, payload } = ev
+    // Gateway events are broadcast to every socket, so a run started on the
+    // phone also arrives here. Stream frames carry no session of their own
+    // except the one the server now injects, so anything belonging to another
+    // session must be dropped instead of being appended to the open transcript.
+    const evSid = payload.session_id as string | undefined
+    if (evSid && sessionIdRef.value && evSid !== sessionIdRef.value && STREAM_EVENTS.has(type)) {
+      return
+    }
+    // A run started on the other client: this transcript has no open stream, so
+    // create the container the following frames fill. Without it the deltas pile
+    // up in a buffer that never reaches the screen and the reply only appears
+    // after a reload.
+    if (!agentMsgIdRef.value && (type === 'message.delta' || type === 'thinking.delta' || type === 'tool.start')) {
+      const nm: Message = { id: nextId(), role: 'agent', content: '', createdAt: Date.now() }
+      agentMsgIdRef.value = nm.id
+      streamRef.value = emptyStream()
+      streamingMessage.value = nm
+      streaming.value = true
+    }
     switch (type) {
       case 'message.delta': { const t = (payload.text as string) || ''; ratePush((payload.tokens as number) || 0); streamRef.value.content += t; const id = agentMsgIdRef.value; if (id) { const o = streamRef.value.order; const l = o[o.length - 1]; if (l && l.type === 'text') { l.content += t } else { if (l && l.type === 'reasoning' && l.startTime) l.durationMs = Date.now() - l.startTime; o.push({ id: `text_${++streamRef.value._orderSeq}`, type: 'text', content: t, startTime: Date.now() }) }; scheduleStreamFlush() } break }
       case 'thinking.delta': { const t = (payload.text as string) || ''; ratePush((payload.tokens as number) || 0); streamRef.value.reasoning += t; const id = agentMsgIdRef.value; if (id) { const o = streamRef.value.order; const l = o[o.length - 1]; if (l && l.type === 'reasoning') { l.content += t } else { if (l && l.type === 'text' && l.startTime) l.durationMs = Date.now() - l.startTime; o.push({ id: `reasoning_${++streamRef.value._orderSeq}`, type: 'reasoning', content: t, startTime: Date.now() }) }; scheduleStreamFlush() } break }
@@ -161,6 +231,8 @@ export const useGatewayStore = defineStore('gateway', () => {
       }
       case 'prompt.rejected': { const reason = (payload.reason as string) || 'payload rejected'; messages.value.push({ id: nextId(), role: 'agent', content: `**Error:** ${reason}` }); break }
       case 'error': { const em = (payload.message as string) || 'Unknown error'; const id = agentMsgIdRef.value; if (id) { if (streamingMessage.value && streamingMessage.value.id === id) { streamingMessage.value = { ...streamingMessage.value, content: streamingMessage.value.content + `\n\n**Error:** ${em}` } } else { streamingMessage.value = { id, role: 'agent', content: `**Error:** ${em}`, createdAt: Date.now() } } } else { messages.value.push({ id: nextId(), role: 'agent', content: `**Error:** ${em}` }) }; streaming.value = false; agentMsgIdRef.value = null; streamRef.value = emptyStream(); break }
+      case 'files.accepted': { const sid = (payload.session_id as string) || ''; if (!sid || !sessionIdRef.value || sid === sessionIdRef.value) { fileChanges.value = []; window.dispatchEvent(new CustomEvent('gateway:file-change', { detail: { path: '' } })) }; break }
+      case 'files.reverted': { const sid = (payload.session_id as string) || ''; const rp = (payload.relative_path as string) || ''; if (!sid || !sessionIdRef.value || sid === sessionIdRef.value) { fileChanges.value = fileChanges.value.filter(f => f.relativePath !== rp); window.dispatchEvent(new CustomEvent('gateway:file-change', { detail: { path: rp } })) }; break }
       case 'todos.update': { window.dispatchEvent(new CustomEvent('gateway-todos', { detail: payload })); break }
       case 'clarify.request': { const ri = (payload.request_id as string) || ''; const q = (payload.question as string) || ''; const ch = (payload.choices as string[]) || []; // console.log('[gateway] clarify.request q=',q.slice(0,50)) // 调试：如有问题请开启
       // 多问题支持：优先消费完整 questions 数组；缺失时回退单问题字段（旧后端兼容）
@@ -168,6 +240,12 @@ export const useGatewayStore = defineStore('gateway', () => {
       const qs = qsRaw.length > 0
         ? qsRaw.map(x => ({ title: String(x.title || 'QUESTION'), prompt: String(x.prompt || ''), options: (x.options || []).map(c => typeof c === 'string' ? { label: c, detail: '' } : { label: String(c.label || ''), detail: String(c.detail || '') }) }))
         : [{ title: 'QUESTION', prompt: q, options: ch.map(c => ({ label: c, detail: '' })) }];
+      // A question raised by another session must not hijack this transcript.
+      const evSid = (payload.session_id as string) || ''
+      if (evSid && sessionIdRef.value && evSid !== sessionIdRef.value) {
+        clarifyBySession.set(evSid, { requestId: ri, qs, q: q || qs[0]?.prompt || '' })
+        break
+      }
       const smId = agentMsgIdRef.value;
       if (smId && streamingMessage.value) {
         // 内联渲染：提问元素插入 order 尾部（此刻 order 尾部恰是 clarify 工具卡），
@@ -183,8 +261,39 @@ export const useGatewayStore = defineStore('gateway', () => {
       playCompletionSound() // AI 提问提醒：与回复完成提示音共用音效设置（off 时静默）
       break }
       case 'permission.request': { window.dispatchEvent(new CustomEvent('gateway:permission-request', { detail: { payload } })); break }
+      // Settled on another client (the phone): clear the sheet here too.
+      case 'permission.resolved': { window.dispatchEvent(new CustomEvent('gateway:permission-resolved', { detail: { payload } })); break }
+      case 'clarify.resolved': { const ri = (payload.request_id as string) || ''; if (ri) { markQuestionState(ri, 'answered'); if (pendingClarify.value) pendingClarify.value = null; for (const [k, v] of clarifyBySession) { if (v.requestId === ri) clarifyBySession.delete(k) } }; break }
       case 'message.usage': { const cc = (payload.session_cost_cny as number) || 0; const it = (payload.latest_input_tokens as number) || 0; const ot = (payload.latest_output_tokens as number) || 0; const cl = (payload.model_context_limit as number) || 0; const pp = (payload.period as string) || null; const tc = payload.this_call as Record<string, unknown> | undefined; const ce = tc ? { model: (tc.model as string) || (payload.model as string) || 'unknown', inputTokens: (tc.input_tokens as number) || it, outputTokens: (tc.output_tokens as number) || ot, cacheHitTokens: (tc.cache_hit_tokens as number) || 0, costCny: (tc.total_cost as number) || (tc.cost_cny as number) || 0, period: (tc.period as string) || pp } : undefined; usage.value = { sessionCostCny: cc, latestInputTokens: it, latestOutputTokens: ot, modelContextLimit: cl, period: pp, callHistory: ce ? [...(usage.value.callHistory || []), ce] : usage.value.callHistory }; break }
-      case 'user_message.saved': { const si = (payload.message_id as number) || 0; if (si) { for (let i = messages.value.length - 1; i >= 0; i--) { if (messages.value[i].role === 'user' && !messages.value[i].messageId) { messages.value[i] = { ...messages.value[i], messageId: si }; const sid = sessionIdRef.value; if (sid) persistMessages(messages.value); break } } }; const ssid = (payload.session_id as string) || sessionIdRef.value || ''; if (ssid) window.dispatchEvent(new CustomEvent('gateway:user-message-saved', { detail: { sessionId: ssid } })); break }
+      case 'user_message.saved': {
+        const msgSid = (payload.session_id as string) || ''
+        if (msgSid && sessionIdRef.value && msgSid !== sessionIdRef.value) break
+        const si = (payload.message_id as number) || 0
+        const txt = (payload.text as string) || ''
+        // This client sent it: stamp the id onto the row it already rendered.
+        let stamped = false
+        if (si) {
+          for (let i = messages.value.length - 1; i >= 0; i--) {
+            if (messages.value[i].role === 'user' && !messages.value[i].messageId) {
+              messages.value[i] = { ...messages.value[i], messageId: si }
+              stamped = true
+              break
+            }
+          }
+        }
+        // The other client sent it: this transcript has no such row, so add it.
+        if (!stamped && txt) {
+          const at = (payload.created_at as number) || 0
+          messages.value.push({ id: nextId(), role: 'user', content: txt, messageId: si || undefined, createdAt: at ? Math.round(at * 1000) : Date.now() })
+        }
+        persistMessages(messages.value)
+        const ssid = msgSid || sessionIdRef.value || ''
+        if (ssid) window.dispatchEvent(new CustomEvent('gateway:user-message-saved', { detail: { sessionId: ssid } }))
+        break
+      }
+      // A session started on another client: add it to the list here too, so the
+      // sidebar does not go stale until a reload.
+      case 'session.created': { const sid2 = (payload.session_id as string) || ''; if (sid2) window.dispatchEvent(new CustomEvent('gateway:session-created', { detail: { sessionId: sid2 } })); break }
       case 'session.updated': { const title = payload.title as string; const sid = (payload.session_id as string) || ''; if (title && sid) window.dispatchEvent(new CustomEvent('gateway:session-updated', { detail: { sessionId: sid, title } })); break }
       case 'mcp.state_changed': { window.dispatchEvent(new CustomEvent('gateway:mcp-state', { detail: { payload } })); break }
       case 'gateway.ready': { break }

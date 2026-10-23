@@ -41,6 +41,25 @@ def handle(ctx, method):
         custom_model = agent_cfg.get("custom_model") or agent_cfg.get("model_source")
         if custom_model and custom_model not in ("inherit", "custom"):
             current_model = custom_model
+        # Per-model pricing, so the picker can show cost inline instead of
+        # forcing a second round trip (and a second source of truth).
+        pricing_out = {}
+        currency = "CNY"
+        try:
+            import json
+            pf = srv._DATA_DIR / "model_pricing.json"
+            if pf.exists():
+                raw = json.loads(pf.read_text(encoding="utf-8"))
+                currency = raw.get("default_currency") or "CNY"
+                for name, entry in (raw.get("models") or {}).items():
+                    p = entry.get("pricing") or {}
+                    pricing_out[name] = {
+                        "input": p.get("input_per_million"),
+                        "cache_hit": p.get("cache_hit_per_million"),
+                        "output": p.get("output_per_million"),
+                    }
+        except Exception as e:
+            logger.warning(f"[Server] Failed to read model pricing: {e}")
         return {
         "id": rid,
         "result": {
@@ -48,6 +67,8 @@ def handle(ctx, method):
         "provider": active_provider.get("provider", "") if active_provider else "",
         "providers": providers_out,
         "activeProviderIndex": active_idx,
+        "pricing": pricing_out,
+        "currency": currency,
         }
         }
 
@@ -68,6 +89,7 @@ def handle(ctx, method):
                 "max_tokens": None,
                 }
                 srv._write_agent_model_config(agent_cfg)
+                srv.broadcast_event("model.changed", {"model": model, "provider_index": idx})
         return {"id": rid, "result": {"ok": True}}
 
     if method == "model.provider.save":
@@ -151,6 +173,7 @@ def handle(ctx, method):
             "max_tokens": None,
             }
             srv._write_agent_model_config(agent_cfg)
+            srv.broadcast_event("model.changed", {"model": model, "provider_index": idx})
         return {"id": rid, "result": {"ok": True}}
 
     return None
