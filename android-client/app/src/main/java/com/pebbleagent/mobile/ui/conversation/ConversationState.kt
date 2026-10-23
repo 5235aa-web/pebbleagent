@@ -531,6 +531,13 @@ fun ChatMessage.toItems(index: Int = 0): List<MessageItem> {
     val out = mutableListOf<MessageItem>()
     val isTool = role == "tool"
 
+    // A standalone tool row is the API's record of a tool result, not a UI row.
+    // The assistant row's execution order already carries every tool card in
+    // position, and the tool rows sort ahead of that assistant row, so rendering
+    // them as well both duplicated each tool and floated the copies to the top
+    // of the turn. The desktop skips them for the same reason.
+    if (role == "tool") return emptyList()
+
     // An assistant row stores the whole interleaved sequence — reasoning, text and
     // tool calls — in `tool_calls`. Rendering only `content` is what flattened a
     // multi-step turn into one block and pushed every trace to the end; the
@@ -575,17 +582,31 @@ fun ChatMessage.toItems(index: Int = 0): List<MessageItem> {
                         }
                     }
                     "tool", "tool_execution" -> {
-                        val tid = el.optString("tool_execution_id").ifBlank { el.optString("tool_call_id") }
+                        // The gateway stores the card's payload under `tool_info`
+                        // (`name` / `input` / `output` / `duration` / `status`);
+                        // the flat spellings only exist in older records, and
+                        // reading them alone left every card titled "tool" with
+                        // empty arguments and result.
+                        val info = el.optJSONObject("tool_info")
+                        val tid = el.optString("tool_execution_id")
+                            .ifBlank { el.optString("tool_call_id") }
+                            .ifBlank { info?.optString("id").orEmpty() }
+                        val name = info?.optString("name").orEmpty()
+                            .ifBlank { info?.optString("toolName").orEmpty() }
+                            .ifBlank { el.optString("tool_name") }
+                            .ifBlank { el.optString("name") }
+                        val status = info?.optString("status").orEmpty()
                         out.add(
                             MessageItem(
                                 key = tid.ifBlank { "m$id-$index-x$seq" },
                                 role = ItemRole.Tool,
-                                toolName = el.optString("tool_name").ifBlank { el.optString("name") },
-                                toolArgs = el.optString("input"),
-                                toolResult = el.optString("output"),
-                                toolRunning = false,
-                                durationS = el.optDouble("duration", 0.0),
-                                error = el.optString("error").takeIf { it.isNotBlank() && it != "null" },
+                                toolName = name,
+                                toolArgs = info?.optString("input").orEmpty().ifBlank { el.optString("input") },
+                                toolResult = info?.optString("output").orEmpty().ifBlank { el.optString("output") },
+                                toolRunning = status == "running" || status == "streaming",
+                                durationS = info?.optDouble("duration", 0.0) ?: el.optDouble("duration", 0.0),
+                                error = (info?.optString("error").orEmpty()).ifBlank { el.optString("error") }
+                                    .takeIf { it.isNotBlank() && it != "null" },
                                 at = createdAt,
                             )
                         )
