@@ -33,6 +33,13 @@
 
 <img src="assets/screenshot-1.png" alt="PebbleAgent desktop interface" width="1000">
 
+<p>
+  <img src="assets/Screenshot_20261023_133317_com_pebbleagent_mobile_MainActivity.jpg" alt="PebbleAgent Android client" width="300">
+  <img src="assets/Screenshot_20261023_134844_com_pebbleagent_mobile_MainActivity.jpg" alt="PebbleAgent Android client, conversation view" width="300">
+</p>
+
+<p><sub>The Android client is optional: the two screenshots above show the same gateway reached from a phone.</sub></p>
+
 ## Architecture
 
 ```mermaid

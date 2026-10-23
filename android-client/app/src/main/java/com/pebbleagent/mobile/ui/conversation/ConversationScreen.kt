@@ -9,6 +9,7 @@ import androidx.compose.animation.core.animateFloat
 import androidx.compose.animation.core.infiniteRepeatable
 import androidx.compose.animation.core.rememberInfiniteTransition
 import androidx.compose.animation.core.tween
+import androidx.compose.foundation.interaction.DragInteraction
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.BoxWithConstraints
@@ -52,6 +53,7 @@ import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.rememberCoroutineScope
 import androidx.compose.runtime.setValue
+import androidx.compose.runtime.snapshotFlow
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
@@ -124,11 +126,22 @@ fun ConversationScreen(
         }
     }
 
-    // Follow the tail while the view is already at the bottom. `canScrollForward`
-    // is the reliable test here: comparing the last visible index against the item
-    // count stops matching as soon as the final message grows taller than the
-    // viewport, which is exactly when following matters.
-    val followTail by remember { derivedStateOf { !listState.canScrollForward } }
+    // Following is a mode, not a measurement. Measuring alone cannot work here:
+    // the trailing spacer keeps the last visible index below the item count, and
+    // `canScrollForward` re-opens the moment a token is appended, so a
+    // measurement-based check switched itself off one frame after each follow.
+    // The mode is turned off by the user's own drag and back on at the bottom.
+    var followTail by remember { mutableStateOf(true) }
+    LaunchedEffect(listState) {
+        listState.interactionSource.interactions.collect { interaction ->
+            if (interaction is DragInteraction.Start) followTail = false
+        }
+    }
+    LaunchedEffect(listState) {
+        snapshotFlow { listState.canScrollForward }.collect { canForward ->
+            if (!canForward) followTail = true
+        }
+    }
     LaunchedEffect(state.items.size, state.items.lastOrNull()?.text?.length) {
         if (state.items.isNotEmpty() && followTail) {
             // Index the trailing spacer, not the last message: scrolling a tall

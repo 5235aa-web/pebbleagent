@@ -95,12 +95,24 @@ an explicit `optString` / `optInt` with a default. Concurrency is coroutines plu
 ### Streaming transcript
 
 1. `ConversationState.send` issues `prompt.submit` and marks `streaming`.
-2. `message.delta` appends to the trailing assistant item; `thinking.delta` to a collapsed
-   thinking item; `tool.start` inserts a running tool card, `tool.complete` closes it with a
-   duration or an error tint.
-3. `message.complete` replaces the accumulated text with the authoritative `text` field, so
-   incremental and final content cannot drift.
-4. `session.interrupt` stops the run.
+2. `message.delta` appends to the trailing assistant item; `thinking.delta` opens a thinking
+   item that starts expanded, so reasoning is readable while it arrives.
+3. Each thinking block measures itself: the clock starts when the block is created and is
+   stamped when the first visible token arrives, when a tool call starts, or at
+   `message.complete`, whichever comes first. The header renders it the way the desktop does,
+   milliseconds below one second and one decimal above, and falls back to the character count
+   for replayed history that carries no stored duration.
+4. `tool.start` inserts a running tool card, `tool.complete` closes it with a duration or an
+   error tint.
+5. `message.complete` replaces the accumulated text with the authoritative `text` field, clears
+   `streaming` so the composer returns to send mode, and resets the block anchors.
+6. Following is a mode, not a viewport measurement: it starts engaged, the user's own drag
+   (`DragInteraction.Start`) disengages it, and reaching the bottom (`canScrollForward` false)
+   or pressing the jump-to-latest button engages it again. While engaged it scrolls the
+   trailing spacer with an unanimated `scrollToItem`. A floating circle button appears only
+   while the follow is disengaged and animates back to the tail.
+7. The composer's top edge carries a 2 dp sweep bar while `streaming`: a 38 % accent band over a
+   12 % accent track, 1.5 s ease-in-out loop, replaced by the hairline divider when idle.
 
 ### Approval
 
@@ -141,6 +153,8 @@ an explicit `optString` / `optInt` with a default. Concurrency is coroutines plu
 
 - The app bar renders `agent · model`, with a live dot tinted while streaming and the agent half
   supplied by `agent.list`. Tapping it opens the model picker.
+- The title comes from `session.resume`'s `info.title` and is replaced by `session.updated` when
+  the gateway finishes naming a session.
 - The app bar's More menu carries Rename (`session.title`) and Delete (`session.delete`); delete
   is confirmed first, then forgets the cached state and leaves the route.
 - A `TimestampDivider` is emitted before the first message, across midnight, and after a gap of
