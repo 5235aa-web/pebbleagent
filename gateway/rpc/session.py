@@ -28,6 +28,7 @@ def handle(ctx, method):
         "result": {
         "session_id": session["session_id"],
         "info": {
+        "title": session.get("title", ""),
         "model": ctx.active_model,
         "skills": srv.load_skills_info(),
         "tools": srv.load_tools_info(),
@@ -94,6 +95,7 @@ def handle(ctx, method):
         # socket would have eaten.
         "running": srv.is_session_running(sid),
         "info": {
+        "title": session.get("title", ""),
         "model": ctx.active_model,
         "skills": srv.load_skills_info(),
         "tools": srv.load_tools_info(),

@@ -1,0 +1,1894 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>PebbleAgent Mobile</title>
+<style>
+:root{
+  --primary:#FFD700;
+  --accent:#FFBF00;
+  --border-gold:#CD7F32;
+  --text:#FFF8DC;
+  --muted:#CC9B1F;
+  --label:#DAA520;
+  --glow-start:rgba(255,215,0,.10);
+  --glow-end:rgba(205,127,50,.04);
+  --bg-deep:#0d0d0d;
+  --bg-surface:#111111;
+  --bg-card:#1a1a1a;
+  --bg-hover:#222222;
+  --bg-input:#0a0a0a;
+  --border-subtle:#2a2a2a;
+  --border-hover:#3a3a3a;
+  --text-body:#d4d4d4;
+  --success:#4caf50;
+  --error:#ef5350;
+  --warn:#ffa726;
+  --info:#44aaff;
+  --font-mono:'JetBrains Mono','Fira Code','Consolas',ui-monospace,monospace;
+  --spring:cubic-bezier(.32,.72,0,1);
+}
+*{box-sizing:border-box;margin:0;padding:0;-webkit-tap-highlight-color:transparent}
+html,body{background:#070707;color:var(--text);font-family:var(--font-mono);font-size:13px;line-height:1.5}
+body{
+  min-height:100vh;
+  padding:44px 28px 72px;
+  background:
+    radial-gradient(900px 520px at 12% -8%,rgba(255,215,0,.06),transparent 62%),
+    radial-gradient(760px 460px at 88% 108%,rgba(205,127,50,.05),transparent 60%),
+    #070707;
+}
+
+/* ===== stage ===== */
+.stage{max-width:1560px;margin:0 auto}
+.stage-head{display:flex;align-items:flex-end;justify-content:space-between;gap:24px;flex-wrap:wrap;margin-bottom:34px;padding-bottom:20px;border-bottom:1px solid var(--border-subtle)}
+.brand{display:flex;align-items:center;gap:12px}
+.brand-mark{width:34px;height:34px;border-radius:8px;border:1px solid var(--border-gold);background:linear-gradient(160deg,rgba(255,215,0,.14),rgba(205,127,50,.04));display:grid;place-items:center;color:var(--accent);box-shadow:0 0 0 1px rgba(255,191,0,.06) inset,0 6px 18px rgba(0,0,0,.5)}
+.brand-txt{display:flex;flex-direction:column;gap:2px}
+.brand-txt b{font-size:15px;letter-spacing:.4px;color:var(--text);font-weight:600}
+.brand-txt span{font-size:10.5px;color:var(--muted);letter-spacing:1.6px;text-transform:uppercase}
+.stage-meta{display:flex;gap:8px;flex-wrap:wrap}
+.chip{border:1px solid var(--border-subtle);border-radius:999px;padding:4px 11px;font-size:10.5px;color:var(--muted);background:var(--bg-surface);letter-spacing:.3px}
+.chip-dot{display:inline-flex;align-items:center;gap:6px;border-color:rgba(76,175,80,.28);color:#7fd07f;background:rgba(76,175,80,.07)}
+.chip-dot i{width:5px;height:5px;border-radius:50%;background:var(--success);box-shadow:0 0 6px var(--success)}
+
+/* ===== screens grid ===== */
+.screens{display:flex;gap:38px;flex-wrap:wrap;justify-content:center;align-items:flex-start}
+figure.phone{display:flex;flex-direction:column;align-items:center;gap:14px}
+.frame{
+  width:393px;height:851px;border-radius:46px;
+  padding:3px;
+  background:linear-gradient(170deg,#2c2c2c,#141414 42%,#242424);
+  box-shadow:0 30px 70px rgba(0,0,0,.72),0 0 0 1px rgba(255,255,255,.03) inset;
+  position:relative;
+}
+.frame::after{content:"";position:absolute;inset:3px;border-radius:43px;box-shadow:0 0 0 1px rgba(0,0,0,.9) inset;pointer-events:none}
+.screen{
+  position:relative;width:100%;height:100%;border-radius:43px;overflow:hidden;
+  background:var(--bg-deep);
+  display:flex;flex-direction:column;
+  isolation:isolate;
+}
+.screen::before{
+  content:"";position:absolute;inset:0;z-index:0;pointer-events:none;
+  background:radial-gradient(520px 220px at 50% -10%,rgba(255,215,0,.055),transparent 70%);
+}
+figcaption{font-size:11px;color:var(--muted);letter-spacing:1.4px;text-transform:uppercase}
+
+/* ===== status bar ===== */
+.statusbar{
+  position:relative;z-index:3;height:34px;flex:0 0 34px;
+  display:flex;align-items:center;justify-content:space-between;
+  padding:0 22px;font-size:11px;color:var(--text-body);letter-spacing:.4px;
+}
+.status-right{display:flex;align-items:center;gap:5px}
+.sig{display:flex;align-items:flex-end;gap:1.5px;height:9px}
+.sig i{width:2.5px;background:var(--text-body);border-radius:1px}
+.sig i:nth-child(1){height:3px}
+.sig i:nth-child(2){height:5px}
+.sig i:nth-child(3){height:7px}
+.sig i:nth-child(4){height:9px;opacity:.32}
+.batt{width:20px;height:10px;border:1px solid var(--text-body);border-radius:3px;position:relative;padding:1.5px}
+.batt::after{content:"";position:absolute;right:-3px;top:3px;width:2px;height:4px;background:var(--text-body);border-radius:0 1px 1px 0}
+.batt i{display:block;height:100%;width:64%;background:var(--text-body);border-radius:1px}
+
+/* ===== app bar ===== */
+.appbar{
+  position:relative;z-index:3;flex:0 0 auto;
+  display:flex;align-items:center;gap:10px;
+  padding:6px 16px 12px;
+  border-bottom:1px solid var(--border-subtle);
+  background:linear-gradient(180deg,rgba(17,17,17,.92),rgba(13,13,13,.72));
+  backdrop-filter:blur(8px);
+}
+.appbar-title{flex:1;min-width:0;display:flex;flex-direction:column;gap:1px}
+.appbar-title b{font-size:13.5px;font-weight:600;color:var(--text);letter-spacing:.2px;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+.appbar-title span{font-size:10px;color:var(--muted);letter-spacing:.5px;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+.iconbtn{
+  width:32px;height:32px;flex:0 0 32px;border:1px solid var(--border-subtle);border-radius:9px;
+  background:var(--bg-surface);color:var(--text-body);
+  display:grid;place-items:center;cursor:pointer;transition:all .15s var(--spring);
+}
+.iconbtn:hover{background:var(--bg-hover);border-color:var(--border-hover);color:var(--text)}
+.iconbtn.on{color:var(--accent);border-color:rgba(255,191,0,.3);background:rgba(255,191,0,.08)}
+.appbar-leading{display:flex;align-items:center;gap:9px}
+.amodel{display:inline-flex;align-items:center;gap:5px;align-self:flex-start;margin-top:2px;padding:2px 7px 2px 6px;border-radius:999px;border:1px solid rgba(255,191,0,.22);background:rgba(255,191,0,.07);color:var(--accent);font-family:var(--font-mono);font-size:9.5px;letter-spacing:.4px;cursor:pointer;transition:all .14s var(--spring)}
+.amodel svg{opacity:.65;flex:0 0 auto}
+.amodel:active{background:rgba(255,191,0,.16);border-color:rgba(255,191,0,.4)}
+.dot-live{width:6px;height:6px;border-radius:50%;background:var(--success);box-shadow:0 0 7px rgba(76,175,80,.9);flex:0 0 6px}
+
+/* ===== generic body ===== */
+.body{position:relative;z-index:2;flex:1;min-height:0;display:flex;flex-direction:column;overflow:hidden}
+.scroll{flex:1;min-height:0;overflow-y:auto;overflow-x:hidden;padding:14px 16px 18px}
+.scroll::-webkit-scrollbar{width:0}
+
+.sec-label{font-size:9.5px;letter-spacing:2px;color:var(--muted);text-transform:uppercase;padding:14px 4px 7px;display:flex;align-items:center;gap:8px}
+.sec-label::after{content:"";flex:1;height:1px;background:linear-gradient(90deg,var(--border-subtle),transparent)}
+
+/* ===== search ===== */
+.search{display:flex;align-items:center;gap:8px;height:36px;padding:0 11px;border:1px solid var(--border-subtle);border-radius:9px;background:var(--bg-surface);color:var(--muted);font-size:11.5px}
+.search svg{flex:0 0 13px;opacity:.7}
+
+/* ===== session rows ===== */
+.sess{
+  display:flex;align-items:flex-start;gap:10px;
+  padding:11px 11px;border-radius:10px;border:1px solid transparent;
+  cursor:pointer;transition:all .14s var(--spring);margin-bottom:2px;
+}
+.sess:hover{background:var(--bg-surface);border-color:var(--border-subtle)}
+.sess.active{background:linear-gradient(100deg,rgba(255,191,0,.10),rgba(255,191,0,.03));border-color:rgba(255,191,0,.26)}
+.sess.active .sess-title{color:var(--accent)}
+.sess-bar{width:2px;flex:0 0 2px;align-self:stretch;border-radius:2px;background:transparent}
+.sess.active .sess-bar{background:var(--accent);box-shadow:0 0 8px rgba(255,191,0,.7)}
+.sess-main{flex:1;min-width:0;display:flex;flex-direction:column;gap:3px}
+.sess-title{font-size:12.5px;color:var(--text);font-weight:500;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;letter-spacing:.1px}
+.sess-sub{font-size:10px;color:var(--muted);display:flex;align-items:center;gap:6px;letter-spacing:.2px}
+.sess-sub em{font-style:normal;width:1px;height:8px;background:var(--border-subtle)}
+.sess-side{display:flex;flex-direction:column;align-items:flex-end;gap:5px;flex:0 0 auto}
+.sess-time{font-size:9.5px;color:#6f6f6f}
+.badge-unread{min-width:16px;height:16px;padding:0 4px;border-radius:8px;background:rgba(255,191,0,.16);border:1px solid rgba(255,191,0,.34);color:var(--accent);font-size:9px;display:grid;place-items:center;font-weight:600}
+.badge-wait{display:inline-flex;align-items:center;gap:4px;padding:2px 6px;border-radius:5px;background:rgba(239,83,80,.12);border:1px solid rgba(239,83,80,.34);color:#ff8a88;font-size:9px;letter-spacing:.3px}
+
+.fab{
+  position:absolute;right:18px;bottom:78px;z-index:6;
+  width:50px;height:50px;border-radius:16px;border:1px solid rgba(255,191,0,.34);
+  background:linear-gradient(150deg,rgba(255,215,0,.20),rgba(205,127,50,.10));
+  color:var(--accent);display:grid;place-items:center;cursor:pointer;
+  box-shadow:0 12px 28px rgba(0,0,0,.6),0 0 0 1px rgba(255,191,0,.10) inset;
+}
+
+/* ===== bottom nav ===== */
+.navbar{
+  position:relative;z-index:5;flex:0 0 auto;
+  display:grid;grid-template-columns:repeat(5,1fr);
+  border-top:1px solid var(--border-subtle);
+  background:rgba(13,13,13,.94);backdrop-filter:blur(12px);
+  padding:7px 6px calc(7px + env(safe-area-inset-bottom));
+}
+.nav{display:flex;flex-direction:column;align-items:center;gap:3px;padding:5px 0 4px;color:#6f6f6f;cursor:pointer;position:relative;transition:color .15s}
+.nav svg{width:19px;height:19px}
+.nav span{font-size:9px;letter-spacing:.5px}
+.nav.on{color:var(--accent)}
+.nav.on::before{content:"";position:absolute;top:-8px;left:50%;transform:translateX(-50%);width:20px;height:2px;border-radius:2px;background:var(--accent);box-shadow:0 0 9px rgba(255,191,0,.85)}
+.nav .cnt{position:absolute;top:1px;right:calc(50% - 19px);min-width:14px;height:14px;padding:0 3px;border-radius:7px;background:var(--error);color:#fff;font-size:8.5px;display:grid;place-items:center;font-weight:600}
+
+/* ===== chat ===== */
+.chat{padding:16px 14px 10px;display:flex;flex-direction:column;gap:13px}
+.tstamp{align-self:center;font-size:9px;color:#5f5f5f;letter-spacing:1.4px;padding:2px 0 4px}
+.msg-user{
+  align-self:flex-end;max-width:84%;
+  background:linear-gradient(160deg,rgba(255,191,0,.15),rgba(255,191,0,.07));
+  border:1px solid rgba(255,191,0,.24);border-radius:14px 14px 4px 14px;
+  padding:9px 12px;font-size:12px;line-height:1.62;color:var(--text);
+}
+.think{
+  align-self:flex-start;width:100%;border:1px solid var(--border-subtle);border-radius:10px;
+  background:var(--bg-surface);overflow:hidden;
+}
+.think-h{display:flex;align-items:center;gap:7px;padding:8px 11px;font-size:10.5px;color:var(--muted);letter-spacing:.3px}
+.think-h svg{flex:0 0 12px;opacity:.75}
+.think-h .arw{margin-left:auto;opacity:.5}
+.think-h b{font-weight:500;color:#b9b9b9}
+
+.tool{
+  align-self:flex-start;width:100%;
+  border:1px solid var(--border-subtle);border-radius:10px;background:var(--bg-card);
+  overflow:hidden;
+}
+.tool-h{display:flex;align-items:center;gap:8px;padding:9px 11px}
+.tool-ico{width:22px;height:22px;flex:0 0 22px;border-radius:6px;display:grid;place-items:center;background:rgba(255,191,0,.10);border:1px solid rgba(255,191,0,.22);color:var(--accent)}
+.tool-ico.ok{background:rgba(76,175,80,.10);border-color:rgba(76,175,80,.26);color:#6fce73}
+.tool-ico.run{background:rgba(68,170,255,.10);border-color:rgba(68,170,255,.26);color:#6cb8ff}
+.tool-main{flex:1;min-width:0;display:flex;flex-direction:column;gap:1px}
+.tool-name{font-size:11.5px;color:var(--text);white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+.tool-meta{font-size:9.5px;color:var(--muted);letter-spacing:.2px}
+.tool-right{display:flex;align-items:center;gap:6px;flex:0 0 auto}
+.tool-dur{font-size:9.5px;color:#6f6f6f}
+.spin{width:11px;height:11px;border-radius:50%;border:1.5px solid rgba(68,170,255,.25);border-top-color:#6cb8ff;animation:spin .8s linear infinite}
+@keyframes spin{to{transform:rotate(360deg)}}
+
+.md{align-self:flex-start;max-width:100%;font-size:12.5px;line-height:1.72;color:var(--text-body)}
+.md p{margin:0 0 8px}
+.md p:last-child{margin-bottom:0}
+.md code{font-family:var(--font-mono);font-size:11.5px;background:rgba(255,191,0,.10);border:1px solid rgba(255,191,0,.16);border-radius:4px;padding:1px 4px;color:var(--accent)}
+.code{
+  margin-top:9px;border:1px solid var(--border-subtle);border-radius:9px;overflow:hidden;background:#080808;
+}
+.code-h{display:flex;align-items:center;justify-content:space-between;padding:6px 10px;border-bottom:1px solid var(--border-subtle);background:var(--bg-surface);font-size:9.5px;color:var(--muted);letter-spacing:.6px}
+.code pre{padding:10px 11px;font-size:11px;line-height:1.62;overflow-x:auto;color:#cfcfcf}
+.code pre::-webkit-scrollbar{height:0}
+.kw{color:#ff9d5c}
+.fn{color:#8fd0ff}
+.st{color:#a8d98a}
+.cm{color:#5f5f5f;font-style:italic}
+.cursor{display:inline-block;width:6px;height:12px;background:var(--accent);vertical-align:-2px;animation:blink 1.1s steps(2) infinite;margin-left:2px}
+@keyframes blink{50%{opacity:0}}
+
+/* ===== composer ===== */
+.composer{
+  position:relative;z-index:5;flex:0 0 auto;
+  border-top:1px solid var(--border-subtle);
+  background:rgba(13,13,13,.96);backdrop-filter:blur(12px);
+  padding:9px 12px calc(9px + env(safe-area-inset-bottom));
+}
+.comp-row{display:flex;align-items:flex-end;gap:7px}
+.comp-box{
+  flex:1;min-height:38px;display:flex;align-items:center;gap:8px;
+  border:1px solid var(--border-subtle);border-radius:12px;background:var(--bg-input);
+  padding:8px 10px;
+}
+.comp-box .ph{font-size:11.5px;color:#5f5f5f;flex:1}
+.comp-tools{display:flex;gap:5px;flex:0 0 auto}
+.tool-mini{width:26px;height:26px;border-radius:7px;border:1px solid transparent;background:transparent;color:#7a7a7a;display:grid;place-items:center;cursor:pointer}
+.tool-mini:hover{background:var(--bg-hover);color:var(--text-body)}
+.send{
+  width:38px;height:38px;flex:0 0 38px;border-radius:12px;border:1px solid rgba(255,191,0,.3);
+  background:linear-gradient(150deg,rgba(255,215,0,.20),rgba(205,127,50,.10));
+  color:var(--accent);display:grid;place-items:center;cursor:pointer;
+}
+.send.stop{border-color:rgba(239,83,80,.34);background:rgba(239,83,80,.12);color:#ff8a88}
+.comp-progress{height:2px;border-radius:2px;background:rgba(255,191,0,.12);overflow:hidden;margin-bottom:7px}
+.comp-progress i{display:block;height:100%;width:38%;background:linear-gradient(90deg,transparent,var(--accent),transparent);animation:sweep 1.5s ease-in-out infinite}
+@keyframes sweep{0%{transform:translateX(-100%)}100%{transform:translateX(360%)}}
+
+/* ===== permission sheet ===== */
+.veil{position:absolute;inset:0;z-index:8;background:rgba(4,4,4,.74);backdrop-filter:blur(3px)}
+.sheet{
+  position:absolute;left:0;right:0;bottom:0;z-index:9;
+  border-radius:20px 20px 0 0;
+  border-top:1px solid rgba(239,83,80,.24);
+  background:linear-gradient(180deg,#161616,#0f0f0f 42%);
+  box-shadow:0 -22px 60px rgba(0,0,0,.8);
+  padding:9px 16px calc(16px + env(safe-area-inset-bottom));
+  display:flex;flex-direction:column;gap:13px;
+  animation:sheet-in .32s var(--spring);
+}
+@keyframes sheet-in{from{transform:translateY(28px);opacity:.6}to{transform:translateY(0);opacity:1}}
+.grab{width:36px;height:3.5px;border-radius:2px;background:#3a3a3a;margin:0 auto 4px}
+.sheet-h{display:flex;align-items:center;gap:9px}
+.shield{width:30px;height:30px;flex:0 0 30px;border-radius:9px;display:grid;place-items:center;background:rgba(239,83,80,.12);border:1px solid rgba(239,83,80,.3);color:#ff8a88}
+.sheet-h-txt{flex:1;display:flex;flex-direction:column;gap:1px}
+.sheet-h-txt b{font-size:13px;color:var(--text)}
+.sheet-h-txt span{font-size:9.5px;color:var(--muted);letter-spacing:1px;text-transform:uppercase}
+.risk{padding:3px 8px;border-radius:6px;font-size:9px;letter-spacing:.6px;background:rgba(239,83,80,.13);border:1px solid rgba(239,83,80,.34);color:#ff8a88;text-transform:uppercase}
+
+.kv{display:flex;flex-direction:column;gap:9px;border:1px solid var(--border-subtle);border-radius:11px;background:var(--bg-surface);padding:11px 12px}
+.kv-row{display:flex;flex-direction:column;gap:2px}
+.kv-k{font-size:9px;color:#6f6f6f;letter-spacing:1.2px;text-transform:uppercase}
+.kv-v{font-size:11.5px;color:var(--text-body);word-break:break-all;line-height:1.5}
+.kv-v.path{color:var(--accent)}
+.kv-v.reason{color:#b9b9b9}
+
+.rem{display:flex;flex-direction:column;gap:7px}
+.rem-lbl{font-size:9px;color:#6f6f6f;letter-spacing:1.2px;text-transform:uppercase}
+.chips{display:flex;gap:7px}
+.chip-o{flex:1;text-align:center;padding:7px 0;border-radius:8px;border:1px solid var(--border-subtle);background:var(--bg-surface);color:var(--muted);font-size:10.5px;cursor:pointer;transition:all .14s}
+.chip-o:hover{border-color:var(--border-hover);color:var(--text-body)}
+.chip-o.on{border-color:rgba(255,191,0,.4);background:rgba(255,191,0,.10);color:var(--accent)}
+
+.acts{display:flex;gap:9px}
+.btn{
+  flex:1;height:42px;border-radius:11px;border:1px solid var(--border-subtle);
+  background:var(--bg-surface);color:var(--text-body);font-family:var(--font-mono);
+  font-size:12px;cursor:pointer;display:grid;place-items:center;transition:all .14s var(--spring);
+}
+.btn:hover{background:var(--bg-hover);border-color:var(--border-hover);color:var(--text)}
+.btn-deny{border-color:rgba(239,83,80,.3);background:rgba(239,83,80,.08);color:#ff8a88}
+.btn-deny:hover{background:rgba(239,83,80,.16);border-color:rgba(239,83,80,.5)}
+.btn-allow{border-color:rgba(255,191,0,.34);background:linear-gradient(150deg,rgba(255,215,0,.18),rgba(205,127,50,.09));color:var(--accent)}
+.btn-allow:hover{background:linear-gradient(150deg,rgba(255,215,0,.26),rgba(205,127,50,.13))}
+.btn-sub{height:34px;border:none;background:transparent;color:var(--muted);font-size:10.5px;letter-spacing:.4px;cursor:pointer}
+.btn-sub:hover{color:var(--accent)}
+
+/* ===== changes ===== */
+.sum{display:flex;align-items:center;gap:14px;border:1px solid var(--border-subtle);border-radius:11px;background:var(--bg-surface);padding:11px 13px;margin-bottom:4px}
+.sum-main{flex:1;display:flex;flex-direction:column;gap:2px}
+.sum-main b{font-size:13px;color:var(--text)}
+.sum-main span{font-size:9.5px;color:var(--muted);letter-spacing:.3px}
+.sum-num{display:flex;gap:11px;font-size:12px}
+.sum-num .add{color:#6fce73}
+.sum-num .del{color:#ff8a88}
+
+.fchg{
+  display:flex;align-items:center;gap:9px;padding:10px 11px;border-radius:10px;
+  border:1px solid transparent;cursor:pointer;margin-bottom:2px;transition:all .14s var(--spring);
+}
+.fchg:hover{background:var(--bg-surface);border-color:var(--border-subtle)}
+.fchg.on{background:linear-gradient(100deg,rgba(255,191,0,.09),rgba(255,191,0,.02));border-color:rgba(255,191,0,.24)}
+.fchg-ico{width:24px;height:24px;flex:0 0 24px;border-radius:6px;display:grid;place-items:center;background:var(--bg-card);border:1px solid var(--border-subtle);color:var(--muted);font-size:8.5px;letter-spacing:.2px}
+.fchg.on .fchg-ico{color:var(--accent);border-color:rgba(255,191,0,.3);background:rgba(255,191,0,.09)}
+.fchg-main{flex:1;min-width:0;display:flex;flex-direction:column;gap:1px}
+.fchg-name{font-size:11.5px;color:var(--text-body);white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+.fchg.on .fchg-name{color:var(--text)}
+.fchg-path{font-size:9px;color:#6f6f6f;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+.fchg-num{display:flex;gap:7px;font-size:10.5px;flex:0 0 auto}
+.fchg-num .add{color:#6fce73}
+.fchg-num .del{color:#ff8a88}
+
+.diff{margin-top:10px;border:1px solid var(--border-subtle);border-radius:10px;overflow:hidden;background:#080808}
+.diff-h{display:flex;align-items:center;justify-content:space-between;padding:7px 11px;background:var(--bg-surface);border-bottom:1px solid var(--border-subtle);font-size:9.5px;color:var(--muted);letter-spacing:.5px}
+.diff-body{font-size:10.5px;line-height:1.68;overflow-x:auto}
+.diff-body::-webkit-scrollbar{height:0}
+.dl{display:flex;padding:0 11px;white-space:pre}
+.dl .ln{flex:0 0 22px;color:#4a4a4a;text-align:right;padding-right:9px;user-select:none}
+.dl.add{background:rgba(76,175,80,.09)}
+.dl.add .sign{color:#6fce73;flex:0 0 11px}
+.dl.del{background:rgba(239,83,80,.09)}
+.dl.del .sign{color:#ff8a88;flex:0 0 11px}
+.dl.ctx .sign{color:#3a3a3a;flex:0 0 11px}
+.dl .tx{color:#b9b9b9}
+
+.chg-foot{
+  position:relative;z-index:5;flex:0 0 auto;display:flex;gap:9px;
+  padding:10px 16px calc(10px + env(safe-area-inset-bottom));
+  border-top:1px solid var(--border-subtle);background:rgba(13,13,13,.95);backdrop-filter:blur(12px);
+}
+
+/* ===== usage ===== */
+.kpi{
+  border:1px solid rgba(255,191,0,.18);border-radius:13px;
+  background:linear-gradient(150deg,rgba(255,191,0,.10),rgba(205,127,50,.03));
+  padding:16px 15px 14px;margin-bottom:12px;
+}
+.kpi-l{font-size:9px;letter-spacing:1.6px;color:var(--muted);text-transform:uppercase}
+.kpi-v{margin-top:6px;font-size:31px;line-height:1.05;color:var(--primary);letter-spacing:-1px;font-weight:600}
+.kpi-v small{font-size:13px;color:var(--muted);letter-spacing:0;margin-left:3px;font-weight:400}
+.kpi-sub{margin-top:7px;font-size:10px;color:#7a7a7a;display:flex;align-items:center;gap:6px}
+.kpi-g{display:grid;grid-template-columns:repeat(3,1fr);gap:1px;margin-top:14px;border-top:1px solid rgba(255,191,0,.14);padding-top:12px}
+.kpi-c{display:flex;flex-direction:column;gap:3px;text-align:center}
+.kpi-c+.kpi-c{border-left:1px solid rgba(255,191,0,.12)}
+.kpi-c b{font-size:13px;color:var(--text);font-weight:600}
+.kpi-c span{font-size:8.5px;letter-spacing:.8px;color:#6f6f6f;text-transform:uppercase}
+
+.chips{display:flex;gap:7px;margin:0 0 11px}
+.calls{border:1px solid var(--border-subtle);border-radius:12px;background:var(--bg-surface);overflow:hidden}
+.call{display:flex;align-items:center;gap:9px;padding:10px 12px}
+.call+.call{border-top:1px solid var(--border-subtle)}
+.call-t{width:34px;flex:0 0 34px;font-size:9px;color:#6f6f6f;letter-spacing:.2px}
+.call-main{flex:1;min-width:0;display:flex;flex-direction:column;gap:2px}
+.call-m{font-size:11px;color:var(--text-body);white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+.call-tk{font-size:9px;color:#6f6f6f;letter-spacing:.2px}
+.call-cost{font-size:11px;color:var(--accent);flex:0 0 auto}
+
+.bar-row{display:flex;align-items:center;gap:8px;margin-bottom:8px}
+.bar-row:last-child{margin-bottom:0}
+.bar-lbl{width:66px;flex:0 0 66px;font-size:9.5px;color:var(--muted)}
+.bar-track{flex:1;height:6px;border-radius:3px;background:var(--bg-card);overflow:hidden}
+.bar-fill{height:100%;border-radius:3px;background:linear-gradient(90deg,var(--border-gold),var(--accent))}
+.bar-num{width:54px;flex:0 0 54px;text-align:right;font-size:9.5px;color:var(--text-body)}
+
+/* ===== model sheet ===== */
+.sheet-wrap{position:absolute;inset:0;z-index:20;display:flex;flex-direction:column;justify-content:flex-end;background:rgba(0,0,0,.55);backdrop-filter:blur(2px)}
+.sheet{background:var(--bg-surface);border-top:1px solid var(--border-subtle);border-radius:18px 18px 0 0;padding:8px 0 calc(10px + env(safe-area-inset-bottom));box-shadow:0 -18px 40px rgba(0,0,0,.6)}
+.sheet-grip{width:34px;height:4px;border-radius:2px;background:#333;margin:0 auto 10px}
+.sheet-h{display:flex;align-items:baseline;gap:8px;padding:0 16px 10px}
+.sheet-h b{font-size:12.5px;color:var(--text);font-weight:600}
+.sheet-h span{font-size:9px;color:var(--muted);letter-spacing:1.2px;text-transform:uppercase}
+.mrow{display:flex;align-items:center;gap:10px;padding:11px 16px;cursor:pointer}
+.mrow+.mrow{border-top:1px solid var(--border-subtle)}
+.mrow.on{background:rgba(255,191,0,.06)}
+.mrow-main{flex:1;min-width:0;display:flex;flex-direction:column;gap:2px}
+.mrow-main b{font-size:12px;color:var(--text-body);font-weight:500}
+.mrow-main span{font-size:9.5px;color:#6f6f6f;letter-spacing:.2px}
+.mrow.on .mrow-main b{color:var(--text)}
+.mrow-ck{width:16px;height:16px;flex:0 0 16px;border-radius:50%;border:1px solid var(--border-hover);display:grid;place-items:center;color:transparent}
+.mrow.on .mrow-ck{border-color:var(--accent);background:rgba(255,191,0,.15);color:var(--accent)}
+.agents{display:flex;gap:7px;padding:0 16px 12px}
+.ag{flex:1;text-align:center;padding:8px 0;border-radius:9px;border:1px solid var(--border-subtle);background:var(--bg-card);color:var(--muted);font-size:10.5px;cursor:pointer;transition:all .14s var(--spring)}
+.ag.on{border-color:rgba(255,191,0,.4);background:rgba(255,191,0,.10);color:var(--accent)}
+.ag small{display:block;font-size:8px;letter-spacing:.6px;color:#6f6f6f;margin-top:2px}
+.ag.on small{color:rgba(255,191,0,.7)}
+
+/* ===== settings / connection ===== */
+.card{border:1px solid var(--border-subtle);border-radius:12px;background:var(--bg-surface);overflow:hidden;margin-bottom:11px}
+.card-h{display:flex;align-items:center;gap:8px;padding:11px 13px;border-bottom:1px solid var(--border-subtle);background:rgba(26,26,26,.5)}
+.card-h b{font-size:11.5px;color:var(--text);font-weight:500;letter-spacing:.2px}
+.card-h .sp{margin-left:auto}
+.card-b{padding:13px}
+.state{display:flex;align-items:center;gap:10px}
+.state-ico{width:34px;height:34px;flex:0 0 34px;border-radius:10px;display:grid;place-items:center;background:rgba(76,175,80,.1);border:1px solid rgba(76,175,80,.28);color:#6fce73}
+.state-main{flex:1;display:flex;flex-direction:column;gap:2px}
+.state-main b{font-size:12.5px;color:var(--text)}
+.state-main span{font-size:10px;color:var(--muted)}
+.pill{padding:3px 8px;border-radius:6px;font-size:9px;letter-spacing:.5px;background:rgba(76,175,80,.12);border:1px solid rgba(76,175,80,.3);color:#6fce73}
+
+.field{display:flex;flex-direction:column;gap:5px;margin-bottom:11px}
+.field:last-child{margin-bottom:0}
+.field label{font-size:9px;color:#6f6f6f;letter-spacing:1.2px;text-transform:uppercase}
+.inp{height:38px;display:flex;align-items:center;padding:0 11px;border:1px solid var(--border-subtle);border-radius:9px;background:var(--bg-input);font-size:12px;color:var(--text)}
+.inp.dim{color:#7a7a7a}
+.inp-split{display:flex;gap:9px}
+.inp-split .field{flex:1}
+.row{display:flex;align-items:center;gap:10px;padding:11px 0}
+.row+.row{border-top:1px solid var(--border-subtle)}
+.row:first-child{padding-top:0}
+.row:last-child{padding-bottom:0}
+.row-ico{width:26px;height:26px;flex:0 0 26px;border-radius:7px;display:grid;place-items:center;background:var(--bg-card);border:1px solid var(--border-subtle);color:var(--muted)}
+.row-main{flex:1;min-width:0;display:flex;flex-direction:column;gap:1px}
+.row-main b{font-size:11.5px;color:var(--text-body);font-weight:500}
+.row-main span{font-size:9.5px;color:#6f6f6f;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+.row-val{font-size:11px;color:var(--muted);flex:0 0 auto}
+.tgl{width:38px;height:21px;border-radius:11px;background:#2a2a2a;position:relative;flex:0 0 38px;transition:background .18s}
+.tgl::after{content:"";position:absolute;top:2.5px;left:2.5px;width:16px;height:16px;border-radius:50%;background:#6f6f6f;transition:all .18s var(--spring)}
+.tgl.on{background:rgba(255,191,0,.28)}
+.tgl.on::after{left:19.5px;background:var(--accent);box-shadow:0 0 8px rgba(255,191,0,.6)}
+.scan{display:flex;align-items:center;justify-content:center;gap:8px;height:40px;border-radius:9px;border:1px dashed rgba(255,191,0,.32);background:rgba(255,191,0,.05);color:var(--accent);font-size:11.5px;cursor:pointer}
+
+.swatches{display:flex;gap:9px;padding-top:3px}
+.sw{width:26px;height:26px;border-radius:50%;border:1px solid rgba(255,255,255,.1);cursor:pointer;position:relative}
+.sw.on::after{content:"";position:absolute;inset:-4px;border-radius:50%;border:1.5px solid var(--accent)}
+
+.hint{display:flex;align-items:flex-start;gap:7px;padding:9px 11px;border-radius:9px;border:1px solid rgba(255,167,38,.24);background:rgba(255,167,38,.06);font-size:10px;line-height:1.55;color:#d9a860}
+.hint svg{flex:0 0 12px;margin-top:1px;opacity:.85}
+
+/* ===== inbox ===== */
+.inbox-item{
+  display:flex;gap:10px;padding:12px 11px;border-radius:11px;border:1px solid var(--border-subtle);
+  background:var(--bg-surface);margin-bottom:7px;cursor:pointer;transition:all .14s var(--spring);
+}
+.inbox-item:hover{border-color:var(--border-hover);background:var(--bg-card)}
+.inbox-item.hot{border-color:rgba(239,83,80,.28);background:linear-gradient(100deg,rgba(239,83,80,.07),transparent)}
+.inbox-ico{width:28px;height:28px;flex:0 0 28px;border-radius:8px;display:grid;place-items:center;background:rgba(255,191,0,.09);border:1px solid rgba(255,191,0,.22);color:var(--accent)}
+.inbox-ico.hot{background:rgba(239,83,80,.1);border-color:rgba(239,83,80,.3);color:#ff8a88}
+.inbox-main{flex:1;min-width:0;display:flex;flex-direction:column;gap:3px}
+.inbox-top{display:flex;align-items:center;gap:7px}
+.inbox-top b{font-size:12px;color:var(--text);font-weight:500}
+.inbox-top .t{margin-left:auto;font-size:9px;color:#5f5f5f}
+.inbox-desc{font-size:10.5px;color:var(--muted);line-height:1.55;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+.inbox-tag{align-self:flex-start;padding:2px 6px;border-radius:5px;font-size:8.5px;letter-spacing:.4px;background:rgba(255,191,0,.1);border:1px solid rgba(255,191,0,.22);color:var(--accent)}
+.inbox-tag.hot{background:rgba(239,83,80,.1);border-color:rgba(239,83,80,.28);color:#ff8a88}
+
+.empty{display:flex;flex-direction:column;align-items:center;gap:9px;padding:44px 20px;color:#5f5f5f;text-align:center}
+.empty svg{width:34px;height:34px;opacity:.35}
+.empty b{font-size:11.5px;color:#7a7a7a;font-weight:500}
+.empty span{font-size:10px;line-height:1.6}
+
+/* ===== language switch ===== */
+.lang-switch{display:inline-flex;gap:2px;padding:2px;border:1px solid var(--border-subtle);border-radius:999px;background:var(--bg-surface)}
+.lang-btn{padding:4px 13px;border:none;border-radius:999px;background:transparent;color:var(--muted);font-family:var(--font-mono);font-size:10.5px;letter-spacing:.5px;cursor:pointer;transition:all .16s var(--spring)}
+.lang-btn:hover{color:var(--text)}
+.lang-btn.on{background:linear-gradient(150deg,rgba(255,215,0,.2),rgba(205,127,50,.1));color:var(--accent);box-shadow:0 0 0 1px rgba(255,191,0,.28) inset}
+
+/* ===== connection state bar ===== */
+.conn-bar{
+  position:relative;z-index:2;flex:0 0 auto;
+  display:flex;align-items:center;gap:8px;
+  padding:7px 16px;font-size:10.5px;letter-spacing:.2px;
+  border-bottom:1px solid var(--border-subtle);
+  animation:conn-in .28s var(--spring);
+}
+@keyframes conn-in{from{opacity:0;transform:translateY(-4px)}to{opacity:1;transform:translateY(0)}}
+.conn-warn{background:rgba(255,167,38,.10);border-bottom-color:rgba(255,167,38,.26);color:#ffc16b}
+.conn-err{background:rgba(239,83,80,.10);border-bottom-color:rgba(239,83,80,.30);color:#ff8a88}
+.conn-ok{background:rgba(76,175,80,.09);border-bottom-color:rgba(76,175,80,.26);color:#6fce73}
+.conn-bar b{font-weight:600;letter-spacing:.3px}
+.conn-bar .cb-ring{width:11px;height:11px;flex:0 0 11px;border-radius:50%;border:1.5px solid currentColor;border-top-color:transparent;animation:spin .9s linear infinite}
+.conn-bar .cb-dot{width:6px;height:6px;flex:0 0 6px;border-radius:50%;background:currentColor;box-shadow:0 0 8px currentColor}
+.conn-bar .cb-right{margin-left:auto;font-size:9.5px;opacity:.8;letter-spacing:.6px;white-space:nowrap}
+
+/* ===== clarify card ===== */
+.clarify{
+  align-self:flex-start;width:100%;overflow:hidden;
+  border:1px solid rgba(255,191,0,.28);border-radius:12px;
+  background:linear-gradient(168deg,rgba(255,191,0,.055),rgba(205,127,50,.015));
+}
+.clarify-h{display:flex;align-items:center;gap:9px;padding:11px 12px 0}
+.clarify-ico{width:26px;height:26px;flex:0 0 26px;border-radius:8px;display:grid;place-items:center;background:rgba(255,191,0,.14);border:1px solid rgba(255,191,0,.32);color:var(--accent)}
+.clarify-h-txt{flex:1;display:flex;flex-direction:column;gap:1px}
+.clarify-h-txt b{font-size:12px;color:var(--text);font-weight:600}
+.clarify-h-txt span{font-size:9px;color:var(--muted);letter-spacing:1.1px;text-transform:uppercase}
+.clarify-badge{min-width:18px;height:18px;padding:0 5px;border-radius:6px;display:grid;place-items:center;background:rgba(255,191,0,.14);border:1px solid rgba(255,191,0,.3);color:var(--accent);font-size:9.5px}
+.clarify-q{padding:9px 12px 11px;font-size:12px;line-height:1.65;color:var(--text-body)}
+.clarify-opts{display:flex;flex-direction:column;gap:7px;padding:0 12px}
+.opt{display:flex;gap:9px;padding:10px 11px;border:1px solid var(--border-subtle);border-radius:10px;background:var(--bg-surface);cursor:pointer;transition:all .14s var(--spring)}
+.opt:hover{border-color:var(--border-hover);background:var(--bg-hover)}
+.opt.on{border-color:rgba(255,191,0,.48);background:rgba(255,191,0,.085);box-shadow:0 0 0 1px rgba(255,191,0,.16) inset}
+.opt-mark{width:15px;height:15px;flex:0 0 15px;border-radius:50%;border:1.6px solid #4a4a4a;margin-top:1px;position:relative;transition:all .14s var(--spring)}
+.opt.on .opt-mark{border-color:var(--accent)}
+.opt.on .opt-mark::after{content:"";position:absolute;inset:2.5px;border-radius:50%;background:var(--accent);box-shadow:0 0 8px rgba(255,191,0,.75)}
+.opt.sq .opt-mark{border-radius:4px}
+.opt.sq.on .opt-mark::after{border-radius:2px}
+.opt-main{flex:1;min-width:0;display:flex;flex-direction:column;gap:2px}
+.opt-main b{font-size:11.5px;color:var(--text);font-weight:500}
+.opt.on .opt-main b{color:var(--accent)}
+.opt-main span{font-size:10px;line-height:1.5;color:#8a8a8a}
+.clarify-foot{display:flex;gap:8px;padding:12px;margin-top:12px;border-top:1px solid rgba(255,191,0,.14);background:rgba(10,10,10,.35)}
+.clarify-foot .btn{height:38px;font-size:11.5px}
+
+/* ===== pairing ===== */
+.pair{flex:1;min-height:0;display:flex;flex-direction:column;gap:15px;padding:6px 24px 22px;overflow-y:auto}
+.pair::-webkit-scrollbar{width:0}
+.pair-top{display:flex;flex-direction:column;align-items:center;gap:9px;text-align:center;padding-top:10px}
+.pair-top b{font-size:17px;font-weight:600;color:var(--text);letter-spacing:.2px}
+.pair-top span{font-size:11px;line-height:1.68;color:#8a8a8a;max-width:272px}
+.qr-wrap{position:relative;align-self:center;width:192px;height:192px;padding:13px;border-radius:16px;background:#090909;border:1px solid var(--border-subtle);box-shadow:0 0 0 1px rgba(255,191,0,.07) inset,0 16px 36px rgba(0,0,0,.65)}
+.qr-wrap svg{width:100%;height:100%;display:block}
+.qr-corner{position:absolute;width:20px;height:20px;border:2px solid var(--accent);opacity:.85}
+.qr-corner.tl{top:-1px;left:-1px;border-right:none;border-bottom:none;border-radius:9px 0 0 0}
+.qr-corner.tr{top:-1px;right:-1px;border-left:none;border-bottom:none;border-radius:0 9px 0 0}
+.qr-corner.bl{bottom:-1px;left:-1px;border-right:none;border-top:none;border-radius:0 0 0 9px}
+.qr-corner.br{bottom:-1px;right:-1px;border-left:none;border-top:none;border-radius:0 0 9px 0}
+.pair-div{display:flex;align-items:center;gap:10px;color:#5f5f5f;font-size:9px;letter-spacing:1.7px;text-transform:uppercase}
+.pair-div::before,.pair-div::after{content:"";flex:1;height:1px;background:var(--border-subtle)}
+.pair-btn{width:100%;height:44px;flex:0 0 auto;font-size:12.5px}
+.pair-note{display:flex;gap:7px;padding:0 2px;font-size:9.5px;line-height:1.62;color:#6f6f6f}
+.pair-note svg{flex:0 0 12px;width:12px;height:12px;margin-top:1px;color:var(--muted)}
+
+@media (max-width:900px){
+  body{padding:24px 14px 48px}
+  .screens{gap:26px}
+  .frame{transform-origin:top center}
+}
+</style>
+</head>
+<body>
+<div class="stage">
+  <header class="stage-head">
+    <div class="brand">
+      <div class="brand-mark">
+        <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round">
+          <rect x="3" y="3" width="18" height="18" rx="4"/><path d="M8 9h8M8 13h5"/>
+        </svg>
+      </div>
+      <div class="brand-txt">
+        <b>PebbleAgent Mobile</b>
+        <span>Decision Terminal · Android</span>
+      </div>
+    </div>
+    <div class="stage-meta">
+      <span class="chip">Kotlin 2.x · Compose</span>
+      <span class="chip">minSdk 26</span>
+      <span class="chip">393 × 851</span>
+      <span class="chip chip-dot"><i></i>LAN connected</span>
+      <div class="lang-switch">
+        <button class="lang-btn on" data-lang="en">EN</button>
+        <button class="lang-btn" data-lang="cn">中文</button>
+      </div>
+    </div>
+  </header>
+
+  <div class="screens">
+
+    <!-- ============ 1. SESSIONS ============ -->
+    <figure class="phone">
+      <div class="frame">
+        <div class="screen">
+          <div class="statusbar">
+            <span>9:41</span>
+            <div class="status-right">
+              <div class="sig"><i></i><i></i><i></i><i></i></div>
+              <svg width="13" height="10" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"><path d="M5 12.5a10 10 0 0 1 14 0"/><path d="M8.5 16a5.5 5.5 0 0 1 7 0"/><circle cx="12" cy="19" r="1" fill="currentColor" stroke="none"/></svg>
+              <div class="batt"><i></i></div>
+            </div>
+          </div>
+
+          <div class="appbar">
+            <div class="brand-mark" style="width:30px;height:30px;border-radius:8px">
+              <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round"><rect x="3" y="3" width="18" height="18" rx="4"/><path d="M8 9h8M8 13h5"/></svg>
+            </div>
+            <div class="appbar-title">
+              <b>Sessions</b>
+              <span>E:\pebbleagent</span>
+            </div>
+            <div class="dot-live"></div>
+            <button class="iconbtn" aria-label="Search">
+              <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round"><circle cx="11" cy="11" r="7"/><path d="m20 20-3.5-3.5"/></svg>
+            </button>
+          </div>
+
+          <div class="body">
+            <div class="scroll">
+              <div class="search">
+                <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round"><circle cx="11" cy="11" r="7"/><path d="m20 20-3.5-3.5"/></svg>
+                <span>search sessions</span>
+              </div>
+
+              <div class="sec-label">Today</div>
+
+              <div class="sess active">
+                <div class="sess-bar"></div>
+                <div class="sess-main">
+                  <div class="sess-title">重构登录模块的 token 校验</div>
+                  <div class="sess-sub"><span>code_agent</span><em></em><span>18 messages</span></div>
+                </div>
+                <div class="sess-side">
+                  <div class="sess-time">14:32</div>
+                  <span class="badge-wait">approval</span>
+                </div>
+              </div>
+
+              <div class="sess">
+                <div class="sess-bar"></div>
+                <div class="sess-main">
+                  <div class="sess-title">gateway 握手失败排查</div>
+                  <div class="sess-sub"><span>code_agent</span><em></em><span>34 messages</span></div>
+                </div>
+                <div class="sess-side">
+                  <div class="sess-time">11:08</div>
+                  <span class="badge-unread">3</span>
+                </div>
+              </div>
+
+              <div class="sess">
+                <div class="sess-bar"></div>
+                <div class="sess-main">
+                  <div class="sess-title">给 mermaid 卡片加导出</div>
+                  <div class="sess-sub"><span>code_agent</span><em></em><span>7 messages</span></div>
+                </div>
+                <div class="sess-side">
+                  <div class="sess-time">09:26</div>
+                </div>
+              </div>
+
+              <div class="sec-label">Yesterday</div>
+
+              <div class="sess">
+                <div class="sess-bar"></div>
+                <div class="sess-main">
+                  <div class="sess-title">CKB 知识库增量同步</div>
+                  <div class="sess-sub"><span>code_agent</span><em></em><span>52 messages</span></div>
+                </div>
+                <div class="sess-side">
+                  <div class="sess-time">20:14</div>
+                </div>
+              </div>
+
+              <div class="sess">
+                <div class="sess-bar"></div>
+                <div class="sess-main">
+                  <div class="sess-title">打包脚本加产物校验</div>
+                  <div class="sess-sub"><span>code_agent</span><em></em><span>21 messages</span></div>
+                </div>
+                <div class="sess-side">
+                  <div class="sess-time">18:47</div>
+                </div>
+              </div>
+
+              <div class="sess">
+                <div class="sess-bar"></div>
+                <div class="sess-main">
+                  <div class="sess-title">清理废弃的 tools 包</div>
+                  <div class="sess-sub"><span>code_agent</span><em></em><span>96 messages</span></div>
+                </div>
+                <div class="sess-side">
+                  <div class="sess-time">15:03</div>
+                </div>
+              </div>
+            </div>
+
+            <button class="fab" aria-label="New session">
+              <svg width="21" height="21" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"><path d="M12 5v14M5 12h14"/></svg>
+            </button>
+          </div>
+
+          <nav class="navbar">
+            <div class="nav on">
+              <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round"><path d="M21 12a8 8 0 0 1-8 8H7l-4 3V12a8 8 0 0 1 8-8h2a8 8 0 0 1 8 8z"/><path d="M9 11h6M9 15h3"/></svg>
+              <span>Sessions</span>
+            </div>
+            <div class="nav">
+              <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round"><path d="M12 22s8-4 8-10V5l-8-3-8 3v7c0 6 8 10 8 10z"/><path d="m9 12 2 2 4-4"/></svg>
+              <span>Inbox</span>
+              <span class="cnt">2</span>
+            </div>
+            <div class="nav">
+              <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round"><circle cx="6" cy="6" r="2.5"/><circle cx="6" cy="18" r="2.5"/><circle cx="18" cy="12" r="2.5"/><path d="M6 8.5v7M8.5 6H15a3 3 0 0 1 3 3v.5"/></svg>
+              <span>Changes</span>
+            </div>
+            <div class="nav">
+              <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round"><path d="M3 3v18h18"/><path d="M7 16v2M12 11v7M17 6v12"/></svg>
+              <span>Usage</span>
+            </div>
+            <div class="nav">
+              <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="3"/><path d="M19.4 15a1.6 1.6 0 0 0 .3 1.8l.1.1a2 2 0 1 1-2.8 2.8l-.1-.1a1.6 1.6 0 0 0-1.8-.3 1.6 1.6 0 0 0-1 1.5V21a2 2 0 1 1-4 0v-.1a1.6 1.6 0 0 0-1-1.5 1.6 1.6 0 0 0-1.8.3l-.1.1a2 2 0 1 1-2.8-2.8l.1-.1a1.6 1.6 0 0 0 .3-1.8 1.6 1.6 0 0 0-1.5-1H3a2 2 0 1 1 0-4h.1a1.6 1.6 0 0 0 1.5-1 1.6 1.6 0 0 0-.3-1.8l-.1-.1a2 2 0 1 1 2.8-2.8l.1.1a1.6 1.6 0 0 0 1.8.3H9a1.6 1.6 0 0 0 1-1.5V3a2 2 0 1 1 4 0v.1a1.6 1.6 0 0 0 1 1.5 1.6 1.6 0 0 0 1.8-.3l.1-.1a2 2 0 1 1 2.8 2.8l-.1.1a1.6 1.6 0 0 0-.3 1.8V9a1.6 1.6 0 0 0 1.5 1H21a2 2 0 1 1 0 4h-.1a1.6 1.6 0 0 0-1.5 1z"/></svg>
+              <span>Settings</span>
+            </div>
+          </nav>
+        </div>
+      </div>
+      <figcaption>Sessions</figcaption>
+    </figure>
+
+    <!-- ============ 2. CHAT ============ -->
+    <figure class="phone">
+      <div class="frame">
+        <div class="screen">
+          <div class="statusbar">
+            <span>9:41</span>
+            <div class="status-right">
+              <div class="sig"><i></i><i></i><i></i><i></i></div>
+              <svg width="13" height="10" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"><path d="M5 12.5a10 10 0 0 1 14 0"/><path d="M8.5 16a5.5 5.5 0 0 1 7 0"/><circle cx="12" cy="19" r="1" fill="currentColor" stroke="none"/></svg>
+              <div class="batt"><i></i></div>
+            </div>
+          </div>
+
+          <div class="appbar">
+            <button class="iconbtn" aria-label="Back">
+              <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="m15 18-6-6 6-6"/></svg>
+            </button>
+            <div class="appbar-title">
+              <b>重构登录模块的 token 校验</b>
+              <button class="amodel">
+                <span class="dot-live"></span>
+                code_agent · deepseek-pro
+                <svg width="9" height="9" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.4" stroke-linecap="round"><path d="m6 9 6 6 6-6"/></svg>
+              </button>
+            </div>
+            <button class="iconbtn" aria-label="More">
+              <svg width="15" height="15" viewBox="0 0 24 24" fill="currentColor"><circle cx="12" cy="5" r="1.6"/><circle cx="12" cy="12" r="1.6"/><circle cx="12" cy="19" r="1.6"/></svg>
+            </button>
+          </div>
+
+          <div class="conn-bar conn-warn">
+            <div class="cb-ring"></div>
+            <b>Reconnecting</b>
+            <span>· attempt 4</span>
+            <span class="cb-right">retry in 3s</span>
+          </div>
+
+          <div class="body">
+            <div class="scroll">
+              <div class="chat">
+                <div class="tstamp">TODAY 14:32</div>
+
+                <div class="msg-user">把 auth/login.py 里的 token 校验改成常量时间比较，顺便补一个测试</div>
+
+                <div class="think">
+                  <div class="think-h">
+                    <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round"><path d="M12 3a6 6 0 0 0-3.5 11v3h7v-3A6 6 0 0 0 12 3z"/><path d="M9 20h6"/></svg>
+                    <b>Thinking</b>
+                    <span>· 12.4s</span>
+                    <svg class="arw" width="11" height="11" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"><path d="m6 9 6 6 6-6"/></svg>
+                  </div>
+                </div>
+
+                <div class="tool">
+                  <div class="tool-h">
+                    <div class="tool-ico ok">
+                      <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round"><path d="m5 12 5 5 9-9"/></svg>
+                    </div>
+                    <div class="tool-main">
+                      <div class="tool-name">str_replace auth/login.py</div>
+                      <div class="tool-meta">+18 −6</div>
+                    </div>
+                    <div class="tool-right"><span class="tool-dur">0.4s</span></div>
+                  </div>
+                </div>
+
+                <div class="md">
+                  <p>已把 <code>==</code> 换成 <code>hmac.compare_digest</code>，避免比较耗时泄露长度信息。</p>
+                  <div class="code">
+                    <div class="code-h"><span>auth/login.py</span><span>UTF-8</span></div>
+<pre><span class="kw">import</span> hmac
+
+<span class="kw">def</span> <span class="fn">verify_token</span>(presented: str) -> bool:
+    <span class="kw">if</span> <span class="kw">not</span> presented:
+        <span class="kw">return</span> False
+    <span class="kw">return</span> hmac.<span class="fn">compare_digest</span>(presented, _TOKEN)</pre>
+                  </div>
+                </div>
+
+                <div class="tool">
+                  <div class="tool-h">
+                    <div class="tool-ico run"><div class="spin"></div></div>
+                    <div class="tool-main">
+                      <div class="tool-name">run_command pytest</div>
+                      <div class="tool-meta">tests/auth/test_login.py</div>
+                    </div>
+                    <div class="tool-right"><span class="tool-dur">2.1s</span></div>
+                  </div>
+                </div>
+
+                <div class="md">
+                  <p>测试已启动，正在等待结果<span class="cursor"></span></p>
+                </div>
+              </div>
+            </div>
+          </div>
+
+          <div class="composer">
+            <div class="comp-progress"><i></i></div>
+            <div class="comp-row">
+              <button class="tool-mini" aria-label="Attach">
+                <svg width="17" height="17" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><path d="M21.4 11.05 12.3 20.1a5.5 5.5 0 0 1-7.8-7.8l8.5-8.5a3.7 3.7 0 0 1 5.2 5.2l-8.5 8.5a1.8 1.8 0 0 1-2.6-2.6l7.8-7.8"/></svg>
+              </button>
+              <div class="comp-box">
+                <span class="ph">enter message...</span>
+                <div class="comp-tools">
+                  <button class="tool-mini" aria-label="Permission mode">
+                    <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><path d="M12 22s8-4 8-10V5l-8-3-8 3v7c0 6 8 10 8 10z"/></svg>
+                  </button>
+                </div>
+              </div>
+              <button class="send stop" aria-label="Stop">
+                <svg width="16" height="16" viewBox="0 0 24 24" fill="currentColor"><rect x="7" y="7" width="10" height="10" rx="2"/></svg>
+              </button>
+            </div>
+          </div>
+        </div>
+      </div>
+      <figcaption>Conversation</figcaption>
+    </figure>
+
+    <!-- ============ 3. MODEL PICKER ============ -->
+    <figure class="phone">
+      <div class="frame">
+        <div class="screen">
+          <div class="statusbar">
+            <span>9:41</span>
+            <div class="status-right">
+              <div class="sig"><i></i><i></i><i></i><i></i></div>
+              <svg width="13" height="10" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"><path d="M5 12.5a10 10 0 0 1 14 0"/><path d="M8.5 16a5.5 5.5 0 0 1 7 0"/><circle cx="12" cy="19" r="1" fill="currentColor" stroke="none"/></svg>
+              <div class="batt"><i></i></div>
+            </div>
+          </div>
+
+          <div class="appbar">
+            <button class="iconbtn" aria-label="Back">
+              <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="m15 18-6-6 6-6"/></svg>
+            </button>
+            <div class="appbar-title">
+              <b>重构登录模块的 token 校验</b>
+              <button class="amodel" style="border-color:rgba(255,191,0,.55);background:rgba(255,191,0,.14)">
+                <span class="dot-live"></span>
+                code_agent · deepseek-pro
+                <svg width="9" height="9" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.4" stroke-linecap="round"><path d="m18 15-6-6-6 6"/></svg>
+              </button>
+            </div>
+            <button class="iconbtn" aria-label="More">
+              <svg width="15" height="15" viewBox="0 0 24 24" fill="currentColor"><circle cx="12" cy="5" r="1.6"/><circle cx="12" cy="12" r="1.6"/><circle cx="12" cy="19" r="1.6"/></svg>
+            </button>
+          </div>
+
+          <div class="body">
+            <div class="scroll">
+              <div class="chat">
+                <div class="tstamp">TODAY 14:32</div>
+                <div class="msg-user">把 auth/login.py 里的 token 校验改成常量时间比较，顺便补一个测试</div>
+                <div class="think">
+                  <div class="think-h">
+                    <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round"><path d="M12 3a6 6 0 0 0-3.5 11v3h7v-3A6 6 0 0 0 12 3z"/><path d="M9 20h6"/></svg>
+                    <b>Thinking</b>
+                    <span>· 12.4s</span>
+                  </div>
+                </div>
+              </div>
+            </div>
+          </div>
+
+          <div class="sheet-wrap">
+            <div class="sheet">
+              <div class="sheet-grip"></div>
+              <div class="sheet-h"><b>Agent &amp; Model</b><span>this session</span></div>
+
+              <div class="agents">
+                <div class="ag on">code_agent<small>FULL TOOLS</small></div>
+                <div class="ag">chat_agent<small>CHAT ONLY</small></div>
+              </div>
+
+              <div class="mrow on">
+                <div class="mrow-main"><b>deepseek-pro</b><span>128k ctx · ¥2.0 in / ¥8.0 out per 1M</span></div>
+                <div class="mrow-ck"><svg width="10" height="10" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="3.2" stroke-linecap="round" stroke-linejoin="round"><path d="m5 13 4 4L19 7"/></svg></div>
+              </div>
+              <div class="mrow">
+                <div class="mrow-main"><b>deepseek-flash</b><span>128k ctx · ¥0.5 in / ¥2.0 out per 1M</span></div>
+                <div class="mrow-ck"><svg width="10" height="10" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="3.2" stroke-linecap="round" stroke-linejoin="round"><path d="m5 13 4 4L19 7"/></svg></div>
+              </div>
+              <div class="mrow">
+                <div class="mrow-main"><b>mimo-v2.6-pro</b><span>200k ctx · ¥1.2 in / ¥4.8 out per 1M</span></div>
+                <div class="mrow-ck"><svg width="10" height="10" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="3.2" stroke-linecap="round" stroke-linejoin="round"><path d="m5 13 4 4L19 7"/></svg></div>
+              </div>
+              <div class="mrow">
+                <div class="mrow-main"><b>mimo-v2.6-flash</b><span>200k ctx · ¥0.3 in / ¥1.2 out per 1M</span></div>
+                <div class="mrow-ck"><svg width="10" height="10" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="3.2" stroke-linecap="round" stroke-linejoin="round"><path d="m5 13 4 4L19 7"/></svg></div>
+              </div>
+
+              <div class="mrow" style="border-top:1px solid var(--border-subtle);color:var(--muted)">
+                <div class="mrow-main"><b style="color:var(--muted);font-weight:400">Configure providers…</b><span>API keys are managed on the desktop</span></div>
+                <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" style="flex:0 0 13px;opacity:.5"><path d="m9 18 6-6-6-6"/></svg>
+              </div>
+            </div>
+          </div>
+        </div>
+      </div>
+      <figcaption>Model picker</figcaption>
+    </figure>
+
+    <!-- ============ 3. PERMISSION ============ -->
+    <figure class="phone">
+      <div class="frame">
+        <div class="screen">
+          <div class="statusbar">
+            <span>9:41</span>
+            <div class="status-right">
+              <div class="sig"><i></i><i></i><i></i><i></i></div>
+              <svg width="13" height="10" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"><path d="M5 12.5a10 10 0 0 1 14 0"/><path d="M8.5 16a5.5 5.5 0 0 1 7 0"/><circle cx="12" cy="19" r="1" fill="currentColor" stroke="none"/></svg>
+              <div class="batt"><i></i></div>
+            </div>
+          </div>
+
+          <div class="appbar">
+            <button class="iconbtn" aria-label="Back">
+              <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="m15 18-6-6 6-6"/></svg>
+            </button>
+            <div class="appbar-title">
+              <b>重构登录模块的 token 校验</b>
+              <button class="amodel">
+                <span class="dot-live"></span>
+                code_agent · deepseek-pro
+                <svg width="9" height="9" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.4" stroke-linecap="round"><path d="m6 9 6 6 6-6"/></svg>
+              </button>
+            </div>
+            <button class="iconbtn" aria-label="More">
+              <svg width="15" height="15" viewBox="0 0 24 24" fill="currentColor"><circle cx="12" cy="5" r="1.6"/><circle cx="12" cy="12" r="1.6"/><circle cx="12" cy="19" r="1.6"/></svg>
+            </button>
+          </div>
+
+          <div class="body">
+            <div class="scroll">
+              <div class="chat">
+                <div class="tstamp">TODAY 14:32</div>
+                <div class="msg-user">把 auth/login.py 里的 token 校验改成常量时间比较，顺便补一个测试</div>
+                <div class="md" style="opacity:.34">
+                  <p>已把 <code>==</code> 换成 <code>hmac.compare_digest</code>，避免比较耗时泄露长度信息。</p>
+                </div>
+                <div class="tool" style="opacity:.34">
+                  <div class="tool-h">
+                    <div class="tool-ico run"><div class="spin"></div></div>
+                    <div class="tool-main">
+                      <div class="tool-name">run_command pytest</div>
+                      <div class="tool-meta">tests/auth/test_login.py</div>
+                    </div>
+                  </div>
+                </div>
+              </div>
+            </div>
+          </div>
+
+          <div class="veil"></div>
+
+          <div class="sheet">
+            <div class="grab"></div>
+            <div class="sheet-h">
+              <div class="shield">
+                <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.9" stroke-linecap="round" stroke-linejoin="round"><path d="M12 22s8-4 8-10V5l-8-3-8 3v7c0 6 8 10 8 10z"/><path d="M12 8v4M12 16h.01"/></svg>
+              </div>
+              <div class="sheet-h-txt">
+                <b>Permission Request</b>
+                <span>2 pending</span>
+              </div>
+              <span class="risk">high risk</span>
+            </div>
+
+            <div class="kv">
+              <div class="kv-row">
+                <span class="kv-k">Operation</span>
+                <span class="kv-v">Write file · str_replace</span>
+              </div>
+              <div class="kv-row">
+                <span class="kv-k">Target</span>
+                <span class="kv-v path">E:\pebbleagent\auth\login.py</span>
+              </div>
+              <div class="kv-row">
+                <span class="kv-k">Reason</span>
+                <span class="kv-v reason">重写 token 比较逻辑为常量时间实现</span>
+              </div>
+            </div>
+
+            <div class="rem">
+              <span class="rem-lbl">Remember for</span>
+              <div class="chips">
+                <div class="chip-o on">15 min</div>
+                <div class="chip-o">1 hour</div>
+                <div class="chip-o">session</div>
+              </div>
+            </div>
+
+            <div class="acts">
+              <button class="btn btn-deny">Deny</button>
+              <button class="btn btn-allow">Allow</button>
+            </div>
+            <button class="btn-sub">Allow all 2 pending</button>
+          </div>
+        </div>
+      </div>
+      <figcaption>Approval</figcaption>
+    </figure>
+
+    <!-- ============ 4. CHANGES ============ -->
+    <figure class="phone">
+      <div class="frame">
+        <div class="screen">
+          <div class="statusbar">
+            <span>9:41</span>
+            <div class="status-right">
+              <div class="sig"><i></i><i></i><i></i><i></i></div>
+              <svg width="13" height="10" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"><path d="M5 12.5a10 10 0 0 1 14 0"/><path d="M8.5 16a5.5 5.5 0 0 1 7 0"/><circle cx="12" cy="19" r="1" fill="currentColor" stroke="none"/></svg>
+              <div class="batt"><i></i></div>
+            </div>
+          </div>
+
+          <div class="appbar">
+            <div class="appbar-title">
+              <b>Changes</b>
+              <span>重构登录模块的 token 校验</span>
+            </div>
+            <button class="iconbtn" aria-label="Refresh">
+              <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><path d="M21 12a9 9 0 1 1-2.6-6.4"/><path d="M21 4v5h-5"/></svg>
+            </button>
+          </div>
+
+          <div class="body">
+            <div class="scroll">
+              <div class="sum">
+                <div class="sum-main">
+                  <b>3 files changed</b>
+                  <span>session snapshot · 2 min ago</span>
+                </div>
+                <div class="sum-num">
+                  <span class="add">+128</span>
+                  <span class="del">−42</span>
+                </div>
+              </div>
+
+              <div class="sec-label">Files</div>
+
+              <div class="fchg on">
+                <div class="fchg-ico">PY</div>
+                <div class="fchg-main">
+                  <div class="fchg-name">login.py</div>
+                  <div class="fchg-path">auth/login.py</div>
+                </div>
+                <div class="fchg-num"><span class="add">+64</span><span class="del">−12</span></div>
+              </div>
+
+              <div class="fchg">
+                <div class="fchg-ico">PY</div>
+                <div class="fchg-main">
+                  <div class="fchg-name">test_login.py</div>
+                  <div class="fchg-path">tests/auth/test_login.py</div>
+                </div>
+                <div class="fchg-num"><span class="add">+48</span><span class="del">−0</span></div>
+              </div>
+
+              <div class="fchg">
+                <div class="fchg-ico">PY</div>
+                <div class="fchg-main">
+                  <div class="fchg-name">settings.py</div>
+                  <div class="fchg-path">config/settings.py</div>
+                </div>
+                <div class="fchg-num"><span class="add">+16</span><span class="del">−30</span></div>
+              </div>
+
+              <div class="diff">
+                <div class="diff-h"><span>auth/login.py</span><span>hunk 1 / 3</span></div>
+                <div class="diff-body">
+                  <div class="dl ctx"><span class="ln">41</span><span class="sign"> </span><span class="tx">def verify_token(presented: str) -&gt; bool:</span></div>
+                  <div class="dl ctx"><span class="ln">42</span><span class="sign"> </span><span class="tx">    if not presented:</span></div>
+                  <div class="dl ctx"><span class="ln">43</span><span class="sign"> </span><span class="tx">        return False</span></div>
+                  <div class="dl del"><span class="ln">44</span><span class="sign">−</span><span class="tx">    return presented == _TOKEN</span></div>
+                  <div class="dl add"><span class="ln">44</span><span class="sign">+</span><span class="tx">    return hmac.compare_digest(</span></div>
+                  <div class="dl add"><span class="ln">45</span><span class="sign">+</span><span class="tx">        presented.encode(),</span></div>
+                  <div class="dl add"><span class="ln">46</span><span class="sign">+</span><span class="tx">        _TOKEN.encode(),</span></div>
+                  <div class="dl add"><span class="ln">47</span><span class="sign">+</span><span class="tx">    )</span></div>
+                </div>
+              </div>
+            </div>
+          </div>
+
+          <div class="chg-foot" style="padding-bottom:10px">
+            <button class="btn btn-deny">Revert</button>
+            <button class="btn btn-allow">Accept all</button>
+          </div>
+
+          <nav class="navbar">
+            <div class="nav">
+              <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round"><path d="M21 12a8 8 0 0 1-8 8H7l-4 3V12a8 8 0 0 1 8-8h2a8 8 0 0 1 8 8z"/><path d="M9 11h6M9 15h3"/></svg>
+              <span>Sessions</span>
+            </div>
+            <div class="nav">
+              <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round"><path d="M12 22s8-4 8-10V5l-8-3-8 3v7c0 6 8 10 8 10z"/><path d="m9 12 2 2 4-4"/></svg>
+              <span>Inbox</span>
+              <span class="cnt">2</span>
+            </div>
+            <div class="nav on">
+              <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round"><circle cx="6" cy="6" r="2.5"/><circle cx="6" cy="18" r="2.5"/><circle cx="18" cy="12" r="2.5"/><path d="M6 8.5v7M8.5 6H15a3 3 0 0 1 3 3v.5"/></svg>
+              <span>Changes</span>
+            </div>
+            <div class="nav">
+              <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round"><path d="M3 3v18h18"/><path d="M7 16v2M12 11v7M17 6v12"/></svg>
+              <span>Usage</span>
+            </div>
+            <div class="nav">
+              <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="3"/><path d="M19.4 15a1.6 1.6 0 0 0 .3 1.8l.1.1a2 2 0 1 1-2.8 2.8l-.1-.1a1.6 1.6 0 0 0-1.8-.3 1.6 1.6 0 0 0-1 1.5V21a2 2 0 1 1-4 0v-.1a1.6 1.6 0 0 0-1-1.5 1.6 1.6 0 0 0-1.8.3l-.1.1a2 2 0 1 1-2.8-2.8l.1-.1a1.6 1.6 0 0 0 .3-1.8 1.6 1.6 0 0 0-1.5-1H3a2 2 0 1 1 0-4h.1a1.6 1.6 0 0 0 1.5-1 1.6 1.6 0 0 0-.3-1.8l-.1-.1a2 2 0 1 1 2.8-2.8l.1.1a1.6 1.6 0 0 0 1.8.3H9a1.6 1.6 0 0 0 1-1.5V3a2 2 0 1 1 4 0v.1a1.6 1.6 0 0 0 1 1.5 1.6 1.6 0 0 0 1.8-.3l.1-.1a2 2 0 1 1 2.8 2.8l-.1.1a1.6 1.6 0 0 0-.3 1.8V9a1.6 1.6 0 0 0 1.5 1H21a2 2 0 1 1 0 4h-.1a1.6 1.6 0 0 0-1.5 1z"/></svg>
+              <span>Settings</span>
+            </div>
+          </nav>
+        </div>
+      </div>
+      <figcaption>Changes</figcaption>
+    </figure>
+
+    <!-- ============ 5. USAGE ============ -->
+    <figure class="phone">
+      <div class="frame">
+        <div class="screen">
+          <div class="statusbar">
+            <span>9:41</span>
+            <div class="status-right">
+              <div class="sig"><i></i><i></i><i></i><i></i></div>
+              <svg width="13" height="10" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"><path d="M5 12.5a10 10 0 0 1 14 0"/><path d="M8.5 16a5.5 5.5 0 0 1 7 0"/><circle cx="12" cy="19" r="1" fill="currentColor" stroke="none"/></svg>
+              <div class="batt"><i></i></div>
+            </div>
+          </div>
+
+          <div class="appbar">
+            <div class="appbar-title">
+              <b>Usage</b>
+              <span>DESKTOP-7F2A · code_agent</span>
+            </div>
+            <button class="iconbtn" aria-label="Export">
+              <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><path d="M12 3v12"/><path d="m7 10 5 5 5-5"/><path d="M5 21h14"/></svg>
+            </button>
+          </div>
+
+          <div class="body">
+            <div class="scroll">
+              <div class="kpi">
+                <div class="kpi-l">Session spend</div>
+                <div class="kpi-v">¥0.42<small>CNY</small></div>
+                <div class="kpi-sub">
+                  <span class="dot-live"></span>
+                  <span>deepseek-pro · 24 calls · 18m 32s</span>
+                </div>
+                <div class="kpi-g">
+                  <div class="kpi-c"><b>128.4k</b><span>input</span></div>
+                  <div class="kpi-c"><b>18.2k</b><span>output</span></div>
+                  <div class="kpi-c"><b>146.6k</b><span>total</span></div>
+                </div>
+              </div>
+
+              <div class="chips">
+                <div class="chip-o on">Session</div>
+                <div class="chip-o">Today</div>
+                <div class="chip-o">7 days</div>
+                <div class="chip-o">30 days</div>
+              </div>
+
+              <div class="sec-label">Breakdown</div>
+
+              <div class="card">
+                <div class="card-b">
+                  <div class="bar-row">
+                    <span class="bar-lbl">cache hit</span>
+                    <div class="bar-track"><div class="bar-fill" style="width:62%"></div></div>
+                    <span class="bar-num">79.6k</span>
+                  </div>
+                  <div class="bar-row">
+                    <span class="bar-lbl">cache miss</span>
+                    <div class="bar-track"><div class="bar-fill" style="width:38%"></div></div>
+                    <span class="bar-num">48.8k</span>
+                  </div>
+                  <div class="bar-row">
+                    <span class="bar-lbl">output</span>
+                    <div class="bar-track"><div class="bar-fill" style="width:14%"></div></div>
+                    <span class="bar-num">18.2k</span>
+                  </div>
+                </div>
+              </div>
+
+              <div class="sec-label">Calls <span style="letter-spacing:0;text-transform:none;color:#6f6f6f">latest 6 of 24</span></div>
+
+              <div class="calls">
+                <div class="call">
+                  <span class="call-t">14:32</span>
+                  <div class="call-main">
+                    <span class="call-m">deepseek-pro</span>
+                    <span class="call-tk">in 6.2k · out 1.1k · 4.8s</span>
+                  </div>
+                  <span class="call-cost">¥0.021</span>
+                </div>
+                <div class="call">
+                  <span class="call-t">14:31</span>
+                  <div class="call-main">
+                    <span class="call-m">deepseek-pro</span>
+                    <span class="call-tk">in 5.8k · out 0.9k · 3.9s</span>
+                  </div>
+                  <span class="call-cost">¥0.018</span>
+                </div>
+                <div class="call">
+                  <span class="call-t">14:29</span>
+                  <div class="call-main">
+                    <span class="call-m">deepseek-flash</span>
+                    <span class="call-tk">in 4.1k · out 0.6k · 1.2s</span>
+                  </div>
+                  <span class="call-cost">¥0.004</span>
+                </div>
+                <div class="call">
+                  <span class="call-t">14:27</span>
+                  <div class="call-main">
+                    <span class="call-m">deepseek-pro</span>
+                    <span class="call-tk">in 7.4k · out 1.3k · 5.6s</span>
+                  </div>
+                  <span class="call-cost">¥0.026</span>
+                </div>
+                <div class="call">
+                  <span class="call-t">14:24</span>
+                  <div class="call-main">
+                    <span class="call-m">deepseek-flash</span>
+                    <span class="call-tk">in 3.2k · out 0.4k · 0.9s</span>
+                  </div>
+                  <span class="call-cost">¥0.003</span>
+                </div>
+                <div class="call">
+                  <span class="call-t">14:21</span>
+                  <div class="call-main">
+                    <span class="call-m">deepseek-pro</span>
+                    <span class="call-tk">in 8.1k · out 1.5k · 6.1s</span>
+                  </div>
+                  <span class="call-cost">¥0.029</span>
+                </div>
+              </div>
+            </div>
+          </div>
+
+          <nav class="navbar">
+            <div class="nav">
+              <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round"><path d="M21 12a8 8 0 0 1-8 8H7l-4 3V12a8 8 0 0 1 8-8h2a8 8 0 0 1 8 8z"/><path d="M9 11h6M9 15h3"/></svg>
+              <span>Sessions</span>
+            </div>
+            <div class="nav">
+              <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round"><path d="M12 22s8-4 8-10V5l-8-3-8 3v7c0 6 8 10 8 10z"/><path d="m9 12 2 2 4-4"/></svg>
+              <span>Inbox</span>
+              <span class="cnt">2</span>
+            </div>
+            <div class="nav">
+              <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round"><circle cx="6" cy="6" r="2.5"/><circle cx="6" cy="18" r="2.5"/><circle cx="18" cy="12" r="2.5"/><path d="M6 8.5v7M8.5 6H15a3 3 0 0 1 3 3v.5"/></svg>
+              <span>Changes</span>
+            </div>
+            <div class="nav on">
+              <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round"><path d="M3 3v18h18"/><path d="M7 16v2M12 11v7M17 6v12"/></svg>
+              <span>Usage</span>
+            </div>
+            <div class="nav">
+              <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="3"/><path d="M19.4 15a1.6 1.6 0 0 0 .3 1.8l.1.1a2 2 0 1 1-2.8 2.8l-.1-.1a1.6 1.6 0 0 0-1.8-.3 1.6 1.6 0 0 0-1 1.5V21a2 2 0 1 1-4 0v-.1a1.6 1.6 0 0 0-1-1.5 1.6 1.6 0 0 0-1.8.3l-.1.1a2 2 0 1 1-2.8-2.8l.1-.1a1.6 1.6 0 0 0 .3-1.8 1.6 1.6 0 0 0-1.5-1H3a2 2 0 1 1 0-4h.1a1.6 1.6 0 0 0 1.5-1 1.6 1.6 0 0 0-.3-1.8l-.1-.1a2 2 0 1 1 2.8-2.8l.1.1a1.6 1.6 0 0 0 1.8.3H9a1.6 1.6 0 0 0 1-1.5V3a2 2 0 1 1 4 0v.1a1.6 1.6 0 0 0 1 1.5 1.6 1.6 0 0 0 1.8-.3l.1-.1a2 2 0 1 1 2.8 2.8l-.1.1a1.6 1.6 0 0 0-.3 1.8V9a1.6 1.6 0 0 0 1.5 1H21a2 2 0 1 1 0 4h-.1a1.6 1.6 0 0 0-1.5 1z"/></svg>
+              <span>Settings</span>
+            </div>
+          </nav>
+        </div>
+      </div>
+      <figcaption>Usage</figcaption>
+    </figure>
+
+    <!-- ============ 5. INBOX ============ -->
+    <figure class="phone">
+      <div class="frame">
+        <div class="screen">
+          <div class="statusbar">
+            <span>9:41</span>
+            <div class="status-right">
+              <div class="sig"><i></i><i></i><i></i><i></i></div>
+              <svg width="13" height="10" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"><path d="M5 12.5a10 10 0 0 1 14 0"/><path d="M8.5 16a5.5 5.5 0 0 1 7 0"/><circle cx="12" cy="19" r="1" fill="currentColor" stroke="none"/></svg>
+              <div class="batt"><i></i></div>
+            </div>
+          </div>
+
+          <div class="appbar">
+            <div class="appbar-title">
+              <b>Inbox</b>
+              <span>2 pending · 1 question</span>
+            </div>
+            <button class="iconbtn on" aria-label="Approve all">
+              <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="m5 12 5 5 9-9"/></svg>
+            </button>
+          </div>
+
+          <div class="body">
+            <div class="scroll">
+              <div class="sec-label">Pending</div>
+
+              <div class="inbox-item hot">
+                <div class="inbox-ico hot">
+                  <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.9" stroke-linecap="round" stroke-linejoin="round"><path d="M12 22s8-4 8-10V5l-8-3-8 3v7c0 6 8 10 8 10z"/><path d="M12 8v4M12 16h.01"/></svg>
+                </div>
+                <div class="inbox-main">
+                  <div class="inbox-top"><b>Write file</b><span class="t">14:33</span></div>
+                  <div class="inbox-desc">E:\pebbleagent\auth\login.py</div>
+                  <span class="inbox-tag hot">high risk</span>
+                </div>
+              </div>
+
+              <div class="inbox-item">
+                <div class="inbox-ico">
+                  <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.9" stroke-linecap="round" stroke-linejoin="round"><path d="m4 17 6-6-6-6"/><path d="M12 19h8"/></svg>
+                </div>
+                <div class="inbox-main">
+                  <div class="inbox-top"><b>Execute command</b><span class="t">14:33</span></div>
+                  <div class="inbox-desc">pytest tests/auth/test_login.py -q</div>
+                  <span class="inbox-tag">medium risk</span>
+                </div>
+              </div>
+
+              <div class="sec-label">Question</div>
+
+              <div class="inbox-item">
+                <div class="inbox-ico">
+                  <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.9" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="9"/><path d="M9.5 9a2.5 2.5 0 1 1 3.4 2.3c-.6.3-.9.8-.9 1.5v.4"/><path d="M12 17h.01"/></svg>
+                </div>
+                <div class="inbox-main">
+                  <div class="inbox-top"><b>Which test framework?</b><span class="t">14:34</span></div>
+                  <div class="inbox-desc">pytest 已有配置，但仓库里也有 unittest 用例</div>
+                  <span class="inbox-tag">needs answer</span>
+                </div>
+              </div>
+
+              <div class="sec-label">Resolved</div>
+
+              <div class="inbox-item" style="opacity:.5">
+                <div class="inbox-ico">
+                  <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="m5 12 5 5 9-9"/></svg>
+                </div>
+                <div class="inbox-main">
+                  <div class="inbox-top"><b>Read file</b><span class="t">14:31</span></div>
+                  <div class="inbox-desc">allowed · 15 min rule</div>
+                </div>
+              </div>
+
+              <div class="inbox-item" style="opacity:.5">
+                <div class="inbox-ico">
+                  <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="m5 12 5 5 9-9"/></svg>
+                </div>
+                <div class="inbox-main">
+                  <div class="inbox-top"><b>Network fetch</b><span class="t">14:30</span></div>
+                  <div class="inbox-desc">allowed · docs.python.org</div>
+                </div>
+              </div>
+            </div>
+          </div>
+
+          <nav class="navbar">
+            <div class="nav">
+              <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round"><path d="M21 12a8 8 0 0 1-8 8H7l-4 3V12a8 8 0 0 1 8-8h2a8 8 0 0 1 8 8z"/><path d="M9 11h6M9 15h3"/></svg>
+              <span>Sessions</span>
+            </div>
+            <div class="nav on">
+              <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round"><path d="M12 22s8-4 8-10V5l-8-3-8 3v7c0 6 8 10 8 10z"/><path d="m9 12 2 2 4-4"/></svg>
+              <span>Inbox</span>
+              <span class="cnt">2</span>
+            </div>
+            <div class="nav">
+              <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round"><circle cx="6" cy="6" r="2.5"/><circle cx="6" cy="18" r="2.5"/><circle cx="18" cy="12" r="2.5"/><path d="M6 8.5v7M8.5 6H15a3 3 0 0 1 3 3v.5"/></svg>
+              <span>Changes</span>
+            </div>
+            <div class="nav">
+              <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round"><path d="M3 3v18h18"/><path d="M7 16v2M12 11v7M17 6v12"/></svg>
+              <span>Usage</span>
+            </div>
+            <div class="nav">
+              <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="3"/><path d="M19.4 15a1.6 1.6 0 0 0 .3 1.8l.1.1a2 2 0 1 1-2.8 2.8l-.1-.1a1.6 1.6 0 0 0-1.8-.3 1.6 1.6 0 0 0-1 1.5V21a2 2 0 1 1-4 0v-.1a1.6 1.6 0 0 0-1-1.5 1.6 1.6 0 0 0-1.8.3l-.1.1a2 2 0 1 1-2.8-2.8l.1-.1a1.6 1.6 0 0 0 .3-1.8 1.6 1.6 0 0 0-1.5-1H3a2 2 0 1 1 0-4h.1a1.6 1.6 0 0 0 1.5-1 1.6 1.6 0 0 0-.3-1.8l-.1-.1a2 2 0 1 1 2.8-2.8l.1.1a1.6 1.6 0 0 0 1.8.3H9a1.6 1.6 0 0 0 1-1.5V3a2 2 0 1 1 4 0v.1a1.6 1.6 0 0 0 1 1.5 1.6 1.6 0 0 0 1.8-.3l.1-.1a2 2 0 1 1 2.8 2.8l-.1.1a1.6 1.6 0 0 0-.3 1.8V9a1.6 1.6 0 0 0 1.5 1H21a2 2 0 1 1 0 4h-.1a1.6 1.6 0 0 0-1.5 1z"/></svg>
+              <span>Settings</span>
+            </div>
+          </nav>
+        </div>
+      </div>
+      <figcaption>Inbox</figcaption>
+    </figure>
+
+    <!-- ============ 6. SETTINGS ============ -->
+    <figure class="phone">
+      <div class="frame">
+        <div class="screen">
+          <div class="statusbar">
+            <span>9:41</span>
+            <div class="status-right">
+              <div class="sig"><i></i><i></i><i></i><i></i></div>
+              <svg width="13" height="10" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"><path d="M5 12.5a10 10 0 0 1 14 0"/><path d="M8.5 16a5.5 5.5 0 0 1 7 0"/><circle cx="12" cy="19" r="1" fill="currentColor" stroke="none"/></svg>
+              <div class="batt"><i></i></div>
+            </div>
+          </div>
+
+          <div class="appbar">
+            <div class="appbar-title">
+              <b>Settings</b>
+              <span>DESKTOP-7F2A · 192.168.1.24</span>
+            </div>
+          </div>
+
+          <div class="body">
+            <div class="scroll">
+              <div class="card">
+                <div class="card-h">
+                  <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.9" stroke-linecap="round" stroke-linejoin="round"><path d="M5 12.5a10 10 0 0 1 14 0"/><path d="M8.5 16a5.5 5.5 0 0 1 7 0"/><circle cx="12" cy="19" r="1" fill="currentColor" stroke="none"/></svg>
+                  <b>Connection</b>
+                  <span class="pill sp">connected</span>
+                </div>
+                <div class="card-b">
+                  <div class="state" style="margin-bottom:13px">
+                    <div class="state-ico">
+                      <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.9" stroke-linecap="round" stroke-linejoin="round"><rect x="2" y="4" width="20" height="13" rx="2"/><path d="M8 21h8M12 17v4"/></svg>
+                    </div>
+                    <div class="state-main">
+                      <b>DESKTOP-7F2A</b>
+                      <span>12 ms · ws://192.168.1.24:19876</span>
+                    </div>
+                  </div>
+
+                  <div class="inp-split">
+                    <div class="field">
+                      <label>Host</label>
+                      <div class="inp">192.168.1.24</div>
+                    </div>
+                    <div class="field" style="max-width:92px">
+                      <label>Port</label>
+                      <div class="inp">19876</div>
+                    </div>
+                  </div>
+
+                  <div class="field">
+                    <label>Token</label>
+                    <div class="inp dim">••••••••••••••••••••••••</div>
+                  </div>
+
+                  <div class="scan">
+                    <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><rect x="3" y="3" width="7" height="7" rx="1"/><rect x="14" y="3" width="7" height="7" rx="1"/><rect x="3" y="14" width="7" height="7" rx="1"/><path d="M14 14h3v3h-3zM20 14h1M14 20h7"/></svg>
+                    <span>Scan QR from desktop</span>
+                  </div>
+                </div>
+              </div>
+
+              <div class="card">
+                <div class="card-h"><b>Workspace</b></div>
+                <div class="card-b">
+                  <div class="row">
+                    <div class="row-ico">
+                      <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.9" stroke-linecap="round" stroke-linejoin="round"><path d="M22 19a2 2 0 0 1-2 2H4a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h5l2 3h9a2 2 0 0 1 2 2z"/></svg>
+                    </div>
+                    <div class="row-main">
+                      <b>Project</b>
+                      <span>E:\pebbleagent</span>
+                    </div>
+                    <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" style="color:#5f5f5f"><path d="m9 6 6 6-6 6"/></svg>
+                  </div>
+                  <div class="row">
+                    <div class="row-ico">
+                      <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.9" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="3"/><path d="M12 2v3M12 19v3M4.2 4.2l2.1 2.1M17.7 17.7l2.1 2.1M2 12h3M19 12h3M4.2 19.8l2.1-2.1M17.7 6.3l2.1-2.1"/></svg>
+                    </div>
+                    <div class="row-main">
+                      <b>Agent</b>
+                      <span>code_agent</span>
+                    </div>
+                    <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" style="color:#5f5f5f"><path d="m9 6 6 6-6 6"/></svg>
+                  </div>
+                  <div class="row">
+                    <div class="row-ico">
+                      <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.9" stroke-linecap="round" stroke-linejoin="round"><path d="M9 3H5a2 2 0 0 0-2 2v4M15 3h4a2 2 0 0 1 2 2v4M9 21H5a2 2 0 0 1-2-2v-4M15 21h4a2 2 0 0 0 2-2v-4"/></svg>
+                    </div>
+                    <div class="row-main">
+                      <b>Model</b>
+                      <span>deepseek-pro</span>
+                    </div>
+                    <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" style="color:#5f5f5f"><path d="m9 6 6 6-6 6"/></svg>
+                  </div>
+                </div>
+              </div>
+
+              <div class="card">
+                <div class="card-h"><b>Appearance</b></div>
+                <div class="card-b">
+                  <div class="swatches">
+                    <div class="sw on" style="background:#FFD700"></div>
+                    <div class="sw" style="background:#4FC08D"></div>
+                    <div class="sw" style="background:#6CB8FF"></div>
+                    <div class="sw" style="background:#C77DFF"></div>
+                    <div class="sw" style="background:#FF8A88"></div>
+                  </div>
+                </div>
+              </div>
+
+              <div class="card">
+                <div class="card-h"><b>Behaviour</b></div>
+                <div class="card-b">
+                  <div class="row">
+                    <div class="row-main">
+                      <b>Notify on completion</b>
+                      <span>push when a turn finishes</span>
+                    </div>
+                    <div class="tgl on"></div>
+                  </div>
+                  <div class="row">
+                    <div class="row-main">
+                      <b>Approve from notification</b>
+                      <span>risk level low only</span>
+                    </div>
+                    <div class="tgl"></div>
+                  </div>
+                  <div class="row">
+                    <div class="row-main">
+                      <b>Keep screen awake</b>
+                      <span>while streaming</span>
+                    </div>
+                    <div class="tgl on"></div>
+                  </div>
+                </div>
+              </div>
+
+              <div class="hint">
+                <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.9" stroke-linecap="round" stroke-linejoin="round"><path d="M12 9v4m0 4h.01M21 12a9 9 0 1 1-18 0 9 9 0 0 1 18 0z"/></svg>
+                <span>LAN mode exposes the gateway to every device on this network. Turn it off when done.</span>
+              </div>
+            </div>
+          </div>
+
+          <nav class="navbar">
+            <div class="nav">
+              <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round"><path d="M21 12a8 8 0 0 1-8 8H7l-4 3V12a8 8 0 0 1 8-8h2a8 8 0 0 1 8 8z"/><path d="M9 11h6M9 15h3"/></svg>
+              <span>Sessions</span>
+            </div>
+            <div class="nav">
+              <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round"><path d="M12 22s8-4 8-10V5l-8-3-8 3v7c0 6 8 10 8 10z"/><path d="m9 12 2 2 4-4"/></svg>
+              <span>Inbox</span>
+            </div>
+            <div class="nav">
+              <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round"><circle cx="6" cy="6" r="2.5"/><circle cx="6" cy="18" r="2.5"/><circle cx="18" cy="12" r="2.5"/><path d="M6 8.5v7M8.5 6H15a3 3 0 0 1 3 3v.5"/></svg>
+              <span>Changes</span>
+            </div>
+            <div class="nav">
+              <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round"><path d="M3 3v18h18"/><path d="M7 16v2M12 11v7M17 6v12"/></svg>
+              <span>Usage</span>
+            </div>
+            <div class="nav on">
+              <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="3"/><path d="M19.4 15a1.6 1.6 0 0 0 .3 1.8l.1.1a2 2 0 1 1-2.8 2.8l-.1-.1a1.6 1.6 0 0 0-1.8-.3 1.6 1.6 0 0 0-1 1.5V21a2 2 0 1 1-4 0v-.1a1.6 1.6 0 0 0-1-1.5 1.6 1.6 0 0 0-1.8.3l-.1.1a2 2 0 1 1-2.8-2.8l.1-.1a1.6 1.6 0 0 0 .3-1.8 1.6 1.6 0 0 0-1.5-1H3a2 2 0 1 1 0-4h.1a1.6 1.6 0 0 0 1.5-1 1.6 1.6 0 0 0-.3-1.8l-.1-.1a2 2 0 1 1 2.8-2.8l.1.1a1.6 1.6 0 0 0 1.8.3H9a1.6 1.6 0 0 0 1-1.5V3a2 2 0 1 1 4 0v.1a1.6 1.6 0 0 0 1 1.5 1.6 1.6 0 0 0 1.8-.3l.1-.1a2 2 0 1 1 2.8 2.8l-.1.1a1.6 1.6 0 0 0-.3 1.8V9a1.6 1.6 0 0 0 1.5 1H21a2 2 0 1 1 0 4h-.1a1.6 1.6 0 0 0-1.5 1z"/></svg>
+              <span>Settings</span>
+            </div>
+          </nav>
+        </div>
+      </div>
+      <figcaption>Settings</figcaption>
+    </figure>
+
+    <!-- ============ 9. CLARIFY ============ -->
+    <figure class="phone">
+      <div class="frame">
+        <div class="screen">
+          <div class="statusbar">
+            <span>9:41</span>
+            <div class="status-right">
+              <div class="sig"><i></i><i></i><i></i><i></i></div>
+              <svg width="13" height="10" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"><path d="M5 12.5a10 10 0 0 1 14 0"/><path d="M8.5 16a5.5 5.5 0 0 1 7 0"/><circle cx="12" cy="19" r="1" fill="currentColor" stroke="none"/></svg>
+              <div class="batt"><i></i></div>
+            </div>
+          </div>
+
+          <div class="appbar">
+            <button class="iconbtn" aria-label="Back">
+              <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="m15 18-6-6 6-6"/></svg>
+            </button>
+            <div class="appbar-title">
+              <b>重构登录模块的 token 校验</b>
+              <button class="amodel">
+                <span class="dot-live"></span>
+                code_agent · deepseek-pro
+                <svg width="9" height="9" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.4" stroke-linecap="round"><path d="m6 9 6 6 6-6"/></svg>
+              </button>
+            </div>
+            <button class="iconbtn" aria-label="More">
+              <svg width="15" height="15" viewBox="0 0 24 24" fill="currentColor"><circle cx="12" cy="5" r="1.6"/><circle cx="12" cy="12" r="1.6"/><circle cx="12" cy="19" r="1.6"/></svg>
+            </button>
+          </div>
+
+          <div class="body">
+            <div class="scroll">
+              <div class="chat">
+                <div class="tstamp">TODAY 14:36</div>
+                <div class="msg-user">把 auth/login.py 里的 token 校验改成常量时间比较，顺便补一个测试</div>
+
+                <div class="md">
+                  <p>已把 <code>==</code> 换成 <code>hmac.compare_digest</code>。接下去要动 3 个文件，但改法取决于鉴权放在哪一层，需要你先定。</p>
+                </div>
+
+                <div class="clarify">
+                  <div class="clarify-h">
+                    <div class="clarify-ico">
+                      <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M9.1 9a3 3 0 0 1 5.8 1c0 2-3 2.5-3 4"/><path d="M12 17h.01"/></svg>
+                    </div>
+                    <div class="clarify-h-txt">
+                      <b>Need a decision</b>
+                      <span>Question 1 of 2</span>
+                    </div>
+                    <span class="clarify-badge">2</span>
+                  </div>
+
+                  <div class="clarify-q">鉴权逻辑放在哪一层？这决定后续 3 个文件的改法。</div>
+
+                  <div class="clarify-opts">
+                    <div class="opt on">
+                      <div class="opt-mark"></div>
+                      <div class="opt-main">
+                        <b>Middleware</b>
+                        <span>统一拦截，handler 不感知 token</span>
+                      </div>
+                    </div>
+                    <div class="opt">
+                      <div class="opt-mark"></div>
+                      <div class="opt-main">
+                        <b>Per-handler</b>
+                        <span>每个接口自己校验，便于差异化</span>
+                      </div>
+                    </div>
+                    <div class="opt">
+                      <div class="opt-mark"></div>
+                      <div class="opt-main">
+                        <b>Decorator</b>
+                        <span>声明式标注，侵入最小</span>
+                      </div>
+                    </div>
+                  </div>
+
+                  <div class="clarify-foot">
+                    <button class="btn btn-sub">Skip</button>
+                    <button class="btn btn-allow">Submit</button>
+                  </div>
+                </div>
+              </div>
+            </div>
+
+            <div class="composer">
+              <div class="comp-row">
+                <button class="tool-mini" aria-label="Attach">
+                  <svg width="17" height="17" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><path d="M21.4 11.05 12.25 20.2a5.5 5.5 0 0 1-7.78-7.78l9.2-9.19a3.7 3.7 0 1 1 5.23 5.23l-9.2 9.2a1.85 1.85 0 1 1-2.61-2.62l8.49-8.48"/></svg>
+                </button>
+                <div class="comp-box"><span class="ph">或者直接描述另一种做法...</span></div>
+                <button class="send" aria-label="Send">
+                  <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="m22 2-7 20-4-9-9-4z"/></svg>
+                </button>
+              </div>
+            </div>
+          </div>
+        </div>
+      </div>
+      <figcaption>Clarify</figcaption>
+    </figure>
+
+    <!-- ============ 10. PAIRING ============ -->
+    <figure class="phone">
+      <div class="frame">
+        <div class="screen">
+          <div class="statusbar">
+            <span>9:41</span>
+            <div class="status-right">
+              <div class="sig"><i></i><i></i><i></i><i></i></div>
+              <svg width="13" height="10" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"><path d="M5 12.5a10 10 0 0 1 14 0"/><path d="M8.5 16a5.5 5.5 0 0 1 7 0"/><circle cx="12" cy="19" r="1" fill="currentColor" stroke="none"/></svg>
+              <div class="batt"><i></i></div>
+            </div>
+          </div>
+
+          <div class="pair">
+            <div class="pair-top">
+              <div class="brand-mark" style="width:44px;height:44px;border-radius:12px">
+                <svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round"><rect x="3" y="3" width="18" height="18" rx="4"/><path d="M8 9h8M8 13h5"/></svg>
+              </div>
+              <b>Pair with desktop</b>
+              <span>在电脑上打开 PebbleAgent，进入 Settings › Connection 显示配对二维码。</span>
+            </div>
+
+            <div class="qr-wrap">
+              <svg id="qrArt" viewBox="0 0 29 29" role="img" aria-label="Pairing QR code"></svg>
+              <div class="qr-corner tl"></div>
+              <div class="qr-corner tr"></div>
+              <div class="qr-corner bl"></div>
+              <div class="qr-corner br"></div>
+            </div>
+
+            <div class="pair-div">or enter manually</div>
+
+            <div class="field">
+              <label>Desktop address</label>
+              <div class="inp">192.168.1.24:19876</div>
+            </div>
+
+            <div class="field">
+              <label>Pairing token</label>
+              <div class="inp" style="color:var(--muted)">yh21GLNO…9MI7phls</div>
+            </div>
+
+            <button class="btn btn-allow pair-btn">Connect</button>
+
+            <div class="pair-note">
+              <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.9" stroke-linecap="round" stroke-linejoin="round"><rect x="4" y="10" width="16" height="10" rx="2"/><path d="M8 10V7a4 4 0 0 1 8 0v3"/></svg>
+              <span>需要与电脑处于同一局域网。连接使用证书固定加密，令牌保存在 Android Keystore，不写入普通存储。</span>
+            </div>
+          </div>
+        </div>
+      </div>
+      <figcaption>Pairing</figcaption>
+    </figure>
+
+  </div>
+</div>
+<script>
+/* ===== pairing QR (decorative, deterministic) ===== */
+(function drawQR(){
+  var svg = document.getElementById('qrArt');
+  if (!svg) return;
+  var NS = 'http://www.w3.org/2000/svg';
+  var N = 29;
+  var seed = 20261022;
+  function rnd(){ seed = (seed * 1103515245 + 12345) & 0x7fffffff; return seed / 0x7fffffff; }
+  function finder(r, c){
+    var boxes = [[0,0],[0,N-7],[N-7,0]];
+    for (var i = 0; i < boxes.length; i++){
+      var r0 = boxes[i][0], c0 = boxes[i][1];
+      if (r >= r0 && r < r0 + 7 && c >= c0 && c < c0 + 7){
+        var dr = r - r0, dc = c - c0;
+        return (dr === 0 || dr === 6 || dc === 0 || dc === 6) || (dr >= 2 && dr <= 4 && dc >= 2 && dc <= 4);
+      }
+    }
+    return null;
+  }
+  var frag = document.createDocumentFragment();
+  for (var r = 0; r < N; r++){
+    for (var c = 0; c < N; c++){
+      var f = finder(r, c);
+      var on;
+      if (f !== null){ on = f; }
+      else {
+        var near = (r < 9 && c < 9) || (r < 9 && c > N - 10) || (r > N - 10 && c < 9);
+        on = near ? false : rnd() > 0.5;
+      }
+      if (!on) continue;
+      var rect = document.createElementNS(NS, 'rect');
+      rect.setAttribute('x', c);
+      rect.setAttribute('y', r);
+      rect.setAttribute('width', 1.02);
+      rect.setAttribute('height', 1.02);
+      rect.setAttribute('fill', '#dcd6c4');
+      frag.appendChild(rect);
+    }
+  }
+  svg.appendChild(frag);
+})();
+
+/* ===== language switch ===== */
+(function i18n(){
+  var DICT = {
+    'Sessions':'会话',
+    'Inbox':'收件箱',
+    'Changes':'变更',
+    'Settings':'设置',
+    'Connection':'连接',
+    'Workspace':'工作区',
+    'Agent':'智能体',
+    'Project':'项目',
+    'Model':'模型',
+    'Theme':'主题',
+    'Behaviour':'行为',
+    'Usage':'用量',
+    'Permission Request':'权限请求',
+    'Notification sound':'提示音',
+    'connected':'已连接',
+    'LAN connected':'局域网已连接',
+    'LAN mode':'局域网模式',
+    'Scan QR from desktop':'扫描桌面端二维码',
+    'Pair with desktop':'与桌面端配对',
+    'or enter manually':'或手动输入',
+    'Desktop address':'桌面地址',
+    'Pairing token':'配对令牌',
+    'Connect':'连接',
+    'Reconnecting':'正在重连',
+    'retry in 3s':'3 秒后重试',
+    'Need a decision':'等待你的决定',
+    'Skip':'跳过',
+    'Submit':'提交',
+    'Notify on completion':'完成时通知',
+    'push when a turn finishes':'一轮对话结束时推送',
+    'Approve from notification':'从通知中审批',
+    'risk level low only':'仅低风险操作',
+    'Keep screen awake':'保持屏幕常亮',
+    'while streaming':'流式输出期间',
+    'Session spend':'本次会话花费',
+    'cache hit':'缓存命中',
+    'cache miss':'缓存未命中',
+    'Thinking':'思考中',
+    'Allow':'允许',
+    'Deny':'拒绝',
+    'Allow all':'全部允许',
+    'Accept all':'全部接受',
+    'Revert':'回退',
+    'Agent & Model':'智能体与模型',
+    'Appearance':'外观',
+    'Approval':'审批',
+    'approval':'审批',
+    'Breakdown':'明细',
+    'Calls':'调用',
+    'Session':'会话',
+    'session':'会话',
+    'this session':'本次会话',
+    'total':'合计',
+    'input':'输入',
+    'output':'输出',
+    'Files':'文件',
+    'Host':'主机',
+    'Port':'端口',
+    'Token':'令牌',
+    'Model picker':'选择模型',
+    'Operation':'操作',
+    'Target':'目标',
+    'Question':'问题',
+    'Reason':'原因',
+    'Pending':'待处理',
+    'Resolved':'已处理',
+    'Remember for':'记住',
+    'Read file':'读取文件',
+    'Write file':'写入文件',
+    'Execute command':'执行命令',
+    'Network fetch':'网络请求',
+    'Yesterday':'昨天',
+    'Today':'今天',
+    'search sessions':'搜索会话',
+    'high risk':'高风险',
+    'medium risk':'中风险',
+    'needs answer':'待回答',
+    'enter message...':'输入消息...',
+    'API keys are managed on the desktop':'API 密钥在桌面端管理',
+    'CHAT ONLY':'仅聊天',
+    'FULL TOOLS':'完整工具',
+    'CNY':'人民币'
+  };
+  var nodes = [];
+  function collect(){
+    var walker = document.createTreeWalker(document.body, NodeFilter.SHOW_TEXT, {
+      acceptNode: function(n){
+        var p = n.parentElement;
+        if (!p) return NodeFilter.FILTER_REJECT;
+        if (p.closest('.msg-user, .tstamp, script, style')) return NodeFilter.FILTER_REJECT;
+        return NodeFilter.FILTER_ACCEPT;
+      }
+    });
+    while (walker.nextNode()) nodes.push(walker.currentNode);
+  }
+  function apply(lang){
+    for (var i = 0; i < nodes.length; i++){
+      var n = nodes[i];
+      if (n.__base === undefined) n.__base = n.nodeValue;
+      var key = n.__base.trim();
+      if (!key || !DICT[key]) continue;
+      n.nodeValue = lang === 'cn' ? DICT[key] : n.__base;
+    }
+    document.documentElement.lang = lang === 'cn' ? 'zh-CN' : 'en';
+    var btns = document.querySelectorAll('.lang-btn');
+    for (var j = 0; j < btns.length; j++){
+      btns[j].classList.toggle('on', btns[j].getAttribute('data-lang') === lang);
+    }
+  }
+  collect();
+  var btns = document.querySelectorAll('.lang-btn');
+  for (var k = 0; k < btns.length; k++){
+    btns[k].addEventListener('click', function(){
+      apply(this.getAttribute('data-lang'));
+    });
+  }
+})();
+</script>
+</body>
+</html>

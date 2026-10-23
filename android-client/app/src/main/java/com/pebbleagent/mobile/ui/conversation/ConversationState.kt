@@ -88,6 +88,8 @@ class ConversationState(
 
     private var assistantIdx = -1
     private var thinkingIdx = -1
+    /** Wall-clock start of the reasoning block in flight; 0 when none is open. */
+    private var thinkingStartedAt = 0L
     private var seq = 0
     private var loaded = false
 
@@ -159,6 +161,7 @@ class ConversationState(
                 // whatever history message now sits at that index.
                 assistantIdx = -1
                 thinkingIdx = -1
+                thinkingStartedAt = 0L
                 // Stored rows, but locally appended stream items and older rows
                 // without an id would otherwise collide on "m0" and make
                 // LazyColumn throw on a duplicate key.
@@ -240,6 +243,7 @@ class ConversationState(
         streaming = true
         assistantIdx = -1
         thinkingIdx = -1
+        thinkingStartedAt = 0L
         items.add(MessageItem(nextKey("u"), ItemRole.User, text = text, at = nowSec()))
         scope.launch {
             val params = JSONObject()
@@ -353,6 +357,9 @@ class ConversationState(
 
     private fun appendAssistant(chunk: String, tokens: Int) {
         if (chunk.isEmpty()) return
+        // The first visible token ends the reasoning block: stamp its duration
+        // before the transcript moves on.
+        settleThinking()
         if (assistantIdx < 0 || assistantIdx >= items.size) {
             items.add(MessageItem(nextKey("a"), ItemRole.Assistant, at = nowSec()))
             assistantIdx = items.size - 1
@@ -366,9 +373,25 @@ class ConversationState(
         if (thinkingIdx < 0 || thinkingIdx >= items.size) {
             items.add(MessageItem(nextKey("t"), ItemRole.Thinking, at = nowSec()))
             thinkingIdx = items.size - 1
+            thinkingStartedAt = System.currentTimeMillis()
         }
         val cur = items[thinkingIdx]
         items[thinkingIdx] = cur.copy(text = cur.text + chunk)
+    }
+
+    /**
+     * Close the reasoning block and stamp how long it ran. The desktop shows the
+     * same fact from `durationMs`; here it is seconds, formatted at render time.
+     */
+    private fun settleThinking() {
+        val started = thinkingStartedAt
+        if (started <= 0L) return
+        thinkingStartedAt = 0L
+        if (thinkingIdx < 0 || thinkingIdx >= items.size) return
+        val cur = items[thinkingIdx]
+        items[thinkingIdx] = cur.copy(
+            durationS = (System.currentTimeMillis() - started) / 1000.0,
+        )
     }
 
     private fun startTool(p: JSONObject) {
@@ -376,6 +399,7 @@ class ConversationState(
         // A tool call ends the current reasoning and text block. Without this
         // reset every later delta keeps appending to the first block, so a turn
         // that thinks, calls a tool, then thinks again shows only one card.
+        settleThinking()
         thinkingIdx = -1
         assistantIdx = -1
         items.add(
@@ -414,6 +438,7 @@ class ConversationState(
     }
 
     private fun completeMessage(p: JSONObject) {
+        settleThinking()
         val full = p.optString("text")
         if (full.isNotEmpty()) {
             if (assistantIdx in items.indices) {
@@ -428,7 +453,9 @@ class ConversationState(
         }
         assistantIdx = -1
         thinkingIdx = -1
-        scrollToBottom()
+        // The turn is over: the composer goes back to send mode without the user
+        // having to press stop.
+        streaming = false
     }
 
     private fun scrollToBottom() {

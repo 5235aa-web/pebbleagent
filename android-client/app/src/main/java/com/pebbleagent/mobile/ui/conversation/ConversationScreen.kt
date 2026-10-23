@@ -4,18 +4,26 @@ import androidx.compose.foundation.background
 import androidx.compose.foundation.border
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.horizontalScroll
+import androidx.compose.animation.core.CubicBezierEasing
+import androidx.compose.animation.core.animateFloat
+import androidx.compose.animation.core.infiniteRepeatable
+import androidx.compose.animation.core.rememberInfiniteTransition
+import androidx.compose.animation.core.tween
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
+import androidx.compose.foundation.layout.BoxWithConstraints
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.RowScope
 import androidx.compose.foundation.layout.Spacer
+import androidx.compose.foundation.layout.fillMaxHeight
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.heightIn
 import androidx.compose.foundation.layout.imePadding
 import androidx.compose.foundation.layout.navigationBarsPadding
+import androidx.compose.foundation.layout.offset
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.statusBarsPadding
@@ -37,6 +45,7 @@ import androidx.compose.material3.Text
 import androidx.compose.material3.TextButton
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
+import androidx.compose.runtime.derivedStateOf
 import androidx.compose.runtime.collectAsState
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
@@ -115,9 +124,17 @@ fun ConversationScreen(
         }
     }
 
+    // Follow the tail while the view is already at the bottom. `canScrollForward`
+    // is the reliable test here: comparing the last visible index against the item
+    // count stops matching as soon as the final message grows taller than the
+    // viewport, which is exactly when following matters.
+    val followTail by remember { derivedStateOf { !listState.canScrollForward } }
     LaunchedEffect(state.items.size, state.items.lastOrNull()?.text?.length) {
-        if (state.items.isNotEmpty()) {
-            listState.animateScrollToItem(state.items.lastIndex)
+        if (state.items.isNotEmpty() && followTail) {
+            // Index the trailing spacer, not the last message: scrolling a tall
+            // message to the viewport top parks the reader at its opening lines
+            // while new text keeps arriving below the fold.
+            listState.scrollToItem(state.items.size)
         }
     }
 
@@ -180,6 +197,30 @@ fun ConversationScreen(
                             MessageRow(item)
                         }
                         item(key = "tail") { Spacer(Modifier.height(2.dp)) }
+                    }
+                }
+                // Jump-to-latest: only while the reader is above the tail, so it
+                // never covers the newest line during normal following.
+                if (!followTail && state.items.isNotEmpty()) {
+                    Box(
+                        modifier = Modifier
+                            .align(Alignment.BottomEnd)
+                            .padding(end = 14.dp, bottom = 12.dp)
+                            .size(32.dp)
+                            .clip(CircleShape)
+                            .background(PebbleColors.BgSurface)
+                            .border(1.dp, PebbleColors.BorderSubtle, CircleShape)
+                            .clickable {
+                                scope.launch { listState.animateScrollToItem(state.items.size) }
+                            },
+                        contentAlignment = Alignment.Center,
+                    ) {
+                        PebbleIcon(
+                            PebbleIcons.ChevronDown,
+                            PebbleColors.GreyB9,
+                            size = 14.dp,
+                            strokeWidth = 2f,
+                        )
                     }
                 }
             }
@@ -595,10 +636,23 @@ private fun CodeBlock(lang: String, code: String) {
     }
 }
 
+/**
+ * Matches the desktop's `fm()`: sub-second blocks read in milliseconds, longer
+ * ones keep one decimal. A block with no measured duration falls back to its
+ * character count, which is what replayed history carries.
+ */
+private fun fmtDuration(item: MessageItem): String {
+    val s = item.durationS
+    if (s <= 0.0) return "${item.text.length}"
+    if (s < 1.0) return "${(s * 1000).toInt()}ms"
+    val tenths = Math.round(s * 10)
+    return "${tenths / 10}.${tenths % 10}s"
+}
+
 /** `.think { radius:10; border:subtle; background:surface }` */
 @Composable
 private fun ThinkingCard(item: MessageItem) {
-    var open by remember { mutableStateOf(false) }
+    var open by remember { mutableStateOf(true) }
     Column(
         modifier = Modifier
             .fillMaxWidth()
@@ -627,7 +681,7 @@ private fun ThinkingCard(item: MessageItem) {
                 modifier = Modifier.weight(1f),
             )
             Text(
-                if (open) "hide" else "${item.text.length}",
+                if (open) "${fmtDuration(item)}  hide" else fmtDuration(item),
                 color = PebbleColors.Grey5F,
                 fontSize = 9.5.sp,
             )
@@ -954,6 +1008,49 @@ private fun RowScope.FooterButton(
     }
 }
 
+/**
+ * `.comp-progress` from the prototype: a 2 dp track at 12 % accent with a 38 %
+ * band sweeping across it every 1.5 s. The band is a horizontal gradient that
+ * fades to transparent on both ends, so the motion reads as a pulse rather than
+ * a filling bar.
+ */
+@Composable
+private fun StreamingSweep() {
+    // CSS `ease-in-out`, held in a remember so the spec does not change identity
+    // on every recomposition and restart the loop.
+    val easing = remember { CubicBezierEasing(0.42f, 0f, 0.58f, 1f) }
+    val transition = rememberInfiniteTransition(label = "sweep")
+    val shift by transition.animateFloat(
+        initialValue = -1f,
+        targetValue = 3.6f,
+        animationSpec = infiniteRepeatable(
+            animation = tween(durationMillis = 1500, easing = easing),
+        ),
+        label = "sweepShift",
+    )
+    BoxWithConstraints(
+        modifier = Modifier
+            .fillMaxWidth()
+            .height(2.dp)
+            .clip(RoundedCornerShape(2.dp))
+            .background(Palette.accent.copy(alpha = 0.12f)),
+    ) {
+        Box(
+            modifier = Modifier
+                .offset(x = maxWidth * shift)
+                .width(maxWidth * 0.38f)
+                .fillMaxHeight()
+                .background(
+                    Brush.horizontalGradient(
+                        0f to Color.Transparent,
+                        0.5f to Palette.accent,
+                        1f to Color.Transparent,
+                    ),
+                ),
+        )
+    }
+}
+
 /** `.composer { padding:9px 12px }` + `.comp-box { min-height:38; radius:12 }` */
 @Composable
 private fun Composer(
@@ -968,7 +1065,13 @@ private fun Composer(
             .fillMaxWidth()
             .background(PebbleColors.BgDeep.copy(alpha = 0.96f))
     ) {
-        Box(modifier = Modifier.fillMaxWidth().height(1.dp).background(PebbleColors.BorderSubtle))
+        // `.comp-progress`: a 2 dp band sweeping while a turn is running, tinted
+        // with the live accent; the hairline returns the moment it stops.
+        if (streaming) {
+            StreamingSweep()
+        } else {
+            Box(modifier = Modifier.fillMaxWidth().height(1.dp).background(PebbleColors.BorderSubtle))
+        }
         Row(
             modifier = Modifier
                 .fillMaxWidth()
