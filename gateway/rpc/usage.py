@@ -42,7 +42,6 @@ def _empty_stats():
 
 
 def handle(ctx, method):
-    srv = ctx.srv
     params = ctx.params
     rid = ctx.rid
 
