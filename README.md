@@ -10,10 +10,13 @@
 [![Vue 3](https://img.shields.io/badge/Vue-3-00E676?style=flat-square&labelColor=1f1f1f)](https://vuejs.org/)
 [![Tauri 2](https://img.shields.io/badge/Tauri-2-FF6699?style=flat-square&labelColor=1f1f1f)](https://tauri.app/)
 [![Platform: Windows](https://img.shields.io/badge/Platform-Windows-8A92A6?style=flat-square&labelColor=1f1f1f)](#)
+[![Platform: macOS](https://img.shields.io/badge/Platform-macOS-8A92A6?style=flat-square&labelColor=1f1f1f&logo=apple&logoColor=ffffff)](#)
 
 </div>
 
-> **Platform support:** Windows 10/11 (64-bit) only, for now. The app and its backend rely on Windows APIs (process management, PowerShell integration, packaging), so Linux and macOS are not supported yet.
+> **Platform support:** Windows 10/11 (64-bit) is the tested platform, and the only one that can build the desktop shell. The backend and the web UI also run on macOS, where the shell is unavailable because its Tauri sidecar management is written against Win32 APIs. Linux is untested.
+>
+> <sub>macOS has not been run by the author, who has no Apple machine. It is verified by code inspection rather than by use, so it should work — and if it does not, please open an issue.</sub>
 
 ## Features
 
@@ -54,7 +57,7 @@ flowchart LR
 
 ### Prerequisites
 
-- Windows 10/11 (64-bit), the only supported platform for now
+- Windows 10/11 (64-bit) for the desktop shell, or macOS for web mode
 - Python 3.11+
 - Node.js 18+ (for the frontend and npx-based MCP servers)
 - Rust toolchain (only needed to build the desktop shell)
@@ -84,6 +87,23 @@ start_gui.bat
 
 This starts the Python backend (`ws://127.0.0.1:19876`) and the Vite dev server (`http://localhost:5180`).
 
+On macOS the two services are started separately:
+
+```bash
+chmod +x start_backend.sh
+./start_backend.sh
+```
+
+```bash
+cd frontend
+npm run dev
+```
+
+Then open http://localhost:5180. The dev server injects the gateway token into the
+page, so nothing else has to be configured. The `powershell` tool is not offered on
+macOS; `execute_shell` covers the same ground. The desktop shell cannot be built
+there yet, so web mode is how it runs.
+
 To run the desktop shell in development instead, start the backend first and then:
 
 ```bash
@@ -92,6 +112,10 @@ npx tauri dev
 ```
 
 ### Build the desktop app
+
+> This section is Windows-only. The sidecar management in
+> `frontend/src-tauri/src/lib.rs` is built on Win32 APIs, so the shell does not
+> compile on macOS. Web mode above needs none of it.
 
 1. Package the backend with PyInstaller:
 

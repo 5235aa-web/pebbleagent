@@ -255,7 +255,7 @@ Retry strategy:
 
 Tool definitions are provided in the API `tools` parameter. Read them there; there is no list here to keep in sync.
 
-**Windows execution**: `execute_shell` may cause officecli style loss. `powershell` is Windows native and is required for officecli; before every execution run `$env:Path = "$env:LOCALAPPDATA\OfficeCLI;$env:Path"` first to ensure officecli is in PATH.
+**Windows execution**: `execute_shell` may cause officecli style loss. `powershell` is Windows native and is required for officecli; before every execution run `$env:Path = "$env:LOCALAPPDATA\OfficeCLI;$env:Path"` first to ensure officecli is in PATH. This paragraph is Windows-only: on other platforms the tool is absent from the schema and `execute_shell` is the only shell.
 
 ### Experience ledger (experience_write / experience_update)
 The experience ledger is a cross-session store of lessons: corrections, constraints, preferences, pitfalls, recipes, references. The system automatically detects lessons from each turn and injects the relevant ones into your system prompt under `<experience-ledger>`.

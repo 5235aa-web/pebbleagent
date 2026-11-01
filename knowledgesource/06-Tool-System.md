@@ -28,6 +28,8 @@ The executor is a thin pipeline (policy → permission → snapshot → dispatch
 
 These two managers are the runtime state behind the `todo_write` / `todo_read` and `clarify` tools. The former `tools/` package (BaseTool classes + ToolRegistry) has been removed: tool schemas live in `agent_core/tool_definitions.py`, dispatch in `agent_core/tool_impl/registry.py`, and implementations in the `tool_impl/` mixins.
 
+`get_tools_definition()` returns 46 tools on Windows and 45 elsewhere: `_PLATFORM_ONLY = {"powershell": "win32"}` together with `_drop_platform_only()` removes the PowerShell schema on any other platform, so the model is never handed a tool it cannot call. `_tool_powershell` keeps a matching `os.name != "nt"` guard for the two paths that bypass the schema — a replayed history row and a direct RPC call — returning a plain error instead of failing at process spawn.
+
 
 ### agent_core/mcp/ (5 files)
 

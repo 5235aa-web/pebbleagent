@@ -122,7 +122,7 @@ def main() -> int:
             print(f"[FAIL] {name} {detail}")
 
     from agent_core.agent_loader import load_agent_yaml, clear_agent_cache
-    from agent_core.tool_definitions import get_tools_definition
+    from agent_core.tool_definitions import get_tools_definition, _PLATFORM_ONLY
 
     if not os.path.exists(PROMPT_PATH):
         print(f"[FAIL] prompt missing: {PROMPT_PATH}")
@@ -145,7 +145,10 @@ def main() -> int:
     # ---------- 2. tool-name sync ----------
     # Universe = the static schema set (agent_core/tool_definitions.py). The
     # handler-side dispatch table is checked by tests/test_tool_registry.py.
-    base_names = {t["function"]["name"] for t in get_tools_definition()}
+    # The prompt names tools that only exist on Windows. The universe has to be
+    # what can exist on any platform, otherwise this contract would fail on macOS
+    # for a tool that is registered and merely hidden from that platform's schema.
+    base_names = {t["function"]["name"] for t in get_tools_definition()} | set(_PLATFORM_ONLY)
     prefixes = mcp_prefixes()
     print(f"[INFO] base tools: {len(base_names)} | MCP prefixes: {len(prefixes)}")
 

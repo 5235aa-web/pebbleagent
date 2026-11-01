@@ -250,6 +250,10 @@ class ExecutionToolsMixin:
         context: ToolExecutionContext = None
     ) -> str:
         """执行 PowerShell 命令"""
+        # The schema drops this tool off Windows. This guard covers the paths that
+        # bypass the schema: a replayed history row or a direct RPC call.
+        if os.name != "nt":
+            return "Error: the powershell tool is Windows-only. Use execute_shell on this platform."
         if not command:
             return "Error: No command provided"
 

@@ -7,8 +7,21 @@ Tool Definitions - 工具定义
 
 from typing import List, Dict, Any
 import logging
+import sys
 
 logger = logging.getLogger(__name__)
+
+# Tools that only exist on one platform. They are dropped from the schema on any
+# other platform, so the model never sees a tool it has no way to call.
+_PLATFORM_ONLY = {"powershell": "win32"}
+
+
+def _drop_platform_only(tools: List[Dict[str, Any]]) -> List[Dict[str, Any]]:
+    """Remove the tools that cannot run on the current platform."""
+    blocked = {name for name, plat in _PLATFORM_ONLY.items() if plat != sys.platform}
+    if not blocked:
+        return tools
+    return [t for t in tools if t.get("function", {}).get("name") not in blocked]
 
 
 def get_tools_definition() -> List[Dict[str, Any]]:
@@ -18,7 +31,7 @@ def get_tools_definition() -> List[Dict[str, Any]]:
     Returns:
         工具定义列表
     """
-    return [
+    tools = [
         # ==================== 代码执行 ====================
         {
             "type": "function",
@@ -1159,6 +1172,7 @@ def get_tools_definition() -> List[Dict[str, Any]]:
             }
         },
     ]
+    return _drop_platform_only(tools)
 
 
 def get_tools_definition_with_mcp(

@@ -767,3 +767,22 @@
   section and the `android-client/` tree entry. The Screenshots section carries
   `assets/png1.png` and `assets/png2.png`
 - 2026-11-01
+
+## The backend runs on macOS in web mode
+
+- `run_backend.py` calls `SetPriorityClass` only when `sys.platform == "win32"`:
+  `ctypes.windll` does not exist on POSIX, so the unguarded call aborted startup
+  before the gateway was even imported
+- `start_backend.sh` is the POSIX counterpart of `start_backend.bat`: dependency
+  probe, `lsof` port cleanup, backend launch, socket-based readiness wait, trap
+  cleanup and single-key stop. LF endings, ASCII only. The batch file is untouched
+- `powershell` is platform-gated: `_PLATFORM_ONLY` in `tool_definitions.py` drops it
+  from the schema off Windows (46 tools on win32, 45 elsewhere), and
+  `_tool_powershell` returns an error there for history replays and direct RPC calls
+- `tests/test_code_agent_prompt_contract.py` builds its tool universe as the schema
+  set plus `_PLATFORM_ONLY`, so the prompt contract still holds on a platform where
+  the tool is hidden rather than absent
+- `README.md` names Windows as the tested platform and macOS as supported in web mode
+  only, adds a macOS badge, documents the `start_backend.sh` + `npm run dev` flow, and
+  records that no Apple machine was available for a real run
+- 2026-11-01
