@@ -16,7 +16,7 @@
 
 > **Platform support:** Windows 10/11 (64-bit) is the tested platform, and the only one that can build the desktop shell. The backend and the web UI also run on macOS, where the shell is unavailable because its Tauri sidecar management is written against Win32 APIs. Linux is untested.
 >
-> <sub>macOS has not been run by the author, who has no Apple machine. It is verified by code inspection rather than by use, so it should work — and if it does not, please open an issue.</sub>
+> <sub>macOS has not been run by the author, who has no Apple machine. It is verified by code inspection rather than by use, so it should work on MacOS — and if it does not, please open an issue.</sub>
 
 ## Features
 
