@@ -103,6 +103,47 @@ def handle(ctx, method):
         }
         }
 
+    if method == "session.snapshots":
+        # The Files pane lists the snapshot points this session created. Rows are
+        # grouped by `snapshot_id` (one per tool call), because a single edit can
+        # touch several files and the timeline shows one entry per operation.
+        sid = params.get("session_id", "")
+        session = srv._session_store.get(sid) if sid else None
+        if not session:
+            return {"id": rid, "result": {"snapshots": [], "stats": {}}}
+        project_path = srv._norm_project_path(session.get("project_path") or "")
+        try:
+            from agent_core.snapshot.snapshot_manager import get_snapshot_manager
+            manager = get_snapshot_manager(sid, project_path)
+        except Exception:
+            manager = None
+        if not manager:
+            return {"id": rid, "result": {"snapshots": [], "stats": {}}}
+        groups: dict = {}
+        try:
+            for record in manager.query_all_retained():
+                row = record.to_db_row()
+                key = row.get("snapshot_id") or ""
+                group = groups.setdefault(key, {
+                "id": key,
+                "tool": row.get("tool_name") or "",
+                "messageId": row.get("message_id") or 0,
+                "files": 0,
+                "paths": [],
+                "createdAt": row.get("created_at") or 0,
+                "reverted": False,
+                })
+                group["files"] += 1
+                group["paths"].append(row.get("relative_path") or "")
+                if row.get("revert_status") == "reverted":
+                    group["reverted"] = True
+            stats = manager.get_stats()
+        except Exception as exc:
+            logger.warning("[session.snapshots] failed: %s", exc)
+            return {"id": rid, "result": {"snapshots": [], "stats": {}}}
+        ordered = sorted(groups.values(), key=lambda g: (g.get("messageId") or 0), reverse=True)
+        return {"id": rid, "result": {"snapshots": ordered, "stats": stats}}
+
     if method == "session.title":
         sid = params.get("session_id", "")
         title = params.get("title", "")

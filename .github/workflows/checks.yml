@@ -52,19 +52,21 @@ jobs:
       - name: Checkout
         uses: actions/checkout@v5
 
+      # 22.x required: tests/run_all.mjs passes --experimental-transform-types, which
+      # landed in 22.7. The floating tag resolves to the newest release of that line.
       - name: Set up Node.js
         uses: actions/setup-node@v5
         with:
           node-version: '22'
           cache: npm
-          cache-dependency-path: ui-gui-vue3/package-lock.json
+          cache-dependency-path: frontend/package-lock.json
 
       - name: Install frontend dependencies
-        working-directory: ui-gui-vue3
+        working-directory: frontend
         run: npm ci
 
       - name: Type check (vue-tsc)
-        working-directory: ui-gui-vue3
+        working-directory: frontend
         run: npx vue-tsc --noEmit
 
       - name: JS test suite

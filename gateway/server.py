@@ -436,6 +436,21 @@ def _ensure_service() -> AgentChatServiceV2:
     global _current_service
     if _current_service is None:
         _current_service = AgentChatServiceV2()
+        # 进程的 cwd 是 sidecar 的启动目录（安装目录下的可执行文件所在处），不是
+        # 用户选的项目，所以服务初始化后立刻把注册表里的 active 装回去。否则在
+        # 用户主动切换项目之前，提示词里的工作目录一直是那个安装目录。
+        try:
+            active = (_read_projects() or {}).get("active") or ""
+        except Exception:
+            active = ""
+        if active and os.path.isdir(active):
+            try:
+                _current_service.set_project_path(active)
+                logger.info(f"[Server] Restored active project: {active}")
+            except Exception as e:
+                logger.warning(f"[Server] Failed to restore active project {active}: {e}")
+        elif active:
+            logger.warning(f"[Server] Active project missing or not a directory: {active}")
     return _current_service
 
 
@@ -735,6 +750,44 @@ async def _apply_generated_title(
     write_event("session.updated", {"title": title, "session_id": sid})
 
 
+def _persist_interrupted_reply(
+    sid: str,
+    event: Optional[dict],
+    full_content: str,
+    full_reasoning: str,
+    tool_executions: list,
+    err_msg: str,
+) -> tuple[bool, Optional[int]]:
+    """把中断回合已生成的内容连同错误行一起落库，返回 (是否写入, 消息 id)。
+
+    传输层异常（httpx "peer closed connection ... incomplete chunked read"）不会
+    走到 chat_completed，不在异常路径补写，用户当下看到的正文会在刷新或重启后
+    消失。正文格式与前端的 error 分支保持一致（正文 + 空行 + **Error:** ...），
+    刷新前后是同一条消息、同样的文本；msg_uuid 必须沿用 agent 侧那条记录的 uuid，
+    否则 message.delete 按 uuid 同步删除 agent_chat.db 会失败，变成假删除。
+    """
+    payload = event or {}
+    partial = payload.get("content") or full_content or ""
+    reasoning = payload.get("reasoning") or full_reasoning or ""
+    execution_order = payload.get("execution_order") or tool_executions or []
+    msg_uuid = payload.get("assistant_msg_uuid") or ""
+    error_line = f"**Error:** {err_msg}"
+    content = f"{partial}\n\n{error_line}" if partial.strip() else error_line
+    try:
+        message_id, _ = _session_store.add_assistant_message(
+            sid,
+            content,
+            reasoning or None,
+            json.dumps(execution_order) if execution_order else None,
+            msg_uuid=msg_uuid,
+            interrupted=True,
+        )
+        return True, message_id
+    except Exception as _se:
+        logger.warning(f"[Server] Failed to save interrupted reply for {sid}: {_se}")
+        return False, None
+
+
 def handle_prompt_submit(
     sid: str,
     text: str,
@@ -747,13 +800,22 @@ def handle_prompt_submit(
     _cancel_events[sid] = cancel_event
     cancel_event.clear()
 
-    # 记录项目路径，供快照查询 API 使用
-    if project_path:
-        _session_project_paths[sid] = os.path.abspath(project_path)
-
     llm_config = load_llm_config(_current_agent)
     service = _ensure_service()
     agent_name = _current_agent
+
+    # 本轮的工作目录：前端传了就用它，没传就落到注册表的 active，再退到服务当前
+    # 路径。cwd 不能作为兜底——打包后那是 sidecar 的启动目录，跟会话无关。
+    if not project_path:
+        try:
+            project_path = (_read_projects() or {}).get("active") or ""
+        except Exception:
+            project_path = ""
+    if not project_path:
+        project_path = getattr(service, "_current_project_path", "") or ""
+    # 记录项目路径，供快照查询与工具边界使用
+    if project_path:
+        _session_project_paths[sid] = os.path.abspath(project_path)
 
     reasoning_effort = None
     thinking_enabled = True
@@ -783,6 +845,14 @@ def handle_prompt_submit(
     user_msg_id, user_msg_uuid = _session_store.add_user_message(sid, text)
 
     async def run():
+        # 累积量必须在 try 之前初始化：流建立之前就可能抛错，异常分支仍要能
+        # 安全取到已生成内容，并据此补写一条 interrupted 消息。
+        full_content = ""
+        full_reasoning = ""
+        tool_executions = []
+        was_interrupted = False
+        chat_completed_data = None
+        assistant_saved = False
         try:
             write_event("user_message.saved", {
                 "message_id": user_msg_id,
@@ -800,11 +870,6 @@ def handle_prompt_submit(
                 thinking_enabled=thinking_enabled,
                 reasoning_effort=reasoning_effort,
                 attachments=attachments, user_msg_uuid=user_msg_uuid)
-            full_content = ""
-            full_reasoning = ""
-            tool_executions = []
-            was_interrupted = False
-            chat_completed_data = None
             async for event in gen:
                 if cancel_event.is_set():
                     logger.info(f"[Server] Chat cancelled by user for session {sid}")
@@ -841,7 +906,7 @@ def handle_prompt_submit(
                         # 工具留痕失败（如会话已被删除导致 FK 失败）不应中断会话，
                         # 工具本身已执行完毕，前端事件照常发送。
                         try:
-                            _session_store.add_tool_message(sid, tool_name, ctx, tool_call_id=tcid)
+                            _session_store.add_tool_message(sid, tool_name, ctx, tool_call_id=tcid, output=tool_output)
                         except Exception as _te:
                             logger.warning(f"[Server] Failed to save tool message for {sid}: {_te}")
                         write_event("tool.complete", {"tool_id": tool_id, "name": tool_name, "result_text": tool_output, "error": tool_output if status == "failed" else None, "duration_s": event.get("duration", 0) / 1000})
@@ -908,12 +973,20 @@ def handle_prompt_submit(
                     break
                 elif event_type == "error":
                     err_msg = event.get("message", "Unknown error")
-                    # 持久化错误消息（刷新/重启后仍可见）
-                    try:
-                        _session_store.add_assistant_message(sid, f"**Error:** {err_msg}", None, None, interrupted=True)
-                    except Exception as _se:
-                        logger.warning(f"[Server] Failed to save error message: {_se}")
-                    write_event("error", {"message": err_msg})
+                    # 已生成的正文必须随错误一起落库：只写错误行会让用户当下看到的
+                    # 那段输出在刷新或重启后消失，只剩一行 Error。
+                    assistant_saved, message_id = _persist_interrupted_reply(
+                        sid, event, full_content, full_reasoning, tool_executions, err_msg
+                    )
+                    write_event("error", {
+                        "message": err_msg,
+                        "interrupted": True,
+                        "message_id": message_id,
+                        "session_id": sid,
+                        "content": event.get("content") or full_content,
+                        "reasoning": event.get("reasoning") or full_reasoning,
+                        "execution_order": event.get("execution_order") or tool_executions,
+                    })
                     break
             if chat_completed_data:
                 # 保存完整 execution_order（含 reasoning/text/tool 交错顺序），
@@ -925,6 +998,7 @@ def handle_prompt_submit(
                 # 前端已通过事件收到完整回复，此处仅持久化留痕，失败记 warning 即可。
                 try:
                     _session_store.add_assistant_message(sid, full_content, full_reasoning, json.dumps(full_eo) if full_eo else None, msg_uuid=chat_completed_data.get("assistant_msg_uuid") or "", interrupted=was_interrupted)
+                    assistant_saved = True
                 except Exception as _se:
                     logger.warning(f"[Server] Failed to save assistant message for {sid}: {_se}")
                 write_event("message.complete", {"text": full_content, "reasoning": full_reasoning, "tool_calls": json.dumps(tool_executions), "interrupted": was_interrupted, "message_id": chat_completed_data.get("message_id"), "session_id": sid})
@@ -932,20 +1006,35 @@ def handle_prompt_submit(
                     # Runs after the reply is persisted and pushed, so the user is
                     # never waiting on it; a failure leaves the placeholder title.
                     await _apply_generated_title(sid, text, full_content, llm_config, write_event)
-            else:
+            elif not assistant_saved:
+                # 走到这里说明生成器结束却没发 chat_completed：正常的兜底保存。
+                # error 分支已经写过一条带正文的中断消息时跳过，否则同一条回复会
+                # 在库里出现两行，且随后的 message.complete 会把前端的错误标记抹掉。
                 try:
                     _session_store.add_assistant_message(sid, full_content, full_reasoning, json.dumps(tool_executions) if tool_executions else None, interrupted=was_interrupted)
+                    assistant_saved = True
                 except Exception as _se:
                     logger.warning(f"[Server] Failed to save assistant message for {sid}: {_se}")
                 write_event("message.complete", {"text": full_content, "reasoning": full_reasoning, "tool_calls": json.dumps(tool_executions), "interrupted": was_interrupted, "session_id": sid})
         except Exception as e:
             logger.error(f"[Server] Chat error: {e}")
-            # 持久化错误消息（刷新/重启后仍可见）
-            try:
-                _session_store.add_assistant_message(sid, f"**Error:** {e}", None, None, interrupted=True)
-            except Exception as _se:
-                logger.warning(f"[Server] Failed to save error message: {_se}")
-            write_event("error", {"message": str(e)})
+            # 传输层异常（上游断流、读取超时）走不到 chat_completed，这里必须把
+            # 已生成的正文补写进库，否则刷新或重启后这段输出消失，只剩一行 Error。
+            err_msg = str(e)
+            message_id = None
+            if not assistant_saved:
+                assistant_saved, message_id = _persist_interrupted_reply(
+                    sid, None, full_content, full_reasoning, tool_executions, err_msg
+                )
+            write_event("error", {
+                "message": err_msg,
+                "interrupted": True,
+                "message_id": message_id,
+                "session_id": sid,
+                "content": full_content,
+                "reasoning": full_reasoning,
+                "execution_order": tool_executions,
+            })
 
     if _ws_loop:
         future = asyncio.run_coroutine_threadsafe(run(), _ws_loop)

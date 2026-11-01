@@ -85,6 +85,14 @@ def handle(ctx, method):
         stats["range"] = rng
         stats["session_id"] = sid if rng == "session" else None
         stats["model"] = ctx.active_model
+        # The window size otherwise only rides on `message.usage`, so a freshly
+        # loaded frontend has no denominator for its context ring until the next
+        # prompt produces one.
+        try:
+            from agent_core.agent_chat_service_v2 import get_model_context_limit
+            stats["model_context_limit"] = int(get_model_context_limit(ctx.active_model) or 0)
+        except Exception:
+            stats["model_context_limit"] = 0
         return {"id": rid, "result": stats}
 
     return None

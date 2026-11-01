@@ -22,10 +22,10 @@
               gateway/ws_server.py, gateway/config.py
               gateway/log_setup.py (unified logging), permission_manager.py, permission_service.py, permission_audit.py
                  ↑ call
-[Frontend]    ui-gui-vue3/src/stores/gateway.ts (WebSocket), config.ts (config)
-              ui-gui-vue3/src/components/ (40 .vue components)
+[Frontend]    frontend/src/data/gateway.ts (WebSocket), wire.ts (events -> store)
+              frontend/src/components/ (Vue components), frontend/src/data/blocks.ts (stream blocks)
                  ↑ hosted by
-[Desktop Shell] ui-gui-vue3/src-tauri/ (Tauri 2 Rust): frameless window + sidecar launch/exit cleanup of pebble-backend.exe
+[Desktop Shell] frontend/src-tauri/ (Tauri 2 Rust, crate pebble-orbit-shell): frameless window + sidecar launch/exit cleanup of pebble-backend.exe
 ```
 
 ### Module Dependency Table

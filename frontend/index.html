@@ -1,0 +1,330 @@
+<!DOCTYPE html>
+<html lang="en" data-theme="light">
+<head>
+<meta charset="UTF-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1.0" />
+<link rel="icon" href="data:," />
+<title>Pebble Agent — Orbit</title>
+<style>
+/* The splash is inlined here on purpose: it has to paint before the module graph
+   loads, so it cannot live in a stylesheet the shell fetches afterwards. It also
+   keeps its own dark palette instead of following `data-theme` — a white flash
+   before the shell is up would defeat the point. */
+#splash {
+  position: fixed;
+  inset: 0;
+  z-index: 9999;
+  display: grid;
+  place-items: center;
+  background: radial-gradient(circle at 50% 46%, #0d1219 0%, #080a0e 42%, #05070a 72%);
+  opacity: 1;
+  transition: opacity .8s cubic-bezier(.22, 1, .36, 1);
+}
+#splash.sp-out { opacity: 0; pointer-events: none; }
+
+#splash::after {
+  content: "";
+  position: absolute;
+  inset: 0;
+  pointer-events: none;
+  opacity: .035;
+  background-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='140' height='140'%3E%3Cfilter id='n'%3E%3CfeTurbulence type='fractalNoise' baseFrequency='.9' numOctaves='3'/%3E%3C/filter%3E%3Crect width='140' height='140' filter='url(%23n)'/%3E%3C/svg%3E");
+}
+
+#splash .sp-shell {
+  display: grid;
+  justify-items: center;
+  gap: 34px;
+}
+
+#splash .sp-stage {
+  position: relative;
+  width: min(74vmin, 560px);
+  aspect-ratio: 1;
+  display: grid;
+  place-items: center;
+}
+
+#splash .sp-orbits {
+  position: absolute;
+  inset: 0;
+  transform-origin: 50% 50%;
+  transition: transform 1.15s cubic-bezier(.66, 0, .26, 1),
+              opacity 1.15s cubic-bezier(.66, 0, .26, 1);
+}
+#splash .sp-orbits svg { display: block; width: 100%; height: 100%; overflow: visible; }
+
+#splash .sp-ring { fill: none; stroke: rgba(158, 178, 214, .075); stroke-width: .7; }
+#splash .sp-ticks { fill: none; stroke: rgba(158, 178, 214, .16); stroke-width: 1; stroke-dasharray: 1 11; }
+#splash .sp-outer { fill: none; stroke: rgba(158, 178, 214, .075); stroke-width: .6; stroke-dasharray: 2 26; }
+#splash .sp-track { fill: none; stroke: rgba(158, 178, 214, .16); stroke-width: .8; }
+
+/* A short dash on a very long gap is the cheapest way to move a light along an
+   ellipse: the offset walks, the geometry never rotates. */
+#splash .sp-comet {
+  fill: none;
+  stroke-linecap: round;
+  stroke-width: 2.4;
+  stroke-dasharray: 78 4200;
+  animation: sp-walk 9s linear infinite;
+}
+#splash .sp-comet.a { stroke: #6f8cff; filter: drop-shadow(0 0 6px rgba(111, 140, 255, .55)); }
+#splash .sp-comet.b {
+  stroke: #7fe3cd;
+  filter: drop-shadow(0 0 5px rgba(127, 227, 205, .5));
+  animation-duration: 14s;
+  animation-direction: reverse;
+}
+#splash .sp-comet.c {
+  stroke: rgba(233, 238, 247, .8);
+  filter: drop-shadow(0 0 4px rgba(233, 238, 247, .4));
+  animation-duration: 21s;
+  stroke-width: 1.6;
+}
+@keyframes sp-walk {
+  from { stroke-dashoffset: 4200; }
+  to   { stroke-dashoffset: 0; }
+}
+
+#splash .sp-core {
+  position: absolute;
+  width: 5px;
+  height: 5px;
+  border-radius: 50%;
+  background: #fff;
+  box-shadow:
+    0 0 10px 2px #6f8cff,
+    0 0 34px 8px rgba(111, 140, 255, .34),
+    0 0 80px 26px rgba(111, 140, 255, .12);
+  animation: sp-breathe 3.6s ease-in-out infinite;
+}
+@keyframes sp-breathe {
+  0%, 100% { transform: scale(1); opacity: .92; }
+  50%      { transform: scale(1.28); opacity: 1; }
+}
+
+#splash .sp-halo {
+  position: absolute;
+  width: 12px;
+  height: 12px;
+  border-radius: 50%;
+  border: 1px solid #6f8cff;
+  opacity: 0;
+  pointer-events: none;
+}
+
+#splash .sp-caption {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 14px;
+  transition: opacity .5s ease;
+}
+#splash .sp-mark {
+  font-size: 12px;
+  letter-spacing: .62em;
+  text-indent: .62em;
+  color: rgba(233, 238, 247, .56);
+  font-weight: 500;
+}
+#splash .sp-bar {
+  width: 168px;
+  height: 1px;
+  background: rgba(158, 178, 214, .14);
+  position: relative;
+  overflow: hidden;
+}
+#splash .sp-bar i {
+  position: absolute;
+  inset: 0 auto 0 0;
+  width: 0;
+  background: linear-gradient(90deg, rgba(111, 140, 255, 0), #6f8cff 60%, #7fe3cd);
+  transition: width .28s cubic-bezier(.22, 1, .36, 1);
+}
+#splash .sp-status {
+  font-size: 9.5px;
+  letter-spacing: .18em;
+  text-transform: uppercase;
+  color: rgba(233, 238, 247, .3);
+  height: 12px;
+}
+
+#splash .sp-corner {
+  position: absolute;
+  font-size: 8.5px;
+  letter-spacing: .22em;
+  text-transform: uppercase;
+  color: rgba(233, 238, 247, .2);
+}
+#splash .sp-corner.tl { top: 26px; left: 30px; }
+#splash .sp-corner.br { bottom: 26px; right: 30px; }
+
+#splash .sp-stage.sp-enter .sp-orbits { animation: sp-open 2.2s cubic-bezier(.22, 1, .36, 1) both; }
+@keyframes sp-open {
+  0%   { opacity: 0; transform: scale(.18) rotate(-9deg); }
+  60%  { opacity: 1; }
+  100% { opacity: .96; transform: scale(1) rotate(0deg); }
+}
+#splash .sp-stage.sp-enter .sp-core {
+  animation: sp-core-in 1.6s cubic-bezier(.22, 1, .36, 1) both,
+             sp-breathe 3.6s 1.6s ease-in-out infinite;
+}
+@keyframes sp-core-in {
+  0%   { opacity: 0; transform: scale(0); }
+  70%  { opacity: 1; transform: scale(1.6); }
+  100% { opacity: .92; transform: scale(1); }
+}
+
+/* Completion: the system falls inward, one ring leaves, the core flares once. */
+#splash .sp-stage.sp-done .sp-orbits { transform: scale(.08); opacity: 0; }
+#splash .sp-stage.sp-done .sp-core {
+  animation: none;
+  transform: scale(2.6);
+  box-shadow:
+    0 0 20px 6px #fff,
+    0 0 60px 22px #6f8cff,
+    0 0 140px 60px rgba(111, 140, 255, .4);
+  transition: transform .8s cubic-bezier(.2, .9, .2, 1), box-shadow .8s ease;
+}
+#splash .sp-stage.sp-done .sp-halo { animation: sp-halo-out 1.15s cubic-bezier(.16, .8, .24, 1) forwards; }
+@keyframes sp-halo-out {
+  0%   { opacity: .9; transform: scale(1);  border-width: 2px; }
+  100% { opacity: 0;  transform: scale(42); border-width: .5px; }
+}
+#splash .sp-stage.sp-done .sp-caption { opacity: 0; }
+
+@media (prefers-reduced-motion: reduce) {
+  #splash .sp-comet,
+  #splash .sp-core,
+  #splash .sp-stage.sp-enter .sp-orbits,
+  #splash .sp-stage.sp-enter .sp-core,
+  #splash .sp-stage.sp-done .sp-halo { animation: none !important; }
+  #splash .sp-comet { stroke-dasharray: 240 4200; }
+}
+</style>
+</head>
+<body>
+
+<div id="splash">
+  <span class="sp-corner tl">pebble agent</span>
+  <span class="sp-corner br">orbit shell</span>
+
+  <div class="sp-shell">
+    <div class="sp-stage sp-enter">
+      <div class="sp-orbits">
+        <svg viewBox="0 0 800 800" aria-hidden="true">
+          <circle class="sp-outer" cx="400" cy="400" r="372"></circle>
+          <circle class="sp-ticks" cx="400" cy="400" r="344"></circle>
+
+          <g transform="rotate(-16 400 400)">
+            <ellipse class="sp-track" cx="400" cy="400" rx="306" ry="118"></ellipse>
+            <ellipse class="sp-comet a" cx="400" cy="400" rx="306" ry="118"></ellipse>
+          </g>
+
+          <g transform="rotate(29 400 400)">
+            <ellipse class="sp-track" cx="400" cy="400" rx="258" ry="196"></ellipse>
+            <ellipse class="sp-comet b" cx="400" cy="400" rx="258" ry="196"></ellipse>
+          </g>
+
+          <g transform="rotate(-68 400 400)">
+            <ellipse class="sp-track" cx="400" cy="400" rx="176" ry="288"></ellipse>
+            <ellipse class="sp-comet c" cx="400" cy="400" rx="176" ry="288"></ellipse>
+          </g>
+
+          <circle class="sp-ring" cx="400" cy="400" r="86"></circle>
+        </svg>
+      </div>
+
+      <div class="sp-core"></div>
+      <div class="sp-halo"></div>
+    </div>
+
+    <div class="sp-caption">
+      <div class="sp-mark">ORBIT</div>
+      <div class="sp-bar"><i></i></div>
+      <div class="sp-status">mounting shell</div>
+    </div>
+  </div>
+</div>
+
+<div id="app"></div>
+<script type="module" src="/src/main.ts"></script>
+
+<script>
+/* The splash leaves the moment the gateway answers — there is no floor. A warm
+   start really is fast, and padding the opening to a fixed length makes the
+   shell feel slower than it is. The collapse at the end supplies the rest of the
+   motion. MAX is the other end: a gateway that never answers must not own the
+   window forever. */
+(function () {
+  var CREEP = 1600
+  var MAX = 12000
+  var STEP_TEXT = [
+    'mounting shell',
+    'reading project registry',
+    'resolving gateway',
+    'handshaking',
+    'restoring session'
+  ]
+
+  var el = document.getElementById('splash')
+  if (!el) return
+
+  var onDesktop = '__TAURI_INTERNALS__' in window
+  var forced = /[?&]splash=1/.test(location.search)
+  if (!onDesktop && !forced) {
+    el.remove()
+    return
+  }
+
+  var stage = el.querySelector('.sp-stage')
+  var fill = el.querySelector('.sp-bar i')
+  var status = el.querySelector('.sp-status')
+  var start = performance.now()
+  var raf = 0
+  var settled = false
+  var finished = false
+
+  function paint(percent, text) {
+    fill.style.width = Math.min(100, percent) + '%'
+    if (text && status.textContent !== text) status.textContent = text
+  }
+
+  /* The bar runs on a clock rather than on real progress: the socket usually
+     opens in 300 ms, and a bar that snaps to 100% that early is a black screen
+     with a tiny animation on top. It stalls at 92% if the gateway is slower, and
+     the status line says why. */
+  function clock() {
+    if (finished) return
+    var elapsed = performance.now() - start
+    var percent = Math.min(92, (elapsed / CREEP) * 92)
+    var idx = Math.min(STEP_TEXT.length - 1, Math.floor((percent / 92) * STEP_TEXT.length))
+    paint(percent, settled ? 'waiting for gateway' : STEP_TEXT[idx])
+    raf = requestAnimationFrame(clock)
+  }
+
+  function finish() {
+    if (finished) return
+    finished = true
+    cancelAnimationFrame(raf)
+    paint(100, 'ready')
+    setTimeout(function () { stage.classList.add('sp-done') }, 180)
+    setTimeout(function () { el.classList.add('sp-out') }, 900)
+    setTimeout(function () { el.remove() }, 1700)
+  }
+
+  function onReady() {
+    if (settled) return
+    settled = true
+    finish()
+  }
+
+  window.addEventListener('pebble:gateway-ready', onReady)
+  setTimeout(function () {
+    if (!settled) { settled = true; finish() }
+  }, MAX)
+  clock()
+})()
+</script>
+</body>
+</html>

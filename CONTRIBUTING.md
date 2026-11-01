@@ -18,7 +18,7 @@ Thanks for considering a contribution. This document covers the development setu
 
 ```bash
 pip install -r requirements.txt
-cd ui-gui-vue3 && npm install
+cd frontend && npm install
 ```
 
 The backend writes runtime data to `%USERPROFILE%\.pebble\`. Set `PEBBLE_HOME` to redirect it, which is also how the tests isolate storage.
@@ -27,7 +27,7 @@ The backend writes runtime data to `%USERPROFILE%\.pebble\`. Set `PEBBLE_HOME` t
 
 ```bash
 python run_backend.py          # backend (WebSocket gateway)
-cd ui-gui-vue3 && npm run dev  # frontend on http://localhost:5174
+cd frontend && npm run dev  # frontend on http://localhost:5180
 ```
 
 `start_backend.bat` and `start_gui.bat` are convenience wrappers for the same commands.
@@ -41,7 +41,7 @@ python -m compileall -q agent_core gateway tools tests run_backend.py skills_loa
 ruff check agent_core gateway tools tests
 python tests/run_all.py
 node tests/run_all.mjs
-cd ui-gui-vue3 && npx vue-tsc --noEmit
+cd frontend && npx vue-tsc --noEmit
 ```
 
 `ruff` is configured in `ruff.toml` and runs only the `F` and `E9` rule families: undefined names, unused imports and variables, redefinitions, empty f-strings, and syntax errors. Style rules are intentionally off so the gate stays high-signal. Do not add blanket `# noqa` comments; if a name is genuinely used through a dynamic path, add a narrow `# noqa: F401` with a one-line reason.

@@ -1,6 +1,6 @@
 # PebbleAgent — Version Notes
 
-> Last updated: 2026-10-23
+> Last updated: 2026-10-24
 
 ## Platform
 
@@ -48,6 +48,7 @@
 
 - Streaming render pipeline: 120ms throttled refresh, line-level cache, compacted-message folding with divider + pill (`SegmentedMessageList.vue`, segments split by compaction boundaries)
 - Styles: `styles/index.css` imports ten domain files in cascade order (base / layout / sidebar / messages / input / panels / widgets / cards / settings / overlays)
+- Toolbar / status-bar emphasis: the input toolbar controls and the status-bar compress button are permanent accent chips (full-opacity accent icon and caption, `--accent-soft` fill, `--border-gold` outline); hover uses `--accent-soft-strong` + `--accent`, an open panel uses `--primary`; both fills are theme tokens, so the emphasis recolors with every palette
 - Theme system: five built-in palettes plus custom colors; current theme, custom themes, and per-theme colors persist to `theme.json` through `theme.get` / `theme.save`; saving applies the color immediately and a save failure does not undo the applied theme
 - Message flow: execution-order rendering (thinking / tool / question / content), inline clarify cards (title / prompt / options label+detail / multiple), multi-question answers, image attachments with viewer
 - Compaction card: 任务 / 现状 / 决定 / 待办 / 线索 sections with counts
@@ -82,6 +83,77 @@
 - CI: `.github/workflows/checks.yml` (python job: compileall, ruff, Python suites on a 3.11 / 3.14 matrix; frontend job: vue-tsc, Node suites)
 
 ## Changes
+
+- 2026-10-29 The preview iframe rendered every page unstyled. Adding the inline splash `<style>` to `index.html` gave Tauri a reason to hash `style-src`, and CSP ignores `'unsafe-inline'` as soon as a hash is present; `srcdoc` inherits the host document's CSP, so all preview pages lost their inline styles while the app shell (linked CSS, `'self'`) was unaffected. `dangerousDisableAssetCspModification` now covers `style-src` alongside `script-src`.
+- 2026-10-29 The launch splash now follows real loading: the 2500 ms floor is gone and it leaves the moment `pebble:gateway-ready` arrives. The progress bar creeps toward 92% over 1600 ms and jumps to 100% on readiness, so a slow gateway still shows a moving bar rather than a stalled one. The 12 s cap stays.
+- 2026-10-29 Added a launch splash. Three inclined elliptical tracks carry travelling light arcs (dash offset walking the path, geometry never rotates), a 5px core breathes at the centre inside two tick rings, and the exit collapses every orbit into the core while one ring expands and fades. It is inlined in `index.html` so it paints before the module graph loads, keeps its own dark palette rather than following `data-theme`, and leaves on `pebble:gateway-ready` with a 2500 ms floor and a 12 s cap.
+- 2026-10-29 The prototype renderers in `render.ts` were removed: `renderTool`, `renderAvatar`, `renderWho`, `renderThinking`, `badgeFor`, `toolClass` and `termBlock` had no callers since tool calls became a Vue component, and `AVATAR_SVG` went with them. `ToolState`, `ToolCallView` and `AttachmentView` stay because `wire.ts` imports them.
+- 2026-10-29 Every launch showed a screen of prototype content for as long as the sidecar took to boot, then wiped it in one frame. `plan` and `permissions` opened with sample steps and three pending requests, `runtime.js` fired a fake "Connected to gateway" toast at 900 ms and a "Plan created" demo at 1500 ms that also opened the plan slip, and a `?seed=1` switch could seed the transcript. All of it is removed: the plan and permission stores start closed and empty, `StreamItem`/`StreamKind` moved into `stream.ts`, `messageMock.ts` and its `mockStream` array are deleted, and `resetDemoState`/`__PEBBLE_DEMO`/`demoOn` no longer exist.
+- 2026-10-29 The tool-call status word no longer sits permanently on a successful call: it fades in with the duration on hover, since the rail has already gone quiet and the tick marks the seam. Running, failed and cancelled calls keep it on screen, because a failure must never depend on a hover to be noticed.
+- 2026-10-29 Tool calls render as trace rows: the card border, badge and icon chip are gone, replaced by a 1px rail whose node is the tool glyph. A running call walks a spark down the rail and pings the node ring; a settled one fades the rail and drops a tick at the seam. Name, argument, duration and a lowercase status word sit on one line, with duration fading in on hover. Expansion still animates through `grid-template-rows` with the output hanging off a hairline under the node. The index-row experiment and its `toolSeq` numbering were removed.
+- 2026-10-29 Tool calls render as index rows instead of cards. `StreamToolCard.vue` puts a two-digit sequence, a 13px glyph, the name, the argument, a lowercase status word and the duration on one line; the chevron only appears on hover or when open, and expansion animates through `grid-template-rows` with the output hanging off a hairline indented to the name column. `StreamMessage.vue` numbers calls among tool blocks only. No border, no badge, no icon chip — status is a word and a colour, so a long run of calls reads as a list rather than a stack.
+- 2026-10-29 Paragraph runs between thinking and tool cards kept a blinking caret after the turn ended. `finishLive` rewrote only the tail block into markdown and never cleared the `caret: true` those blocks are created with, so only a session switch removed the cursor. Every `raw` block now settles when the turn does.
+- 2026-10-29 Every turn ran in the sidecar's install directory: `sendPrompt` posted `prompt.submit` without `project_path`, and `chat_stream` answered `self._current_project_path = project_path or os.getcwd()`. In a packaged build cwd is where the sidecar exe lives, so the system prompt announced `frontend/src-tauri/target/release` regardless of the project, and each turn overwrote the value `project.set_active` had just installed. Repaired at all four points: `sendPrompt` sends `project_path`, `chat_stream` keeps the existing value instead of falling back to cwd and routes a changed path through `set_project_path` (which also syncs the tool executor, truncation dir, whitelist and MCP config), `_ensure_service()` restores `projects.json` `active` on first use, and `handle_prompt_submit` resolves a missing value through request → active → service path.
+- 2026-10-29 Quick notes had no click behaviour. Each row now appends its text to the composer through `appendToComposer`, which writes `#composerTa` directly and dispatches `input` so autosize and the token meter follow (the field has no v-model), adds a space only when the existing text does not already end in whitespace, and leaves the caret at the end. Rows are keyboard reachable and the delete button stops propagation so removing a note does not also insert it.
+- 2026-10-29 Compaction left the context ring at its pre-fold height until the next prompt: the ring reads the last call's `latest_input_tokens`, which still described the old transcript, while `session.compress` already returned the measured `after.tokens` and the frontend only consumed the `messages` counters. `compressSession` now writes `after.tokens` into `usage.contextTokens`, clears `usage.contextOut`, and recomputes `contextPct`, so the window drops as soon as the fold lands.
+- 2026-10-29 The usage ring drew a fixed two-thirds arc no matter how full the window was: `stroke-dashoffset: 33` was hardcoded in CSS while the label beside it printed the real `contextPct`, and `animation: ring-draw … both` froze that value at first paint so later updates could never reach the arc. The offset now comes from `contextPct` as an inline style over `pathLength="100"`, the fixed value and its keyframes are gone, and a transition lets the arc settle on the reported share.
+- 2026-10-29 A session created seconds ago surfaced at the bottom of the switcher under "Earlier". `_row_to_list_item` exposes the start time as `started_at` and sends `last_message_at: null` for a session with no turns, while `toSession` only looked for `updated_at`/`created_at` and let the chain collapse to 0 — and 0 buckets to "Earlier". Zero now counts as absent and `started_at` is read, so a fresh session buckets under Today.
+- 2026-10-29 Switching projects left the previous project's conversations on screen: `session.list` was requested without `project_path` in both `fetchSessions` and `bootstrap`, so the list was always the union of every project. Both are scoped to `projects.active` now, `bootstrap` resolves the registry before asking, and a project with no stored session goes through `createSession()` so the new row keeps its `project_path` and appears in the switcher at once.
+- 2026-10-29 The project switcher shipped as prototype markup: `pebbleagent`, `E:\pebbleagent`, `main` and the three list rows were literal strings, and `Switch`, `+`, `×` and `adopt` had no listeners, so a typed path went nowhere. It is now data-driven — `projects` in the store, `refreshProjects` / `addProject` / `switchProject` / `removeProject` in `wire.ts` — and `switchProject` re-runs `bootstrap()` because every session row belongs to the project that was active when it was created.
+- 2026-10-29 The island's tok/s read `— tok/s` for entire replies: `paintAgent` never wrote `plain` while streaming, and the rate is computed from that field. It is now written on every paint, which also fixes the context split and Copy mid-stream. The live row is found by scanning back for `streaming` instead of assuming the last item, so a row appended after it cannot blank the headline.
+- 2026-10-29 The expanded reasoning block carried the global 8px scrollbar, which reads as a slab beside 11px text. It now has its own 4px bar: nearly invisible at rest, `--faint` once the paragraph is hovered, `--accent` while the thumb is dragged.
+- 2026-10-29 Reasoning rails now stop animating per run instead of per turn: `paintAgent` marks only the tail thinking block `live`, so a completed run turns static as soon as the next block lands. A turn that reasons five times used to keep five infinite scan animations alive until the whole reply finished.
+- 2026-10-29 The live-run headline now distinguishes `Writing…` from `Thinking…` when no tool is in flight, by looking at the kind of the last block on the streaming row instead of printing one word for both. The expanded `tool` row follows the same split (`writing` / `thinking`).
+- 2026-10-29 The live-run island reported `Thinking…` and an `idle` tool row through every turn that had no todo list, because both were derived from `plan.steps`, which only `todos.update` fills. `liveTool` now reads the last tool card off the streaming row's blocks, so the headline names the call in flight and the expanded row shows its argument and status; the plan remains the fallback and `step X of Y` only renders when a plan exists.
+- 2026-10-29 Deleting a message was only real for rows that already had a stored id. `finishLive` kept the local `live-3` id, so the numeric guard in `deleteMessage` never fired and an AI reply came back on the next reload; it now adopts `message.complete.message_id`. `deleteMessage` also reports local-only removals instead of staying silent, clears `pendingUser` so `user_message.saved` cannot re-add a prompt the reader just deleted, and decrements the header count once the gateway confirms.
+- 2026-10-29 The transcript refused to scroll up once following was added. The `scroll` listener went through the same handler as the height observer, so `follow()` ran before the measurement that would have cleared `stick` and dragged the reader back on every wheel tick. Scroll events now only re-measure; growth is the single path that may move the offset, and `follow()` additionally stops when the offset fell below the last known one.
+- 2026-10-29 Transcript order was wrong in three places at once. Live reasoning held one shared block and `unshift`-ed it to the head, so every later run folded into the first card and the whole answer piled underneath; tool cards were spliced above the open text run instead of appended where the call happened; and `finishLive` re-ordered the settled array into reasoning + text + tools. All three now append in arrival order and merge only into a trailing block of the same kind, and `finishLive` settles just the open tail. A stopped turn also settles itself now: still-running tool cards flip to `cancelled` both live and when restored from the transcript, and the row closes with a dashed `interrupted` marker.
+- 2026-10-29 Orbit got its own desktop shell. `frontend/src-tauri/` is a copy of the Rust layer (sidecar launcher, `get_gateway_token`, capabilities, icons) under a distinct package name `pebble-orbit-shell` and identifier `com.pebble.agent.orbit`, so it builds into `frontend/dist` and installs beside the ui-gui-vue3 app instead of overwriting it. The window is undecorated: `OrbitalBar` gained `data-tauri-drag-region` on the strip and its inert children, and the three window buttons now call `plugin:window|minimize`, `toggle_maximize` and `close` instead of raising a prototype toast.
+- 2026-10-29 The LLM pane regained the OpenCode Go request-shaping block. `MODES` had been `['thinking', 'opencode-go', 'session hdr']`, which treated a section title and an input label as mutually exclusive reasoning modes, and the rest of the block was missing outright. It now reads `['thinking', 'effort_only']`, with `session hdr`, `max effort`, `reasoning mode` and `extra headers` below a labelled rule; `maxEffort` also gets a state slot, a read-back from `model.options` and a field in `model.provider.save`.
+- 2026-10-29 Tool cards had two problems with one cause. Restored cards opened onto nothing because `add_tool_message` inserted an empty `content` column: only the live `tool.complete` event carried `result_text`, so the transcript recorded that a tool ran but never what it returned. The insert now stores the output, `server.py` passes it through, and rows written before this change say `output not recorded` instead of opening empty. Read tools also stopped printing their payload: `read_file` and friends show `already read` once they succeed, because the file still reaches the model through `result_text` and the stored row, and only the card withholds it.
+- 2026-10-29 Three fixes after the restart. The pricing table came up empty because `UsagePane` mounts before the socket handshake and `getConfig` refuses to run while disconnected; the loader now retries for a few seconds instead of leaving the pane blank for the whole session. The snapshot timeline rendered every raw record, so a session with 33 edits showed 33 identical rows - neighbouring entries from the same tool within a minute now merge into one with a `xN` chip, the tail hides behind a `show N earlier` control, and the header reads `10 of 33 snapshots`. Reverting a merged entry reverts every path it collected. Palette and accent were verified to persist: switching to dark and picking a swatch survive a hard reload.
+- 2026-10-29 Four panels were reading the prototype instead of the gateway. The header counted rendered bubbles (27) rather than the rows the session holds (3895+), because it filtered `streamState.items`; it now reports `sessionState.messageCount`, seeded from the resume payload and incremented as a turn settles. Appearance persisted nothing usable: the palette was written to `localStorage` but never read back and the accent swatch had no handler at all, so both are now restored before the first frame (silently, without the ripple) and the swatch writes `pebble-orbit-accent`. The Files pane's snapshot timeline was three invented rows with no backend behind them; `session.snapshots` now groups the snapshot records by `snapshot_id` (one entry per tool call, with file count, path list and revert state) and the pane renders those, falling back to `no snapshots yet`. The pricing table was four hardcoded cards with a fake `DATA` map in `runtime.js`; the pane now loads `config.get('pricing')` (reading the table under either the root or `pricing`), renders one card per model with the base / peak / off period selector, and saves through `pricing.save` with the raw per-period blocks so `pricing_peak` and `pricing_tier_high` survive the round trip.
+- 2026-10-29 ```` ```mermaid ```` fences used to land in the code renderer, so a diagram arrived as a wall of highlighted keywords. `splitBlocks` now gives them their own `kind: 'mermaid'` block (the open fence stays streaming), `MermaidCard.vue` renders it, and the renderer is imported lazily so the 3.5MB mermaid bundle never enters the first paint. The card picks its colours from the live CSS variables on every render, which is what makes it follow the accent and the dark theme; before rendering it normalises the Chinese quotation marks and double angle brackets models like to emit, and a parse failure shows the first error line instead of tearing the row apart. Its dependency closure (105 packages, mermaid 11.17.2) was copied from `ui-gui-vue3/node_modules`, so no network install was involved.
+- 2026-10-29 The preview could show a page but not take a note on it. The comment layer is now part of the injected document: `previewBridge.ts` ships the picker (hover ring, element picker, editor, numbered markers), `buildSrcdoc` inlines its CSS and script next to the CSP and the capture bridge, and the frame's `pebble-stage-ready` message switches it on with the app's palette read from the live theme. Annotations come back as `pebble-feedback-update` and land on `previewState.comments`; switching files or reloading drops them, because a selector belongs to one document. Getting them to the model reuses the shell's channel: `respondClarify` runs the answers through `mergePreviewComments`, which replaces the option that asks for a change with a `Modify\n\n[HTML Page Feedback] ...` block listing every annotation's selector, tag, original text and comment, and clears the list once the gateway accepts the reply. A change event on the file already on screen now re-reads it after a 400ms settle instead of reloading per event.
+- 2026-10-29 The preview stage was a design mockup: three invented file names, an iframe whose `srcdoc` was a hand-written usage card, a hardcoded output path, and a Save PNG button that painted the same fake card onto a canvas. It now runs on data. `preview.ts` scans `@pebble-file:` directives out of `streamState.items[].plain` (gated on an html/svg extension so prose about the directive registers nothing), registers one entry per file, and reads the active one through `file.read_text`, trying the relative path and then the project-root-anchored one. The source is injected with the shell's CSP as the first head node and with the bundled `html-to-image` plus a postMessage bridge before `</body>`, so Save PNG asks the sandboxed frame to rasterise itself instead of drawing a substitute. Device presets, viewport label, size label, path label, Code view and the empty state are all bound to that state, and `file.change` marks a background file stale or reloads the one on screen.
+- 2026-10-29 Message rows showed five-digit numbers where the clock belongs (`28504 · sent`, `deepseek-v4.1-flash · 89365`). `messages.created_at` is an epoch float (`REAL NOT NULL` in the gateway store) but `buildHistory` sliced it as if it were `YYYY-MM-DD HH:MM:SS`, so `slice(11, 16)` returned the fractional digits. `dateOf`/`clockOf` in `render.ts` now normalise seconds and milliseconds into a `Date` once, `buildHistory` reads the wall clock from them, and `StreamTimeline.stampOf` goes through the same helper instead of keeping its own copy of the split.
+- 2026-10-29 The compact button fired `session.compress` on the first click, so a mis-click rewrote the transcript with no way back. It now opens `#compactConfirm`, a `.sheet` dialog naming the scope, the result and the gateway method, and only the confirm button issues the call; both footer buttons lock while it runs and a failed run keeps the sheet open for a retry. The summary card the run produces used to pour the whole markdown into one escaped paragraph, which flattened every heading and bullet into a wall of text — `summaryInner` now splits it at `#` headings into `.cs-sec` blocks carrying an ordinal rail, a serif title, an item count and a tone from `summaryTone` (decisions accent, todos gold, context teal, everything else faint), with `summaryBody` rendering the lists and paragraphs underneath. The card's own accent rail was dropped because every section now carries one, and inline `code` keeps the accent colour instead of the section tone so paths read the same everywhere.
+- 2026-10-28 The window percentage could not settle because two writers disagreed about what `tokensIn` meant. `message.usage` carries `latest_input_tokens` for one call, while `usage.stats` carries the session total; both wrote the same fields, so the pane flipped between 400k and 490M and the ring between real values and the prototype's 31. The per-call figures now go to `contextTokens` / `contextOut` and only feed window occupancy, the totals stay on `tokensIn` / `tokensOut`, and `contextPct` no longer ships a 31% placeholder — it starts at 0 so an unmeasured window cannot look plausible. `refreshPanes` also refuses to query `usage.stats` without a real session uuid, since the empty result was zeroing live totals on every dock refresh. Measured: ring steady at 41% against the old shell's ~40%, `493,908,250 in / 1,634,383 out · 2244 calls`, legend summing to the full 1,000,000 window.
+
+- 2026-10-28 Three counters in the shell were frozen or mis-sourced. The status bar's tool count was computed once on load from `role === 'tool'` message rows, which no longer exist now that tools live inside block arrays, and never moved again; it is now counted from the blocks on load and recomputed in `upsertTool` while a turn runs. `usage.calls` and the window percentage only changed when `refreshPanes` happened to run (session switch or gateway ready), so both sat still for the length of a conversation — `finishLive` now re-reads them once per settled turn. Window occupancy also had to be restored on load: `contextPct` started at the prototype's 31 and only moved when `message.usage` arrived, so `refreshPanes` now derives it from the newest call's prompt tokens and a window size cached in `localStorage` (the only payload that carries `model_context_limit` is the usage event). Measured after the fix: ring 41% against the old shell's ~40%, `406,744 in / 656 out · 2233 calls`, status bar 669 tool calls, context legend `system prompt 8,855`, `conversation 12,372`, `tool results 386,173`, `free 592,600`.
+
+- 2026-10-28 The dock collapse is smooth now. The jank was not the grid track but the transcript: every frame of the width change re-wrapped every message, and that reflow escaped `.stream-inner` and forced the beams, the island and the status bar to repaint too. `.stream-inner` now carries `contain: layout paint`, the dock's children hold `min-width: calc(var(--right-w) - 2px)` so the panel is clipped rather than re-laid out mid-animation, the collapsed state drops `backdrop-filter` and its 1px border, and the curve is `.26s cubic-bezier(.4,0,.2,1)`. Measured over three runs of 320ms: 0 frames above 32ms, worst frame 17ms, 39-43 frames per run (was 6-8 long frames with a 44-67ms worst frame).
+
+- 2026-10-28 The context pane's four-segment bar is back, and the split is measured rather than fixed. `system prompt` counts prompt scaffolding plus one line per catalogue tool and skill, `conversation` counts the text of every transcript row, `tool results` counts the serialised tool blocks, and the three are scaled so they sum to the tokens the gateway reported for the latest request; `free` is the window minus that total. Window size falls back to `context_tokens / context_pct` and only then to the old shell's nominal million, which is why it no longer reads `no window reported`. Measured: `system prompt 8,617 · 1%`, `conversation 11,447 · 1%`, `tool results 354,658 · 35%`, `free 625,278 · 63%`.
+
+- 2026-10-28 The usage and context panes stopped showing prototype numbers, keeping their layout. `usage.history` now maps `usage.stats.calls` with the gateway's real field names (`model_name`, `total_cost` — the first pass read `model` and `cost`, producing rows labelled "model" at zero), and `usage.models` carries the per-model totals. `priced` and `tier` derive from `llm.pricing` (a model absent from `model_pricing.json` is unpriced, one with `pricing_tier_high` is tiered); `live rate` is output characters over the run's wall clock and reads `—` when there is nothing to divide. The context pane's four fixed segments are replaced by the old shell's model — `latest_input_tokens + output_tokens` against `model_context_limit`, drawn as used/free — while the agent line, tool and skill counts, the twelve skill chips, the current turn's tool rows and the ledger summary all come from `llm.agents`, `catalog`, the transcript's tool blocks and `ledger.entries`. Measured live: `368,296 · 37%` used, `deepseek-v4.1-flash · 46 tools · 120 skills`, three real `mcp__chrome_devtools__*` calls in the tool list.
+
+- 2026-10-28 The search list rendered with the wrong class names, so none of the `.ms-*` styles applied and the hits looked like an unstyled block of text. `MessageSearch.vue` used `ms-hit` / `ms-hit-role` / `ms-hit-text` while `orbit.css` defines `ms-item` / `ms-badge` / `ms-body` / `ms-txt` / `ms-meta`; the markup now uses the defined set. Each hit is also split into `before` / `match` / `after` so the term is wrapped in `<mark>` instead of being lost inside a hard slice. Measured: typing `mcp` returns 8 rows, badges resolve to `.ms-badge.user` / `.ms-badge.ai`, and the marks contain the literal hit.
+
+- 2026-10-28 Message search was querying the gateway and getting back rows unrelated to the term, so typing `mcp` listed answers about compaction. It now matches locally against the transcript, the way the old shell did: per-row substring search with a preview cut 20 characters before and 40 after the hit, `You`/`AI`/`All` filters, and a click resolves the row index to a scroll target. No RPC is involved. The MCP sheet lost its nested scrollers (body + rack + 28vh list produced two visible scrollbars and squeezed collapsed servers into hairlines): the body is the only scroll container now, the rack grows freely with `flex: 0 0 auto` on each server, and tool names sit on a two-column grid with `word-break: break-all` so long identifiers line up instead of forming a wall of pills. Measured with one server expanded: 317px expanded row against five 42px collapsed rows, a single scrollbar, and 64 tool names across the enabled servers.
+
+- 2026-10-28 An enabled MCP server now lists every tool it exposes, not just the four chips the collapsed row carries. `McpServer` gains `toolNames`, filled from the `mcp.list` names array, and the expanded body renders them under a `tools · N` label inside a 168px scroll area that only appears when the server is on. Measured against the live gateway: 26 tools for github, 6 for time, 32 for chrome-devtools, each list matching its own counter, with disabled servers rendering none.
+
+- 2026-10-28 The search popover no longer pre-fills itself. Seeding it from the transcript on open made an unqueried panel look like a filter that had already run, which is wrong for keyword matching: `open()` now clears hits and `close()` clears the query as well, so the empty state reads `type a keyword to search` until something is typed. The agent-note editor stops inheriting `.lm-ta`, an 8.5px inline field sized for a provider row, and gets its own measure at 12.5px with 1.75 leading, 12px padding and a 260px minimum height.
+
+- 2026-10-28 Three follow-ups on the same surfaces. `.ms-pop` is `position: fixed` with no coordinates of its own, and the runtime that used to place it is gone, so it rendered at the end of the document flow (x=0, y=980 on a 980px viewport) and the button looked dead; `open()` now anchors it under the search button, right-aligned, clamped inside the viewport. The MCP rack caps at `min(38vh, 320px)` and each server's expanded body scrolls inside 210px, so tool lists cannot stretch the sheet. Agent notes regained what the old memory centre had: an agent list built from `llm.agents` with the current agent preselected, and a Project/User scope switch, both of which are required arguments of `agent-memory.get/set/clear` and were being omitted, so every edit landed on the default agent.
+
+- 2026-10-28 Four shell fixes. The message search popover opened to an empty list because the gateway returns nothing for an empty query, so `MessageSearch` now seeds from the transcript on open (stripping markup for agent rows) and lets typing replace it. The ledger sheet's kind chips and distribution bar carried literals (14/3/4/2/3/2 and fixed widths) with no click handler; both are derived from `ledger.entries` now, the chips filter, the list is grouped by kind, and a searchbox actually narrows it. The MCP sheet had no bound for its server rack, so a long tool list pushed it past the viewport: `.mc-rack` caps at 44vh with its own scroll and the sheet at `min(760px, calc(100vh - 76px))`. Session grouping went from three buckets to nine (`Pinned`, `Today`, `Yesterday`, `This week`, `Last week`, `This month`, `Last month`, `Earlier`, `Last year`), derived by `bucketFor()` from `last_message_at` — the newest message rather than `updated_at`, which also moves on rename — with un-pinning returning a row to its time bucket instead of Today. Group labels render in ink at 10.5px.
+
+- 2026-10-28 Notifications became real, and two competing copies of the message search were collapsed into one. `data/notify.ts` synthesises five voices with oscillators (piano, guitar, violin, marimba, harp, 1.9-2.8 s each) instead of shipping audio files, and holds the settings: the reply-done sound and the needs-input sound are picked separately, volume is a real playback gain, `alerts` maps to the browser `Notification` API plus a sound switch for permission requests and task finished, and `when: unfocused` suppresses everything while the window has focus. `NotifySheet` binds all of it with row-click previews and persists to `localStorage`. `wire.ts` calls `notify` from `finishLive()`, from `clarify.request` and from `permission.request`. The runtime's fake message search (hard-coded `MSGS` writing into the Vue-owned `#msList`) and its fake notification sheet were removed, and `MessageSearch.vue` now owns the open/close, outside-click and Escape handling that the runtime used to provide, with hit clicks scrolling the matching row into view by resolving the message id to a row index.
+
+- 2026-10-28 The Orbit shell stopped showing prototype numbers in four places. `StreamHead` now renders the active session title, the selected agent, `streamState.model` and a live message count instead of the placeholder line. The composer's two buttons are Vue-bound (`v-show="!streaming"` / `v-show="streaming"`), so the send icon is the resting state and the stop icon with its pulsing ring appears only while a reply runs; the runtime script's `running` flag, which started at `true` and therefore pinned the UI to the stop state, is gone. `IslandWrap` is driven by real state throughout: `streamState.streaming` for the busy class and headline, `plan.steps` for the step counter and bar, `usage.contextPct` / `contextTokens` / `contextLimit` for window occupancy, `usage.costToday` and `usage.sessionCost`+`calls` for the money lines, `llm.agents[current].name` and `streamState.model` for the identity rows. The island timer was being advanced by a `setInterval` in `runtime.js` from a hard-coded 134-second seed; that loop is removed. `runTiming` in `wire.ts` watches `streamState.streaming`: the first frame after it turns on zeroes the clock, the frame after it turns off freezes the elapsed figure, and the next prompt clears it again. Token rate is derived from characters the live row has produced over that clock, and reads `—` until there is something real to divide.
+
+- 2026-10-28 Two corrections to the Orbit rail and the return button. `JumpToLatest` was mounted inside `#streamBody`, where an absolutely positioned child of a scroll container travels with the content, so the button sat 16 000px above the viewport once the transcript scrolled; it now renders on `.stream` at `bottom: 158px`, clear of the composer. `StreamTimeline` lost its CSS `::after` preview (single line, ellipsis, clipped by the rail's own overflow) in favour of a card teleported to the body and positioned to the mark's left: 120 characters across up to six lines plus `YYYY-MM-DD HH:mm:ss`, opened on hover and on keyboard focus. The rail keeps one mark per user row, so a six-turn session shows six marks.
+
+- 2026-10-28 The Orbit composer now sends real attachments, and the return-to-latest control was rebuilt. `data/fileDrop.ts` ports the old shell's `useFileDrop`: document-level drag, file picker, 10 MB and 20-file caps, duplicate skipping, text decoded into `text_content`, images captured as `data_base64` plus a `dataUrl` thumbnail, and `wireAttachments()` producing the `prompt.submit` shape. `ComposerWrap.vue` renders the tray from that state (the prototype film markup is unchanged; `Auto` / `Low` / `Orig` appear only for image batches and write `detail`), the `Attach` button opens a hidden multi-file input, and the tray keeps a live error line. `DropOverlay.vue` follows `fileDrop.over` instead of being inert. `sendPrompt(text, attachments)` posts the batch and renders it into the local user bubble, so an attachment-only turn is valid; `runtime.js` reads the batch on submit, passes it through and clears the tray. The hard-coded demo tray, the fake `clearAttach` handler and the seeded textarea body are gone.
+- 2026-10-28 `JumpToLatest.vue` replaces the `.scroll-bottom` button, which had `show` baked into its template class so the runtime toggle never won: the button is now `v-show`-driven by a passive scroll listener plus a `ResizeObserver` on `#streamInner` (a streaming row grows without firing scroll), hides within 80px of the end, and sits bottom-right clear of the composer and the rail. The old runtime scroll handler, the `.tl-node` click shim and the `.scroll-bottom` styles were removed.
+
+- 2026-10-28 The Orbit stream rail became data-driven. `StreamTimeline.vue` previously held six hard-coded demo marks, a literal `6 marks` label and an empty script; it now derives one mark per row whose `className` is `msg user`, so the count equals the user turn count, and it previews `plain` truncated to 60 characters plus a stamp through `data-tip`. A click calls `scrollIntoView({behavior:'smooth',block:'center'})`, a passive `#streamBody` scroll listener marks the row currently being read, and `#tlBottom` scrolls to `scrollHeight`. Marks store the item index and resolve their row through `#streamInner.children[index]`, which holds because every row renders one root node in item order. `StreamItem` gains `stamp`, filled from `created_at` on history and `stampNow()` on send; the event path also gained the missing `plain`, so Copy is no longer empty for accepted prompts. `.timeline` scrolls with `justify-content: safe center` and `.tl-node` pins to `flex: 0 0 14px`, so a long session neither clips the first mark nor compresses the rest.
+
+- 2026-10-28 `gateway/ws_server.py` `_ALLOWED_ORIGINS` also accepts `http://localhost:5180` and `http://127.0.0.1:5180`, so the reconstructed frontend served on the Vite port 5180 completes the handshake instead of being closed with 4403.
+
+- 2026-10-24 toolbar and status-bar controls are always highlighted: `01-base.css` gains the derived fills `--accent-soft` (8% accent) and `--accent-soft-strong` (18% accent), defined once in `:root` and redefined by all four `[data-theme]` palettes, so the highlight follows the accent theme. The input toolbar row (`.fa-btn` / `.pw-btn` / `.qn-btn` / `.pm-btn` / `.un-btn` / `.snd-btn` / `.ms-btn` plus their `.fa-hint` / `.pw-label` / `.qn-label` / `.pm-label` / `.un-label` / `.snd-label` captions) and the status-bar compress button `.sbar-compress` now render as permanent accent chips: accent icon/label at full opacity, `--accent-soft` fill, 1px `--border-gold` border; hover lifts to `--accent-soft-strong` with an `--accent` border; an open panel (`.active`) goes one level brighter via `--primary`. `.pm-btn.auto-allow` keeps its green semantics as a green chip (`rgba(76,175,80,…)` fill/border) with an `.auto-allow.active` variant, and `.sbar-compress:disabled` keeps the 0.25 dim state while compacting
 
 - 2026-10-19 MCP connect control: per-server switch in McpPanel -> `mcp.toggle` -> `McpManager.set_server_enabled_state` (idempotent, non-blocking submit onto the WS loop). Disabled list moved to the global user scope (`~/.pebble/disabled_mcp_servers.json`), legacy per-project file read as fallback. `mcp.list` now reports `enabled` / `state` from the merged config and hides unusable placeholder entries unless `mcp_install.json` declares them installable. `mcp.reload` re-applies config changes at runtime (added / removed / changed). State changes are pushed over WS as `mcp.state_changed`
 - 2026-10-19 code_agent prompt: removed the duplicated `## Available tools` list (the API `tools` schema is authoritative); section renamed to `## Tool notes`, keeping the Windows execution notes, plan-mode workflow and experience-ledger rules
@@ -513,3 +585,185 @@
 - 2026-10-23 Android client transport and background keeping. Every socket teardown path goes through `invalidateSocket(expected, ...)`, which clears the reference, moves the state and fails pending calls as one step, and ignores a callback from a socket that has already been replaced. `connect()` bounds the opening handshake at 15 s. Forced restarts are gated: none while a handshake is inside its window, and at most one per 2 s while the loop is alive. `onFailure` restarts the loop only when the handshake had already completed. `ConnectionService` is a `connectedDevice` foreground service holding a partial wake lock and a high-performance Wi-Fi lock; a `startForeground` failure stops the service, so the platform FGS timeout has no process left to kill. `catchUpNow()` posts one notification per changed session. `gatewayReady` is `connState is ConnState.Connected`; `gateway.ready` is a one-shot frame and is not used as a latch. Settings exposes the battery-optimisation and auto-start entry points plus a test-notification button; the in-memory counter panel is removed, along with the `Diag` surface it read.
 
 - 2026-10-23 Android conversation UI. The thinking card starts expanded and measures its own duration, from the first `thinking.delta` of a block to the first visible token, a tool start, or `message.complete`, rendered as `850ms` / `1.2s` with the character count as the fallback for replayed history. The transcript follows the tail as a mode rather than a viewport measurement: it starts engaged, the user's own drag (`DragInteraction.Start`) disengages it, and reaching the bottom (`canScrollForward` false) or pressing the jump-to-latest button engages it again; while engaged it scrolls the trailing spacer without animation, and a floating circle button appears whenever the follow is disengaged. A 2 dp accent sweep bar sits at the composer's top edge while a turn is running, replaced by the hairline divider when idle. `message.complete` clears `streaming`, so the composer returns to send mode on its own, and the app bar title comes from `session.resume`'s `info.title`, which the gateway also returns from `session.create`.
+
+## Collapsed compaction runs render no rows at all
+
+- `frontend/src/data/wire.ts` splits the transcript at every `[COMPACT_BOUNDARY:<uuid>]`
+  system row and folds the run above it. A run folds only when every rendered row in it
+  carries `is_compacted`, so a half-marked transcript still renders in full
+- A folded run returns before any markup is built, so it costs zero DOM rather than a
+  hidden subtree: a 2048-row session with four boundaries renders 8 rows instead of 2048,
+  and `scrollHeight` falls from six figures to under 4000 pixels
+- `frontend/src/components/CompactDivider.vue` reproduces the prototype `.cdiv` markup
+  (badge / `N earlier messages folded · M tool bursts` / arrow), so the frozen prototype
+  stylesheet covers it and no new CSS was needed
+- `toggleCompact` splices the run's rows in front of the divider and removes exactly those
+  ids on close. It must not rebuild the list: replies that arrive after the resume live
+  only in `streamState.items`, and rebuilding silently dropped them
+- The open state has to be recorded before the rows are rendered, otherwise the builder's
+  own folded-run guard returns nothing and the toggle flips the arrow without inserting rows
+- The divider's viewport offset is captured before the change and compensated after
+  `nextTick`, with `scroll-behavior` suspended for the single `scrollTop` write; without it
+  the line leaves the viewport and the click reads as a no-op
+- Rendered rows are cached per boundary id; the cache and the open set are cleared on every
+  `session.resume`
+- Compaction summaries are stored as `role='user'` with `is_compact_summary=1`. The summary
+  branch now runs before the user branch and strips the compressor's English scaffolding;
+  before this a 6375-character summary rendered as a black outgoing bubble
+- `runtime.js` skips `.cdiv` rows carrying `data-live`, so the prototype click delegate
+  cannot fight the component's own state
+- Verified against the live gateway: four boundaries open to 97 rows and 1846 tool cards and
+  close back to the identical baseline, with every divider holding its viewport position
+- 2026-10-28
+
+## Orbit surface speaks to the gateway for the whole chat loop
+
+- Session rows are rendered by Vue (`SessionSwitcher.vue`), so the prototype conversation
+  menu's DOM edits did not survive a re-render. Rename, delete and pin now go through
+  `renameSession` / `deleteSession` / `toggleSessionPin` in `data/wire.ts`
+  (`session.title`, `session.delete`, local pin), with the DOM branches left in place only
+  for rows that carry no `data-id`
+- `bootstrap()` opens the session returned by `session.most_recent` instead of the newest
+  list row, falling back to the list when the RPC answers with nothing
+- Permission mode is read with `permission.mode.get` on load and again on
+  `pebble:gateway-ready`, and written with `permission.mode.set`; the segmented control no
+  longer starts on the markup default
+- File changes are pulled by a standalone `refreshFileChanges()` (also reused by
+  `refreshPanes`), refreshed on `file.change`, cleared on `files.accepted`, and re-read on
+  `files.reverted`; accept / revert / revert-to-message call
+  `session.file_accept` / `session.file_revert` / `session.file_revert_all`. A successful
+  empty answer now replaces the prototype rows instead of leaving another project's files
+  on screen
+- `clarify.request` renders a `ClarifyCard` cloned from the prototype `.qcard` markup, with
+  per-question steps, single and multiple selection, `Submit` / `Skip`, and the `.done`
+  stamp class the prototype CSS keys on. `clarify.respond` sends both the flat `answer` and
+  the structured `answers` map. `clarify.list` restores a question the agent is still
+  waiting on after a reconnect, since `QuestionManager` state lives in the backend process
+- `message.usage` feeds `usage.history` (one row per `this_call`) and the session cost,
+  tokens and context percentage; every field is optional so a partial payload cannot blank
+  the pane
+- `session.created`, `prompt.rejected` and the three file events were added to the event
+  switch; the surface now handles 21 event types and calls 13 RPC methods
+- Prototype runtime guards: `.q-opt` / `.q-go` / `.q-skip` skip live cards via `data-live`,
+  the same way `.cdiv` already did, otherwise the runtime flips classes Vue owns
+- 2026-10-28
+
+## Orbit surface reaches the rest of the gateway surface
+
+- Data layer now carries a wrapper for every remaining RPC: pairing (status /
+  session / enable / disable / revoke / rotate_certificate), files (search /
+  open / read_text / read_base64 / write_base64), session extras (file_diff /
+  export / unassigned_count / adopt_unassigned), commands (complete.slash /
+  slash.exec / command.dispatch), config (get / set / pricing.save), permissions
+  (list / audit.verify / check), agent memory (get / set / clear), mcp secrets
+  (set_secret / install_info / secret_status), memory extras (get / stats /
+  prompt), setup.status and theme (get / save)
+- Bound to real controls: `ToolsPanel` renders the tool and skill catalogue from
+  `session.info` grouped the way the gateway sends it; `PairingPanel` shows the
+  live code, LAN address and certificate fingerprint, and drives enable /
+  disable plus code minting; `MessageSearch` runs `session.search` with a 220ms
+  debounce and jumps to the owning session; `FilesPane` fetches
+  `session.file_diff` on first expand instead of up front, and its Accept all /
+  per-file revert now call the matching RPCs
+- Theme survives a machine change without colliding with the other shell's
+  palette model: the Orbit pick is written into `theme.colors.orbitMode` /
+  `orbitAccent`, `theme.current` is left alone, and `theme.js` reports every
+  switch through `window.__pebbleThemeSave` so the gateway record follows
+- `window.__pebbleToast` exposes the prototype toast host, so component-rendered
+  rows report failures through the same stack instead of a second one
+- 2026-10-28
+
+## An interrupted turn keeps what it already said
+
+- Transport failures (`peer closed connection without sending complete message
+  body (incomplete chunked read)` and friends) never reach `chat_completed`, so
+  the partial text lived only in memory: the transcript kept it until the next
+  reload, then showed nothing but the error line
+- Agent side: `except Exception` now persists the accumulated reply to
+  `agent_chat.db` (in-flight chunk flushed into `execution_order` first, fresh
+  uuid) and ships the same text on the `error` event
+- Gateway: `_persist_interrupted_reply` writes body + `**Error:** ...` as one
+  assistant row with `interrupted=1` and the agent-side uuid, from both the
+  `error` event branch and the outer `except`; the generator-ended fallback save
+  is gated on `elif not assistant_saved`, so the reply is not stored twice and
+  no `message.complete` follows to wipe the marker; the event carries `content`
+  / `reasoning` / `execution_order` / `message_id` / `interrupted`
+- Orbit shell (`frontend/`, the only front end; `ui-gui-vue3` was deleted):
+  the error branch appends only the tail the live row is missing, flips
+  in-flight tool cards to cancelled, and settles with `interrupted` +
+  `message_id`, so the row the user sees is the row the database will rebuild on reload
+- Cancel now reads the in-flight `consumer.content` too, so a cancel can no
+  longer append the previous round's text twice
+- Tests: `tests/test_chat_stream_e2e.py` (transport-error case) and
+  `tests/test_interrupted_reply.py` (row format / uuid / fallback)
+- 2026-10-28
+
+## CKB drops the retired shell
+
+- `ui-gui-vue3/` was deleted from the tree, so `08-Frontend-UI.md` is gone and
+  the chapters are renumbered: 08 Configuration, 09 Android Client, 10 Orbit
+  Frontend
+- Every surviving reference follows the real tree: entry points and the module
+  topology point at `frontend/src/data/` and `frontend/src-tauri/`; the Tauri
+  sheet states crate `pebble-orbit-shell`, productName `pebble-orbit`,
+  identifier `com.pebble.agent.orbit`, `frontendDist ../dist`, devUrl 5180,
+  1440x900, and `dangerousDisableAssetCspModification: ["script-src",
+  "style-src"]`; the packaging step copies the sidecar into
+  `frontend/src-tauri/binaries/`
+- The HTML-rendering debugging table lost its `ui-gui-vue3` rows: Orbit ships no
+  dormant `console.log`, so it now names the modules to instrument
+  (`previewBridge.ts`, `preview.ts`, `PreviewStage.vue`, `wire.ts`,
+  `gateway/server.py`)
+- Cross-references follow the new numbering: packaging is Chapter 8, the
+  frontend WS lifecycle is Chapter 10
+- CI is recorded as it stands: the `frontend` job still has
+  `working-directory: ui-gui-vue3`, so it fails to install until it moves to
+  `frontend/`
+- 2026-10-28
+
+## The retired shell is gone everywhere, not just from the tree
+
+- `tests/` lost the eight JS drift guards that read `ui-gui-vue3/src/...` source
+  (`test_fold_algo`, `test_input_resize`, `test_jump_collapse`,
+  `test_pricing_labels`, `test_render_perf`, `test_stream_rate`,
+  `test_time_groups`, `test_ws_recovery`): they crash on ENOENT, and the Orbit
+  components they mirrored do not exist under those names, so nothing was
+  rewritten. `tests/run_all.mjs` stays and reports zero tests
+- `.github/workflows/checks.yml` frontend job now installs and type-checks in
+  `frontend/`, cache path `frontend/package-lock.json`
+- `start_gui.bat` checks `frontend\node_modules`, starts the dev server there and
+  prints port 5180; `README.md` and `CONTRIBUTING.md` follow the same paths and
+  port, and the project-structure tree names `frontend/` as the Orbit shell
+- `tests/README.md` drops the deleted `node tests/test_fold_algo.mjs` example
+- Left as history on purpose: `design-preview/pebble-orbit.html` (frozen design
+  snapshot), the `ui-gui-vue3` alternative inside the
+  `agent_core/context_compressor.py` path regex (a harmless extra prefix), the
+  5174 origin entries in `ws_server.py` and `houduan.bat`, and the older
+  `VERSION` entries that describe when the second shell was created
+- 2026-10-28
+
+## The frontend logic core has its own tests
+
+- `tests/` gains three `test_*.mjs` covering the shipped frontend source:
+  `test_render_html.mjs` (renderers and timestamp parsing), `test_blocks_split.mjs`
+  (fence routing and the live block builder), `test_stream_state.mjs` (transcript
+  array identity and the streaming flag). They import `frontend/src/data/*.ts`
+  directly, so every assertion runs against the code that ships, not a copy
+- `tests/run_all.mjs` no longer reports zero tests: each child process gets
+  `--experimental-transform-types` (the `LiveBuilder` constructor uses a
+  parameter property, which type stripping alone cannot express) and
+  `--import ./tests/ts-register.mjs`, a resolve hook that appends the extensions
+  `frontend/src` omits from its relative imports
+- `.github/workflows/checks.yml` states why the frontend job needs Node 22.7 or
+  newer; `node-version: '22'` resolves to the newest release of that line
+- `.gitignore` scopes the frontend exclusions instead of leaning on `*.log` and a
+  bare `node_modules/`: build output (`frontend/dist/`, `dist-ssr/`, `coverage/`),
+  caches (`.vite/`, `.cache/`, `.eslintcache`, `.stylelintcache`), local env files,
+  root-level prototype pages (`/*.html`, anchored so `frontend/index.html` stays
+  tracked), and the Tauri build directories (`.fingerprint/`, `.cargo/`, `gen/`,
+  `binaries/`, `target/`)
+- `README.md` describes the desktop product only: the Android client lost its
+  feature bullet, its two phone screenshots, the whole "Build the Android app"
+  section and the `android-client/` tree entry. The Screenshots section carries
+  `assets/png1.png` and `assets/png2.png`
+- 2026-11-01

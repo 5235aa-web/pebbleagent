@@ -5,14 +5,17 @@
 ```
 1. InputArea.vue → gateway.store.sendMessage(text)
 2. WebSocket "prompt.submit" (token-authenticated: ?token= / X-Pebble-Token; payload limits enforced) → ws_server.py:handle_ws
-3. Background thread → server.py:handle_prompt_submit(sid, text, write_event)  --L1269
-4. Read llm_providers.json for temperature/top_p/reasoning_effort/thinking_enabled  --L1280
-5. service.chat_stream(agent_name, message, ...)  --L1320
+3. Background thread → server.py:handle_prompt_submit(sid, text, write_event, attachments, project_path)  --L737
+   - project_path resolution: the request's own value, else projects.json `active`, else the service's current path. cwd is never a fallback — in a packaged build it is the sidecar's install directory.
+4. Read llm_providers.json for temperature/top_p/reasoning_effort/thinking_enabled  --L762
+5. service.chat_stream(agent_name, message, ..., project_path)  --L796
+   - chat_stream stores the resolved path as `_current_project_path`. A path that differs from the stored one goes through `set_project_path`, which also syncs the tool executor, truncation dir, path whitelist and MCP config; assigning the field alone leaves the prompt and the tool boundary disagreeing.
+   - `_ensure_service()` installs projects.json `active` on first use, so a fresh process starts on the user's project rather than on the sidecar's directory.
 6. Inside chat_stream:
    a. get_cached_agent → load YAML agent → agent_loader.py
    b. get_agent_system_prompt → load prompt md
    c. ledger.build_prompt → recalled experience entries + agent note (FTS + tool/path weighting)
-   d. usernote + project_path_instruction concatenation
+   d. usernote + project_path_instruction concatenation (project_path is `_current_project_path`)
    e. get_agent_chat_messages_for_context → agent_chat.db
    f. _sanitize_messages → repair orphan tool messages
    g. stream_params = {model, messages, temperature, top_p, extra_body: {thinking}}
@@ -103,13 +106,14 @@ Note: file.read_text uses the module-level `os` import; file.read_base64 binds `
 
 ### Debugging Guide: HTML Rendering Issues
 
-If you encounter white/black screens, files not loading, or the feedback layer not activating, enable debug logs in the following files:
+If you encounter white/black screens, files not loading, or the feedback layer not activating, start from these modules. Orbit ships no dormant `console.log` calls, so add a temporary log at the point under suspicion and remove it once the cause is known:
 
-| File | Tag | How to enable |
-|------|---------|---------|
-| `ui-gui-vue3/src/components/HtmlPreview.vue` | `[HtmlPreview]` | Search `// console.log` or `/*console.log*/` and uncomment |
-| `ui-gui-vue3/src/stores/gateway.ts` | `[gateway]` | Uncomment `// console.log` near L235 |
-| `ui-gui-vue3/src/utils/contentParser.ts` | `[contentParser]` | Uncomment `// console.log` near L179 |
-| `gateway/server.py` | `[file.read_text]` | Uncomment `# print(` near L1092-1110 |
+| File | What to log |
+|------|---------|
+| `frontend/src/data/previewBridge.ts` | srcdoc assembly, bridge message round-trip, PNG capture |
+| `frontend/src/data/preview.ts` | preview state, tab set, file-change refresh |
+| `frontend/src/components/PreviewStage.vue` | iframe props and load events |
+| `frontend/src/data/wire.ts` | gateway events feeding the transcript |
+| `gateway/server.py` | `file.open` / `file.read_text` request and response |
 
 Frontend logs appear in the browser DevTools Console; backend logs in the terminal window.

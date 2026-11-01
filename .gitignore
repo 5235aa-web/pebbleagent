@@ -16,16 +16,45 @@ venv/
 # ---------- Build artifacts ----------
 /build/
 /dist/
-ui-gui-vue3/dist/
 *.tsbuildinfo
 
 # ---------- Dependencies ----------
 node_modules/
 
+# ---------- Frontend build output / caches ----------
+frontend/dist/
+frontend/dist-ssr/
+frontend/coverage/
+frontend/.vite/
+frontend/.cache/
+frontend/.eslintcache
+frontend/.stylelintcache
+
+# ---------- Frontend local logs / scratch ----------
+frontend/.tsc.log
+frontend/build*.log
+frontend/.verify-scroll/
+
+# ---------- Frontend local env ----------
+frontend/.env.local
+frontend/.env.*.local
+
 # ---------- Tauri / Rust ----------
-ui-gui-vue3/src-tauri/target/
-ui-gui-vue3/src-tauri/gen/schemas/
-ui-gui-vue3/src-tauri/binaries/*.exe
+frontend/src-tauri/target/
+frontend/src-tauri/.fingerprint/
+frontend/src-tauri/.cargo/
+frontend/src-tauri/gen/
+frontend/src-tauri/binaries/
+
+# ---------- Design prototypes (never shipped) ----------
+# design-preview/: local HTML mockups; referenced only by comments and
+# prototype demo data, never loaded at runtime.
+/design-preview/
+# Root-level prototype pages only. The leading slash anchors these to the
+# repository root, so frontend/index.html (the Vite entry) stays tracked.
+# Add an exception such as "!/docs.html" if a root page ever must be shipped.
+/*.html
+/*.htm
 
 # ---------- Runtime data (personal) ----------
 /.pebble/

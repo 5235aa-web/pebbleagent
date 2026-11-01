@@ -279,16 +279,19 @@ class SessionStore:
             raise
         return (cur.lastrowid, msg_uuid)
 
-    def add_tool_message(self, session_id: str, tool_name: str, tool_context: str, tool_call_id: str = "", msg_uuid: str = "") -> tuple:
+    def add_tool_message(self, session_id: str, tool_name: str, tool_context: str, tool_call_id: str = "", msg_uuid: str = "", output: str = "") -> tuple:
         conn = _get_db()
         now = time.time()
         order = self._next_order(session_id)
         if not msg_uuid:
             msg_uuid = str(uuid.uuid4())
         try:
+            # `content` carries the tool's output. It used to be inserted empty,
+            # which left every restored card with nothing to expand: the live
+            # stream had `result_text`, the database had only the call context.
             cur = conn.execute(
-                "INSERT INTO messages (session_id, role, content, tool_name, tool_context, tool_call_id, msg_uuid, sort_order, created_at) VALUES (?, 'tool', '', ?, ?, ?, ?, ?, ?)",
-                (session_id, tool_name, tool_context, tool_call_id, msg_uuid, order, now),
+                "INSERT INTO messages (session_id, role, content, tool_name, tool_context, tool_call_id, msg_uuid, sort_order, created_at) VALUES (?, 'tool', ?, ?, ?, ?, ?, ?, ?)",
+                (session_id, output or "", tool_name, tool_context, tool_call_id, msg_uuid, order, now),
             )
             conn.commit()
         except Exception:

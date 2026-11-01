@@ -1,0 +1,19 @@
+/* JetBrains Mono, variable axis.
+
+   NOT imported by main.ts on purpose. The prototype declares "JetBrains Mono"
+   first in --font-mono but never ships the file, so on a machine without it
+   installed the browser falls back to "Cascadia Code". Loading the face here
+   changes every monospace metric (a model chip reads 108.88px instead of
+   106.72px) and drifts the stream by about 1px per agent message, which breaks
+   the pixel-parity check.
+
+   Keep this file for a desktop build that wants a deterministic font across
+   machines; import it there and re-measure the whole surface. */
+
+@font-face {
+  font-family: "JetBrains Mono";
+  src: url("../assets/fonts/JetBrainsMono-Variable.ttf") format("truetype-variations");
+  font-weight: 100 800;
+  font-style: normal;
+  font-display: block;
+}

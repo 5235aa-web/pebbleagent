@@ -109,6 +109,17 @@ class StreamConsumer:
         self._chunk_content = ""
         self._chunk_type = None
 
+    def flush_pending(self) -> None:
+        """Append the in-flight chunk to execution_order.
+
+        A stream that dies mid-chunk (transport error, cancel) never reaches the
+        normal end-of-stream flush, so the last text/thinking block would be
+        missing from execution_order while it is present in .content. Anyone
+        persisting a partial reply calls this first so the stored order and the
+        stored text describe the same output.
+        """
+        self._flush_chunk()
+
     async def consume(self, stream) -> AsyncIterator[dict]:
         try:
             async for chunk in stream:

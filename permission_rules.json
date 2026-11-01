@@ -1,5 +1,5 @@
 {
-  "mode": "manual",
+  "mode": "auto",
   "allow": [
     "read_file",
     "read_pdf",

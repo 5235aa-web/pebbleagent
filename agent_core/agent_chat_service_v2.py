@@ -985,15 +985,25 @@ class AgentChatServiceV2:
         """
         logger.info(f"[AgentChatServiceV2] Starting chat with {agent_name}, temperature={temperature}, top_p={top_p}, thinking_enabled={thinking_enabled}, reasoning_effort={reasoning_effort}")
         
-        # 存储项目路径
-        self._current_project_path = project_path or os.getcwd()  # project_path 由前端传入，此处仅兜底
-        
-        # 设置经验账本的项目作用域
+        # 存储项目路径。
+        # 前端未传时保留已有值，绝不用 os.getcwd() 兜底：打包后 cwd 是 sidecar 的
+        # 启动目录（应用可执行文件所在处），会把系统提示词里的工作目录指到一个跟
+        # 会话无关的地方。路径真的变了才走 set_project_path——它同时同步工具执行器、
+        # 截断目录、路径白名单和 MCP 配置；只赋值字段会让提示词里说的目录和工具
+        # 实际被限制的目录各说各话。
         if project_path:
-            self._ledger.set_project(project_path)
+            if os.path.abspath(project_path) != os.path.abspath(self._current_project_path or ""):
+                self.set_project_path(project_path)
+        elif not self._current_project_path:
+            self._current_project_path = os.getcwd()
+
+        # 设置经验账本的项目作用域
+        if self._current_project_path:
+            self._ledger.set_project(self._current_project_path)
         
         # ========== MCP 初始化 ==========
-        await self._ensure_mcp_initialized(project_path)
+        # 用解析后的路径，不用入参：入参可能是 None，MCP 配置会留在上一个项目。
+        await self._ensure_mcp_initialized(self._current_project_path)
         
         # 1-11. 准备本轮状态
         state = TurnState()
@@ -1004,7 +1014,7 @@ class AgentChatServiceV2:
             "user_id": user_id,
             "model": model,
             "attachments": attachments,
-            "project_path": project_path,
+            "project_path": self._current_project_path,
             "temperature": temperature,
             "top_p": top_p,
             "thinking_enabled": thinking_enabled,
@@ -1038,7 +1048,18 @@ class AgentChatServiceV2:
         }
         
         # ==================== 状态机主循环 ====================
-        
+
+        # 异常路径要读取这些累积量，必须在 try 之前给出初值，否则流建立之前
+        # 抛错时 except 里读它们会直接 NameError。
+        consumer = None
+        response_text = ""
+        reasoning_text = ""
+        assistant_message_id = 0
+        assistant_persisted = False
+        all_response_text = ""
+        all_reasoning_text = ""
+        execution_order = []
+
         try:
             final_response = ""
             tool_executions = []
@@ -1285,6 +1306,7 @@ class AgentChatServiceV2:
                     execution_order=execution_order_json,
                     msg_uuid=assistant_msg_uuid
                 )
+                assistant_persisted = True
             elif all_response_text or final_response:
                 saved_response = all_response_text if all_response_text else final_response
                 assistant_message_id = history.add_agent_chat_message(
@@ -1297,6 +1319,7 @@ class AgentChatServiceV2:
                     execution_order=execution_order_json,
                     msg_uuid=assistant_msg_uuid
                 )
+                assistant_persisted = True
             elif was_interrupted:
                 # 中断时且没有任何文本/工具调用的极端情况：存一条空消息
                 assistant_message_id = history.add_agent_chat_message(
@@ -1309,6 +1332,7 @@ class AgentChatServiceV2:
                     execution_order=execution_order_json,
                     msg_uuid=assistant_msg_uuid
                 )
+                assistant_persisted = True
             
             # 非中断时才生成标题和提取记忆
             if not was_interrupted:
@@ -1384,12 +1408,23 @@ class AgentChatServiceV2:
             # future.cancel() 触发的 CancelledError：保存当前已累积的数据到 agent_chat.db
             logger.warning("[AgentChatServiceV2] CancelledError caught, saving partial data")
             was_interrupted = True
+            if consumer is not None:
+                try:
+                    # 取消可能落在块中间，最后一段还没进 execution_order，先补齐。
+                    consumer.flush_pending()
+                except Exception:
+                    logger.debug("[AgentChatServiceV2] flush_pending failed during cancel handling")
+                in_flight_content = consumer.content or ""
+                in_flight_reasoning = consumer.reasoning or ""
+            else:
+                in_flight_content = response_text or ""
+                in_flight_reasoning = reasoning_text or ""
             execution_order_json = json.dumps(execution_order, ensure_ascii=False) if execution_order else None
             cancelled_msg_uuid = str(uuid.uuid4())
-            # 关键：包含当前迭代已生成但未累加的 response_text / reasoning_text
-            partial_content = (all_response_text or "") + (response_text or "")
-            partial_reasoning = (all_reasoning_text or "") + (reasoning_text or "")
-            logger.debug(f"[DEBUG-INTERRUPT] Service CancelledError: all_response={len(all_response_text or '')} response={len(response_text or '')}  partial_content={len(partial_content or '')} partial_reasoning={len(partial_reasoning or '')} all_reasoning={len(all_reasoning_text or '')} reasoning={len(reasoning_text or '')}")
+            # 关键：包含当前迭代已生成但尚未累加的正文与推理
+            partial_content = (all_response_text or "") + in_flight_content
+            partial_reasoning = (all_reasoning_text or "") + in_flight_reasoning
+            logger.debug(f"[DEBUG-INTERRUPT] Service CancelledError: all_response={len(all_response_text or '')} in_flight={len(in_flight_content)}  partial_content={len(partial_content or '')} partial_reasoning={len(partial_reasoning or '')}")
             if execution_order or partial_content or partial_reasoning or final_response:
                 try:
                     history.add_agent_chat_message(
@@ -1420,7 +1455,51 @@ class AgentChatServiceV2:
         
         except Exception as e:
             logger.error(f"[AgentChatServiceV2] Error during chat: {e}", exc_info=True)
-            yield {"type": "error", "message": str(e)}
+            # 传输层异常（httpx "peer closed connection ... incomplete chunked read"
+            # 一类）不会走正常收尾：必须在这里把已生成的内容落库，否则刷新或重启
+            # 后这段输出消失，且下一轮上下文里只剩一条没有回复的用户消息。
+            if consumer is not None:
+                try:
+                    # 流在块中间断开时最后一段还没进 execution_order，先补齐，
+                    # 否则落库的文本有尾部、工具顺序却没有。
+                    consumer.flush_pending()
+                except Exception:
+                    logger.debug("[AgentChatServiceV2] flush_pending failed during error handling")
+                partial_content = (all_response_text or "") + (consumer.content or "")
+                partial_reasoning = (all_reasoning_text or "") + (consumer.reasoning or "")
+            else:
+                partial_content = all_response_text or ""
+                partial_reasoning = all_reasoning_text or ""
+            partial_msg_uuid = ""
+            if not assistant_persisted and (partial_content or partial_reasoning or execution_order):
+                partial_msg_uuid = str(uuid.uuid4())
+                try:
+                    history.add_agent_chat_message(
+                        conversation_id=conversation_id,
+                        role="assistant",
+                        content=partial_content,
+                        reasoning_content=partial_reasoning or None,
+                        token_count=count_tokens(partial_content),
+                        agent_name=agent_name,
+                        execution_order=json.dumps(execution_order, ensure_ascii=False) if execution_order else None,
+                        msg_uuid=partial_msg_uuid,
+                    )
+                    assistant_persisted = True
+                    logger.info(
+                        f"[AgentChatServiceV2] Partial reply saved after stream error: "
+                        f"content_len={len(partial_content)}, reasoning_len={len(partial_reasoning)}"
+                    )
+                except Exception as save_err:
+                    logger.error(f"[AgentChatServiceV2] Failed to save partial reply: {save_err}")
+            yield {
+                "type": "error",
+                "message": str(e),
+                "content": partial_content,
+                "reasoning": partial_reasoning or None,
+                "execution_order": execution_order,
+                "assistant_msg_uuid": partial_msg_uuid if assistant_persisted else "",
+                "interrupted": True,
+            }
         
         finally:
             # 清理 Todo 回调

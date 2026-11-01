@@ -1,0 +1,602 @@
+/* Application-level styles for states the prototype has no markup for.
+   Everything visual that the prototype does cover lives in orbit.css and must
+   stay byte-identical to it. */
+
+/* ---- empty transcript ---- */
+
+.stream-empty {
+  margin: 96px auto 0;
+  max-width: 460px;
+  padding: 0 24px;
+  text-align: center;
+  font-family: var(--font-mono);
+  font-size: 11px;
+  letter-spacing: .1em;
+  text-transform: uppercase;
+  color: var(--faint);
+}
+
+.stream-empty b {
+  display: block;
+  margin-bottom: 10px;
+  color: var(--muted);
+  font-weight: 600;
+}
+
+.stream-empty span {
+  display: block;
+  text-transform: none;
+  letter-spacing: 0;
+  font-size: 11.5px;
+  line-height: 1.7;
+}
+
+/* ---- reasoning line: expandable ----
+   Collapsed is the prototype row, untouched. Expanded lifts the single-line
+   clip and lets the text wrap; the rail stays pinned to the first line, the
+   fade mask is dropped so nothing looks truncated. */
+
+.thinking.open {
+  align-items: flex-start;
+}
+
+.thinking.open .th-text {
+  white-space: normal;
+  overflow: visible;
+  text-overflow: clip;
+  -webkit-mask-image: none;
+  mask-image: none;
+  line-height: 1.65;
+  max-height: 260px;
+  overflow-y: auto;
+  overscroll-behavior: contain;
+  /* No `scrollbar-width` here. Any non-auto value makes Chromium drop the
+     ::-webkit-scrollbar rules below and draw its own bar instead, which is
+     exactly the grey slab this block is trying to get rid of. */
+}
+
+/* The reasoning run is the only scroll area that lives inside a message row,
+   and the shared 8px bar reads as a slab next to 11px text. A 4px bar that
+   stays nearly invisible until the pointer is over the paragraph keeps the
+   block calm, then firms up to the accent when someone actually grabs it. */
+.thinking.open .th-text::-webkit-scrollbar {
+  width: 4px;
+  height: 4px;
+}
+.thinking.open .th-text::-webkit-scrollbar-track {
+  background: transparent;
+}
+.thinking.open .th-text::-webkit-scrollbar-thumb {
+  background: var(--line-strong);
+  border: 0;
+  border-radius: 4px;
+  background-clip: border-box;
+}
+.thinking.open .th-text:hover::-webkit-scrollbar-thumb {
+  background: var(--faint);
+}
+.thinking.open .th-text::-webkit-scrollbar-thumb:hover,
+.thinking.open .th-text::-webkit-scrollbar-thumb:active {
+  background: var(--accent);
+}
+
+.th-toggle {
+  flex: 0 0 auto;
+  margin-left: auto;
+  padding: 0 2px;
+  border: 0;
+  background: none;
+  font-family: var(--font-mono);
+  font-size: 8px;
+  font-weight: 700;
+  letter-spacing: .14em;
+  text-transform: uppercase;
+  color: var(--faint);
+  cursor: pointer;
+  transition: color .18s var(--ease);
+}
+
+.th-toggle:hover {
+  color: var(--accent);
+}
+
+.thinking.open .th-toggle {
+  color: var(--accent);
+}
+
+/* Restored reasoning runs are history, not activity: the rail marker holds
+   still. A transcript can hold well over a thousand of them and a live scan
+   animation on each one is what an idle page cannot afford. */
+.thinking.th-static .th-rail i {
+  animation: none;
+  top: 8px;
+}
+
+.thinking.th-static .th-text::after {
+  animation: none;
+  opacity: 0;
+}
+
+/* ---- hidden shells must not eat clicks ----
+
+   `.stage` fades itself out with opacity 0 + pointer-events: none, but the
+   `.stage-paper` sheet inside it sets pointer-events: auto, and a child can
+   re-enable hit testing under a disabled parent. The invisible 820x475 sheet
+   therefore swallowed every click in the right half of the transcript,
+   including the thinking toggle. */
+
+.stage:not(.open) * {
+  pointer-events: none;
+}
+
+/* ---- message actions on user rows ----
+
+   The agent row lays its actions out from the left (prototype). An outgoing
+   bubble is right-aligned, so its copy/delete pair has to follow the bubble. */
+
+.msg.user .msg-actions {
+  justify-content: flex-end;
+}
+
+/* The project popover gained a live tree, so its header carries a small reset. */
+
+.pp-refresh {
+  margin-left: auto;
+  font-family: var(--font-mono);
+  font-size: 9px;
+  letter-spacing: .08em;
+  text-transform: uppercase;
+  color: var(--faint);
+}
+
+.pp-refresh:hover { color: var(--accent); }
+
+.pp-row.on {
+  background: var(--accent-soft);
+  color: var(--accent);
+}
+
+/* ---- project tree ----
+
+   The dock has no room for a wide tree, so the branch depth is carried by a
+   hairline guide and a single chevron; names stay mono and quiet until hovered. */
+
+.tree-filter {
+  margin: 8px 0 6px;
+}
+
+.tree-wrap {
+  max-height: 260px;
+  overflow-y: auto;
+  overscroll-behavior: contain;
+  scrollbar-width: thin;
+  padding-right: 2px;
+}
+
+.tree-row {
+  display: flex;
+  align-items: center;
+  gap: 5px;
+  height: 23px;
+  padding-right: 6px;
+  border-radius: 6px;
+  font-family: var(--font-mono);
+  font-size: 10.5px;
+  color: var(--muted);
+  cursor: pointer;
+  transition: background .14s var(--ease), color .14s var(--ease);
+  white-space: nowrap;
+}
+
+.tree-row:hover { background: var(--surface-2); color: var(--ink); }
+.tree-row.dir { color: var(--ink-2); }
+.tree-row.active { background: var(--accent-soft); color: var(--accent); }
+
+.tree-arrow,
+.tree-ico {
+  flex: 0 0 auto;
+  display: grid;
+  place-items: center;
+  color: var(--faint);
+  transition: transform .18s var(--ease-out), color .14s var(--ease);
+}
+
+.tree-row.open .tree-arrow { transform: rotate(90deg); color: var(--accent); }
+.tree-row:hover .tree-ico { color: var(--muted); }
+
+.tree-name {
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+.tree-empty {
+  padding: 10px 6px;
+  font-family: var(--font-mono);
+  font-size: 9.5px;
+  letter-spacing: .12em;
+  text-transform: uppercase;
+  color: var(--faint);
+}
+
+.tree-file {
+  margin: 6px 0 0;
+  max-height: 220px;
+  overflow: auto;
+  padding: 8px 10px;
+  border: 1px solid var(--line);
+  border-radius: var(--r-sm);
+  background: var(--surface-2);
+  font-family: var(--font-mono);
+  font-size: 10px;
+  line-height: 1.55;
+  color: var(--ink-2);
+  white-space: pre;
+  scrollbar-width: thin;
+}
+
+.tf-ln { display: block; }
+
+.tf-ln i {
+  display: inline-block;
+  width: 26px;
+  margin-right: 8px;
+  text-align: right;
+  color: var(--faint);
+  font-style: normal;
+  user-select: none;
+}
+
+/* ---- image viewer ---- */
+
+.viewer-img {
+  max-width: 100%;
+  max-height: 62vh;
+  border-radius: var(--r-sm);
+  border: 1px solid var(--line);
+  background: var(--surface-2);
+  object-fit: contain;
+}
+
+/* ---- dock additions ---- */
+
+.sp-adopt {
+  font-family: var(--font-mono);
+  font-size: 9.5px;
+  letter-spacing: .06em;
+  color: var(--accent);
+  margin-left: auto;
+}
+
+.mc-tk-in {
+  flex: 1 1 auto;
+  min-width: 0;
+  height: 22px;
+  padding: 0 7px;
+  border-radius: 6px;
+  border: 1px solid var(--line-strong);
+  background: var(--surface);
+  font-family: var(--font-mono);
+  font-size: 10px;
+  color: var(--ink);
+}
+
+.mc-tk-v.unset {
+  color: var(--faint);
+  font-style: italic;
+}
+
+/* The notes view borrows the ledger sheet's frame but not its two-column grid. */
+.agent-notes {
+  display: block;
+}
+
+.agent-notes .lg-detail {
+  width: 100%;
+  height: 100%;
+}
+
+/* ---- status bar: offline ----
+
+   The prototype only ever shows a live gateway. A dropped socket has to read as
+   something other than green, and stopping the pulse matters more than the
+   colour: the expanding ring is what makes it look like work is happening. */
+
+.sb-live.off {
+  color: var(--muted);
+}
+
+.sb-live.off .dot {
+  animation: none;
+}
+
+/* ---- MCP sheet layout ----
+
+   One scroll container only: the body. Nested scrollers (body + rack + tool
+   list) produced two visible scrollbars and squeezed the collapsed servers into
+   hairlines, because the rack was a shrinkable flex column with a max-height.
+   The rack now grows freely and the body does the scrolling. */
+
+.sheet.mc {
+  max-height: min(760px, calc(100vh - 76px));
+}
+
+.sheet.mc .mc-body {
+  overflow-y: auto;
+  overscroll-behavior: contain;
+  scrollbar-width: thin;
+}
+
+.sheet.mc .mc-rack {
+  max-height: none;
+  overflow: visible;
+  padding-right: 0;
+}
+
+/* Servers keep their own height; the rack must never compress them. */
+.sheet.mc .mc-rack > .mc-srv {
+  flex: 0 0 auto;
+}
+
+/* Tool names sit on a grid so long identifiers line up instead of turning into
+   an unreadable wall of pills. */
+.sheet.mc .mc-tn-list {
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(214px, 1fr));
+  gap: 2px 10px;
+  max-height: none;
+  overflow: visible;
+  margin-top: 6px;
+  padding-right: 0;
+}
+
+.sheet.mc .mc-tn {
+  font-family: var(--font-mono);
+  font-size: 9px;
+  line-height: 1.55;
+  padding: 0;
+  background: none;
+  color: var(--ink-2);
+  white-space: normal;
+  word-break: break-all;
+}
+
+/* ---- session group labels ----
+
+   The switcher now cuts the list into eight windows; the label is the only
+   structure in that column, so it reads as ink rather than as a whisper. */
+
+.sb-label {
+  color: var(--ink);
+  font-size: 10.5px;
+  font-weight: 650;
+  letter-spacing: .12em;
+}
+
+/* ---- composer attachments ----
+
+   The tray keeps the prototype's film styling; only the pieces a live
+   attachment actually needed are new. */
+
+/* The picker is driven from the Attach button; left visible it renders the
+   browser's own "Choose File / No file chosen" control in the toolbar. The
+   attribute selector plus !important is deliberate: a generic file-input rule in
+   the prototype sheet outranks a single class. */
+input.attach-input[type="file"] {
+  display: none !important;
+}
+
+.film-thumb {
+  width: 100%;
+  height: 100%;
+  object-fit: cover;
+  border-radius: 3px;
+}
+
+.film-err {
+  margin-left: 8px;
+  font-family: var(--font-mono);
+  font-size: 8px;
+  letter-spacing: .06em;
+  color: var(--error);
+  text-transform: none;
+}
+
+/* Bottom-right of the transcript: clear of the centred composer below and of the
+   rail pinned to the right edge, and it only exists while the reader is away
+   from the end of the conversation. */
+.jump-latest {
+  position: absolute;
+  right: 22px;
+  bottom: 158px;
+  width: 30px;
+  height: 30px;
+  border-radius: 50%;
+  display: grid;
+  place-items: center;
+  background: var(--surface);
+  border: 1px solid var(--line);
+  color: var(--muted);
+  box-shadow: var(--shadow-1);
+  z-index: 16;
+  transition: color .2s var(--ease), border-color .2s var(--ease), transform .2s var(--ease-spring);
+}
+
+.jump-latest:hover {
+  color: var(--accent);
+  border-color: var(--accent);
+  transform: translateY(-1px);
+}
+
+/* ---- rail hover card ----
+
+   Teleported to the body because the rail itself scrolls, and a scroll container
+   clips its own children. Right-anchored to the mark so the card opens inward,
+   away from the window edge. */
+
+.tl-tipcard {
+  position: fixed;
+  z-index: 60;
+  max-width: 268px;
+  padding: 8px 10px 7px;
+  border-radius: 8px;
+  border: 1px solid var(--line);
+  background: var(--surface);
+  box-shadow: var(--shadow-2);
+  transform: translateY(-50%);
+  pointer-events: none;
+  animation: tltip-in .14s var(--ease-out) both;
+}
+
+@keyframes tltip-in {
+  from { opacity: 0; transform: translateY(-50%) translateX(4px); }
+  to { opacity: 1; transform: translateY(-50%) translateX(0); }
+}
+
+.tl-tip-text {
+  margin: 0;
+  font-size: 11px;
+  line-height: 1.5;
+  color: var(--ink-2);
+  white-space: pre-wrap;
+  word-break: break-word;
+  display: -webkit-box;
+  -webkit-line-clamp: 6;
+  -webkit-box-orient: vertical;
+  overflow: hidden;
+}
+
+.tl-tip-time {
+  display: block;
+  margin-top: 5px;
+  font-family: var(--font-mono);
+  font-size: 8.5px;
+  letter-spacing: .06em;
+  color: var(--faint);
+}
+
+/* ---- ledger groups ----
+
+   The list is cut by kind, so it needs a divider per kind and a quiet empty
+   state when the filter or the search removes everything. */
+
+.lg-group-h {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  padding: 9px 4px 3px;
+  font-family: var(--font-mono);
+  font-size: 8.5px;
+  letter-spacing: .14em;
+  text-transform: uppercase;
+  color: var(--muted);
+}
+
+.lg-group-h b {
+  font-size: 7.5px;
+  color: var(--faint);
+  font-weight: 700;
+}
+
+.lg-group-h::after {
+  content: "";
+  flex: 1 1 auto;
+  height: 1px;
+  background: var(--line-2);
+}
+
+.lg-none {
+  padding: 14px 6px;
+  font-family: var(--font-mono);
+  font-size: 9px;
+  letter-spacing: .1em;
+  text-transform: uppercase;
+  color: var(--faint);
+}
+
+/* ---- agent note editor ----
+
+   The note body inherited `.lm-ta`, which is an 8.5px inline field sized for a
+   provider row. As a full-height editor that is unreadable, so it gets its own
+   measure: bigger type, looser leading, room to breathe. */
+
+.agent-notes .lg-detail .lm-ta {
+  width: 100%;
+  margin: 0;
+  min-height: 260px;
+  padding: 12px 14px;
+  font-family: var(--font-mono);
+  font-size: 12.5px;
+  line-height: 1.75;
+  color: var(--ink);
+  background: var(--surface-2);
+  border-radius: 8px;
+  resize: vertical;
+}
+
+.agent-notes .lg-detail .lm-ta::placeholder {
+  color: var(--faint);
+  font-size: 12px;
+}
+
+/* ---- MCP tool names on an enabled server ----
+
+   Enabled servers show what they actually contribute, so the list has to be
+   scrollable rather than clipped: one server can ship eighty tools. */
+
+.mc-toolnames {
+  margin-top: 8px;
+}
+
+.mc-tn-l {
+  font-family: var(--font-mono);
+  font-size: 8px;
+  letter-spacing: .12em;
+  text-transform: uppercase;
+  color: var(--faint);
+}
+
+.mc-tn-list {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 4px;
+  margin-top: 5px;
+  max-height: 168px;
+  overflow-y: auto;
+  overscroll-behavior: contain;
+  scrollbar-width: thin;
+  padding-right: 2px;
+}
+
+.mc-tn {
+  font-family: var(--font-mono);
+  font-size: 9px;
+  line-height: 1.5;
+  padding: 2px 6px;
+  border-radius: 4px;
+  background: var(--surface-3);
+  color: var(--ink-2);
+  white-space: nowrap;
+}
+
+/* ---- code block gutter ----
+
+   The gutter carries line numbers as one newline-joined string. Without `pre`
+   the browser folds every newline into a space, so the numbers collapse into a
+   single row across the top and push the code to the right. */
+
+.code-body .gutter {
+  white-space: pre;
+}
+
+/* ---- svg image card ----
+
+   The SVG card reuses the mermaid card shell; only the bitmap wrapper is new.
+   An <img> carries the frame's width and keeps the graphic's own ratio, and the
+   browser refuses to run anything inside an image document. */
+
+.mmd-svg > img {
+  display: block;
+  width: 100%;
+  max-width: 100%;
+  height: auto;
+}

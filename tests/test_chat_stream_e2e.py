@@ -77,6 +77,10 @@ class FakeCompletions:
 
         async def gen():
             for i, item in enumerate(items):
+                if isinstance(item, BaseException):
+                    # A transport failure (peer closed mid-chunk) surfaces here,
+                    # after the deltas that already reached the client.
+                    raise item
                 if on_chunk:
                     on_chunk(i)
                 yield item
@@ -213,6 +217,49 @@ async def case_suspicious_retry(holder):
     check("no error", "error" not in ks, [e for e in events if e["type"] == "error"])
 
 
+async def case_stream_error(holder):
+    print("\n=== transport error -> partial saved ===")
+    # httpx raises this when the peer closes before the terminating chunk. The
+    # turn never reaches chat_completed, so whatever the user already saw has to
+    # be persisted by the error path, together with the uuid the gateway needs
+    # to keep both databases deletable in sync.
+    err = ConnectionError(
+        "peer closed connection without sending complete message body (incomplete chunked read)"
+    )
+    client = FakeClient([[chunk(content="half an answer"), err]])
+    holder["client"] = client
+    svc = make_service(holder)
+    events = await collect(svc, "conv-aborted", "long question")
+    ks = kinds(events)
+    check("error event", "error" in ks, ks)
+    ev = [e for e in events if e["type"] == "error"][-1] if "error" in ks else {}
+    check("error carries partial content", "half an answer" in (ev.get("content") or ""), ev)
+    check("error marked interrupted", ev.get("interrupted") is True, ev)
+    check("no chat_completed", "chat_completed" not in ks, ks)
+    conv = history.get_agent_conversation_by_uuid("conv-aborted")
+    rows = history.get_agent_chat_messages(conv["id"], limit=10) if conv else []
+    saved = [m for m in rows if m.get("role") == "assistant"]
+    check(
+        "partial saved to agent db",
+        bool(saved) and "half an answer" in (saved[-1].get("content") or ""),
+        saved,
+    )
+    conn = history._connect()
+    row = conn.execute(
+        "SELECT msg_uuid FROM agent_chat_messages"
+        " WHERE conversation_id = ? AND role = 'assistant'"
+        " ORDER BY sort_order DESC LIMIT 1",
+        (conv["id"] if conv else -1,),
+    ).fetchone()
+    conn.close()
+    saved_uuid = row[0] if row else None
+    check(
+        "saved uuid matches event",
+        saved_uuid == ev.get("assistant_msg_uuid"),
+        (saved_uuid, ev.get("assistant_msg_uuid")),
+    )
+
+
 async def case_usage(holder):
     print("\n=== usage accounting ===")
     client = FakeClient([[chunk(content="x"), chunk(finish="stop", usage=make_usage())]])
@@ -229,6 +276,7 @@ async def main():
     await case_single_turn(holder)
     await case_tool_round(holder)
     await case_cancel(holder)
+    await case_stream_error(holder)
     await case_suspicious_retry(holder)
     await case_usage(holder)
     print(f"\nRESULT: PASS={passed} FAIL={failed}")

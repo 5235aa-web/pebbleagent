@@ -9,12 +9,11 @@ Standalone verification tests for PebbleAgent. No test framework required: every
 # All Python tests (each in its own process)
 python tests/run_all.py
 
-# All JS tests
+# All JS tests (each in its own process; the frontend source is imported directly)
 node tests/run_all.mjs
 
 # A single test
 python tests/test_agent_tool_policy.py
-node tests/test_fold_algo.mjs
 
 # Static analysis gate (rules F + E9, configured in ruff.toml)
 ruff check agent_core gateway tools tests
@@ -24,6 +23,19 @@ The repository also has three billing/holiday regression scripts at the project 
 (`peb_check_*.py`) which follow the same exit-code convention.
 
 ## Test index
+
+### Frontend renderers and transcript state (Vue 3, `frontend/src`)
+| Test | Covers |
+| --- | --- |
+| `test_render_html.mjs` | `escapeHtml`, `highlight`, `renderCodeBlock`, `renderMarkdown`, `renderPlain`, `renderAttachments`, `renderUserBubble` markup; HTML escaping; caret handling; `dateOf` / `clockOf` epoch and timestamp parsing |
+| `test_blocks_split.mjs` | `splitBlocks` fence routing (code / mermaid / svg / still-streaming), `LiveBuilder` paragraph commits, fence held until it closes, in-place tail mutation, reset |
+| `test_stream_state.mjs` | `appendStream` / `replaceStream` / `clearStream` keep the array identity, and every rebuild settles `streaming` |
+
+These import the shipped TypeScript source directly, with no build step. `run_all.mjs`
+passes `--experimental-transform-types` (the parameter properties in `LiveBuilder` are
+not plain type syntax) and `--import ./tests/ts-register.mjs`, a resolve hook that adds
+the extensions `frontend/src` omits from its relative imports. Running a file by hand
+needs the same flags: `node --experimental-transform-types --import ./tests/ts-register.mjs tests/test_render_html.mjs`.
 
 ### Tool policy (chat_agent 4-tool allowlist)
 | Test | Covers |

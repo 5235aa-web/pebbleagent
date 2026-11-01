@@ -40,6 +40,8 @@ _DATA_HOME = os.environ.get("PEBBLE_HOME") or os.path.join(os.path.expanduser("~
 _ALLOWED_ORIGINS = {
     "http://localhost:5174",
     "http://127.0.0.1:5174",
+    "http://localhost:5180",
+    "http://127.0.0.1:5180",
     "http://tauri.localhost",
     "tauri://localhost",
 }

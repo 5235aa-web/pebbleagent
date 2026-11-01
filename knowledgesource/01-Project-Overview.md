@@ -4,10 +4,10 @@
 - **Communication**: WebSocket (websockets) + JSON-RPC 2.0
 - **Databases**: two SQLite databases — `sessions.db` (gateway) + `agent_chat.db` (agents); plus an audit database `permission_audit.db`
 - **LLM**: OpenAI Python SDK → DeepSeek API (multi-provider support)
-- **Entry points**: backend `run_backend.py` → `gateway/ws_server.py` (ws://127.0.0.1:19876); the desktop build launches the packaged backend `pebble-backend.exe` as a sidecar from the Tauri shell (`ui-gui-vue3/src-tauri`)
-- **Frontend**: `ui-gui-vue3/` (Vue 3 + Pinia + Vite + Tauri 2 desktop shell)
-- **Packaging**: PyInstaller (`pebble-backend.spec` → sidecar exe) → Tauri bundle (see Chapter 9)
-- **Core modules**: 7 (gateway / agent_core / tools / memory / mcp / snapshot / src-tauri)
+- **Entry points**: backend `run_backend.py` → `gateway/ws_server.py` (ws://127.0.0.1:19876); the desktop build launches the packaged backend `pebble-backend.exe` as a sidecar from the Tauri shell (`frontend/src-tauri`)
+- **Frontend**: `frontend/` (Orbit: Vue 3 + Vite, Tauri 2 desktop shell in `frontend/src-tauri`)
+- **Packaging**: PyInstaller (`pebble-backend.spec` → sidecar exe) → Tauri bundle (see Chapter 8)
+- **Core modules**: 7 (gateway / agent_core / tools / memory / mcp / snapshot / frontend/src-tauri)
 
 ## The CKB Mechanism Itself
 

@@ -1,1 +1,0 @@
-<template><div aria-hidden class="backdrop-glow"/><div aria-hidden class="backdrop-noise"/></template>

@@ -39,10 +39,10 @@ if errorlevel 1 (
     exit /b 1
 )
 
-if not exist "ui-gui-vue3\node_modules" (
+if not exist "frontend\node_modules" (
     echo   [ERROR] Frontend dependencies are not installed.
     echo   Run:
-    echo     cd ui-gui-vue3
+    echo     cd frontend
     echo     npm install
     echo.
     pause
@@ -82,12 +82,12 @@ echo.
 :start_frontend
 :: Start the Vite dev server in its own window
 echo [3/3] Starting frontend dev server...
-cd ui-gui-vue3
+cd frontend
 start "PebbleAgent-Frontend" cmd /c "npm run dev ^& pause"
 
 echo.
 echo ========================================
-echo   Open: http://localhost:5174
+echo   Open: http://localhost:5180
 echo   Backend log: PebbleAgent-Backend window
 echo   Frontend log: PebbleAgent-Frontend window
 echo   Stop: close both windows
