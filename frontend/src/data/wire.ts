@@ -1220,19 +1220,21 @@ function showClarify(requestId: string, questions: ClarifyQuestion[]): void {
   })
 }
 
-export function respondClarify(requestId: string, answers: Record<string, string>): void {
-  if (!gateway.connected || !requestId) return
+/** Resolves true once the gateway accepted the answer. A false result leaves the
+    card editable, so a dropped connection costs one click instead of the reply. */
+export function respondClarify(requestId: string, answers: Record<string, string>): Promise<boolean> {
+  if (!gateway.connected || !requestId) return Promise.resolve(false)
   // Annotations made on the preview travel with the answer that asks for a
   // change, so the agent gets them as the instruction instead of a side note.
   const merged = mergePreviewComments(answers)
   const flat = Object.values(merged).join(', ')
-  void gateway.request('clarify.respond', { request_id: requestId, answer: flat, answers: merged })
-    .then(() => { clearComments() })
-    .catch(() => { /* the card keeps its selection so the user can retry */ })
+  return gateway.request('clarify.respond', { request_id: requestId, answer: flat, answers: merged })
+    .then(() => { clearComments(); return true })
+    .catch(() => false)
 }
 
-export function skipClarify(requestId: string): void {
-  respondClarify(requestId, {})
+export function skipClarify(requestId: string): Promise<boolean> {
+  return respondClarify(requestId, {})
 }
 
 /** A reconnecting client has no local copy of a question the agent is still

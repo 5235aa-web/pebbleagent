@@ -18,8 +18,8 @@
               v-else-if="item.kind === 'clarify'"
               :request-id="item.clarify?.requestId ?? ''"
               :questions="item.clarify?.questions ?? []"
-              @submit="onClarifySubmit(item, $event)"
-              @skip="onClarifySkip(item)"
+              @submit="(answers, settle) => onClarifySubmit(item, answers, settle)"
+              @skip="settle => onClarifySkip(item, settle)"
             />
             <StreamMessage v-else-if="item.blocks" :item="item" />
             <div v-else :class="item.className" v-bind="item.attrs" v-html="item.innerHTML"></div>
@@ -46,9 +46,15 @@ function onToggle(item: StreamItem) {
   if (bid) toggleCompact(bid)
 }
 
-function onClarifySubmit(item: StreamItem, answers: Record<string, string>) {
+/** The card stays editable until the gateway confirms, so an unreachable
+    backend costs a retry instead of silently swallowing the answer. */
+function onClarifySubmit(item: StreamItem, answers: Record<string, string>, settle: (ok: boolean) => void) {
   const rid = item.clarify?.requestId
-  if (rid) respondClarify(rid, answers)
+  if (!rid) {
+    settle(false)
+    return
+  }
+  void respondClarify(rid, answers).then(settle)
 }
 
 /** User rows are rendered from an HTML string, so their action buttons are
@@ -66,8 +72,12 @@ function onStreamClick(ev: MouseEvent) {
   deleteMessage(id)
 }
 
-function onClarifySkip(item: StreamItem) {
+function onClarifySkip(item: StreamItem, settle: (ok: boolean) => void) {
   const rid = item.clarify?.requestId
-  if (rid) skipClarify(rid)
+  if (!rid) {
+    settle(false)
+    return
+  }
+  void skipClarify(rid).then(settle)
 }
 </script>

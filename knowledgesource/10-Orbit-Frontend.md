@@ -38,7 +38,7 @@ Behaviour that needs new CSS goes into `styles/app.css`, never into `orbit.css`.
 |---|---|---|
 | `MessageStream.vue` | `v-for` over `streamState.items`; routes each item to `CompactDivider`, `ClarifyCard`, `StreamMessage`, or verbatim `innerHTML` | Core |
 | `CompactDivider.vue` | Folded-history divider: prototype `.cdiv` markup (badge / text / arrow), `data-live="1"`, keyboard toggle | Core |
-| `ClarifyCard.vue` | Agent question card: prototype `.qcard` markup, per-question steps, single/multi select, `Submit` / `Skip`, `done` class drives the stamp | Core |
+| `ClarifyCard.vue` | Agent question card: prototype `.qcard` markup, per-question steps, single/multi select, a free-form field per question (single-choice typing replaces the pick, multiple-choice typing appends after it), `Submit` / `Skip`, `done` class drives the stamp | Core |
 | `StreamMessage.vue` | One agent row rendered from `Block[]` (markdown runs, code, mermaid cards, tool cards, thinking rows) | Core |
 | `MermaidCard.vue` | Mermaid diagram card: lazily imports `mermaid`, renders into a dotted stage with the live accent palette, streaming placeholder, parse-error surface, source toggle, copy and PNG export | Core |
 | `StreamTimeline.vue` | Right-edge rail: one mark per user row (`className === 'msg user'`), hover opens a teleported card with 120 characters of the message plus `YYYY-MM-DD HH:mm:ss`, click scrolls that row to the viewport centre, a passive scroll listener marks the row being read, `#tlBottom` returns to latest | Core |

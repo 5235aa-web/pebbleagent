@@ -74,7 +74,7 @@ Shell = Tauri 2 (Rust), crate `pebble-orbit-shell` (lib name `app_lib`), product
 
 | Skill | Path | Function |
 |-------|------|------|
-| ckb | skills/ckb/ | Code knowledge-base mechanism (detect → build → verify; chapters and VERSION are present-tense current-state facts, never change or incident narratives) |
+| ckb | skills/ckb/ | Code knowledge-base mechanism (detect → build → verify; chapters hold present-tense current-state facts, `VERSION` is a terse change log of what changed and the resulting state) |
 | design | skills/design/ | Frontend design / Office document task specs |
 | diagnose | skills/diagnose/ | Structured debugging workflow (6 phases) |
 | tdd | skills/tdd/ | Red-green-refactor loop + test strategy |

@@ -1,10 +1,10 @@
 # CKB (Code Knowledge Base) — Specification v2.0
 
-> **Document positioning (read first)**: CKB chapters and `VERSION` are current-state facts, not incident reports,
-> change logs, or a mixed bag of edits. Write what is true now, in the present tense, objectively and neutrally.
-> Never record fixes, incidents, refactors, migrations, dates of changes, or before/after narratives. If something
-> changed, describe the resulting behavior, not the change itself. These files are the project's source of truth;
-> narrative history dilutes them.
+> **Document positioning (read first)**: the two halves play different roles. Chapter files are current-state
+> facts: present tense, objective, neutral, describing what is true now rather than the edit that produced it.
+> `VERSION` is the change log, kept deliberately terse: one entry per change stating what changed and what the
+> resulting state is — not a step-by-step account, not what the code looked like before, not an inventory of
+> touched lines. Someone should be able to skim it in a minute and still know where the project stands.
 
 > This document defines the complete CKB mechanism: detection, build, writing, indexing, verification, migration.
 > **v2.0 core change**: the knowledge base moved from a single file (PROJECT_GRAPH.md) to a directory plus chapter files —
@@ -176,7 +176,7 @@ The build runs in 6 stages, in order; each stage completes before the next begin
 2. Generate chapter files one by one: knowledgesource/{NN}-{Chapter-Name}.md
    - Each chapter contains: the system's file index (table) + related critical paths (numbered steps) + related boundary notes
 3. Generate the directory file: knowledgesource/content.md (format in 3.2)
-4. Write knowledgesource/VERSION (format: v{date}-{file_count}files-{node_count}nodes)
+4. Write knowledgesource/VERSION: refresh the current-state sections it already carries, then add one terse change entry
 ```
 
 **Output**: content.md + all chapter files + VERSION update.
@@ -366,7 +366,7 @@ When project code changes:
 1. Read content.md to locate the affected chapters
 2. Read those chapter files and update the affected entries (file index, critical paths, boundary notes)
 3. Chapters added/removed: update content.md and rename the affected files per the naming rule (keep indices contiguous)
-4. Append a change record to VERSION
+4. Append one terse entry to VERSION: what changed and the resulting state, not the process
 ```
 
 If the knowledge base clearly disagrees with the actual code (e.g. an indexed file no longer exists), correct it with the same flow.

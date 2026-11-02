@@ -2209,6 +2209,56 @@ a { color: inherit; text-decoration: none; }
 }
 .q-opt.sel .q-stampkey { opacity: 1; transform: none; }
 
+/* Free-form answer: the presets never cover every case, so each question keeps
+   its own field. Single-choice questions treat a typed answer as replacing the
+   pick, multiple-choice ones append it after the picks. */
+.q-custom {
+  display: flex;
+  flex-direction: column;
+  gap: 5px;
+  padding: 0 14px 13px 24px;
+}
+.q-custom-label {
+  font-family: var(--font-mono);
+  font-size: 8.5px;
+  letter-spacing: .08em;
+  text-transform: uppercase;
+  color: var(--faint);
+}
+.q-custom-input {
+  width: 100%;
+  min-height: 50px;
+  padding: 8px 10px;
+  border: 1px dashed var(--line);
+  border-radius: 9px;
+  background: var(--surface);
+  color: var(--ink);
+  font-family: var(--font-sans);
+  font-size: 11.8px;
+  line-height: 1.6;
+  caret-color: var(--accent);
+  resize: vertical;
+  transition: border-color .2s var(--ease), background .25s var(--ease), box-shadow .25s var(--ease);
+}
+.q-custom-input::placeholder { color: var(--faint); }
+.q-custom-input:hover { border-color: var(--line-strong); }
+.q-custom-input:focus {
+  outline: none;
+  border-style: solid;
+  border-color: var(--accent);
+  background: var(--bg);
+  box-shadow: 0 0 0 3px var(--accent-soft-2);
+}
+.q-custom-input:disabled { opacity: .45; cursor: not-allowed; }
+.q-custom-note {
+  font-family: var(--font-mono);
+  font-size: 8.5px;
+  letter-spacing: .02em;
+  color: var(--faint);
+  transition: opacity .2s var(--ease);
+}
+.qcard.done .q-custom-note { opacity: .55; }
+
 .q-foot {
   display: flex;
   align-items: center;
@@ -2224,6 +2274,8 @@ a { color: inherit; text-decoration: none; }
   letter-spacing: .02em;
   color: var(--faint);
 }
+/* A refused send has to read as a failure, not as another idle hint. */
+.q-hint.bad { color: var(--err); }
 .q-btn {
   display: inline-flex;
   align-items: center;
@@ -2236,6 +2288,7 @@ a { color: inherit; text-decoration: none; }
   transition: color .2s var(--ease), background .2s var(--ease), border-color .2s var(--ease), transform .15s var(--ease);
 }
 .q-btn:active { transform: scale(.97); }
+.q-btn:disabled { opacity: .5; }
 .q-skip {
   color: var(--muted);
   border: 1px solid var(--line);

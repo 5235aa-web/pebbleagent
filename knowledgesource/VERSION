@@ -50,7 +50,7 @@
 - Styles: `styles/index.css` imports ten domain files in cascade order (base / layout / sidebar / messages / input / panels / widgets / cards / settings / overlays)
 - Toolbar / status-bar emphasis: the input toolbar controls and the status-bar compress button are permanent accent chips (full-opacity accent icon and caption, `--accent-soft` fill, `--border-gold` outline); hover uses `--accent-soft-strong` + `--accent`, an open panel uses `--primary`; both fills are theme tokens, so the emphasis recolors with every palette
 - Theme system: five built-in palettes plus custom colors; current theme, custom themes, and per-theme colors persist to `theme.json` through `theme.get` / `theme.save`; saving applies the color immediately and a save failure does not undo the applied theme
-- Message flow: execution-order rendering (thinking / tool / question / content), inline clarify cards (title / prompt / options label+detail / multiple), multi-question answers, image attachments with viewer
+- Message flow: execution-order rendering (thinking / tool / question / content), inline clarify cards (title / prompt / options label+detail / multiple, plus one free-form field per question whose text is submitted as the answer for that prompt), multi-question answers, image attachments with viewer
 - Compaction card: 任务 / 现状 / 决定 / 待办 / 线索 sections with counts
 - HTML preview: sandboxed iframe (allow-scripts only), injected meta CSP, postMessage bridge, PNG capture, interactive comment layer
 - Preview dock (`PreviewDock.vue` + `stores/preview.ts`): the only live preview iframe lives in a right-side dock, outside the message flow; every `@pebble-file` in the conversation is registered with tabs to switch between generated files, dock width/open state persist to localStorage, non-active files get a stale dot, a floating button reopens a closed dock; message flow renders `html-file` blocks as reference chips so two iframes never share the global comment store
@@ -794,3 +794,22 @@
   user names explicitly takes precedence over every rule in that block, so a session
   no longer stalls on a restriction the user has already overridden
 - 2026-11-01
+
+- 2026-11-02
+
+## Clarify cards take a free-form answer
+
+- `ClarifyCard.vue` keeps one typed string per question (`custom`) next to `picked`,
+  renders a `.q-custom-input` textarea under that question's option list, and folds
+  the text into `collect()`, so the answer reaches `clarify.respond` under the
+  question's own prompt key; the gateway RPC and `QuestionManager` needed no change
+  because they always accepted arbitrary answer text
+- Single-choice cards treat typing as taking over the pick (`typeCustom` clears
+  `picked`, `choose` clears the field); multiple-choice cards append the typed text
+  after the selected labels. The field is per question, so a multi-question card
+  keeps a separate answer for each step
+- `styles/orbit.css` gains `.q-custom*` rules built on `var(--accent)`, `var(--line)`,
+  `var(--line-strong)`, `var(--faint)` and `var(--accent-soft-2)`, so the field and
+  its focus ring follow every palette; the `done` state disables it
+- 2026-11-02
+

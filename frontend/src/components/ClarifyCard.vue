@@ -4,23 +4,27 @@ import type { ClarifyQuestion } from '../data/panels'
 
 const props = defineProps<{ requestId: string; questions: ClarifyQuestion[] }>()
 const emit = defineEmits<{
-  (e: 'submit', answers: Record<string, string>): void
-  (e: 'skip'): void
+  (e: 'submit', answers: Record<string, string>, settle: (ok: boolean) => void): void
+  (e: 'skip', settle: (ok: boolean) => void): void
 }>()
 
 const step = ref(0)
 const picked = ref<string[][]>(props.questions.map(() => []))
+const custom = ref<string[]>(props.questions.map(() => ''))
 const done = ref(false)
+const sending = ref(false)
+const failed = ref(false)
 const stampText = ref('Answered')
 
 const current = computed<ClarifyQuestion | undefined>(() => props.questions[step.value])
 const total = computed(() => props.questions.length)
 const stepNo = computed(() => String(step.value + 1).padStart(2, '0'))
 const pickedHere = computed(() => picked.value[step.value] ?? [])
+const customHere = computed(() => custom.value[step.value] ?? '')
 const isPicked = (label: string) => pickedHere.value.includes(label)
 
 function choose(label: string) {
-  if (done.value || !current.value) return
+  if (done.value || sending.value || !current.value) return
   const row = picked.value[step.value]
   if (!row) return
   if (current.value.multiple) {
@@ -28,34 +32,65 @@ function choose(label: string) {
     if (at > -1) row.splice(at, 1)
     else row.push(label)
   } else {
+    // A single-choice answer is either a preset or a typed one, never both.
     row.splice(0, row.length, label)
+    custom.value[step.value] = ''
   }
+}
+
+/** Typing on a single-choice question takes over from the preset selection. */
+function typeCustom(ev: Event) {
+  if (done.value || sending.value) return
+  const idx = step.value
+  custom.value[idx] = (ev.target as HTMLTextAreaElement).value
+  if (!current.value?.multiple && custom.value[idx].trim()) picked.value[idx] = []
 }
 
 function collect(): Record<string, string> {
   const out: Record<string, string> = {}
   props.questions.forEach((q, i) => {
-    const sel = picked.value[i] ?? []
-    if (sel.length) out[q.prompt] = sel.join(', ')
+    const parts = [...(picked.value[i] ?? [])]
+    const typed = (custom.value[i] ?? '').trim()
+    if (typed) parts.push(typed)
+    if (parts.length) out[q.prompt] = parts.join(', ')
   })
   return out
 }
 
 function advance() {
-  if (done.value) return
+  if (done.value || sending.value) return
   if (step.value < total.value - 1) {
     step.value += 1
+    failed.value = false
     return
   }
-  done.value = true
-  emit('submit', collect())
+  const answers = collect()
+  failed.value = false
+  sending.value = true
+  emit('submit', answers, (ok: boolean) => {
+    sending.value = false
+    if (ok) {
+      done.value = true
+      return
+    }
+    // Nothing was recorded, so the card goes back to being answerable.
+    failed.value = true
+  })
 }
 
 function skip() {
-  if (done.value) return
-  done.value = true
-  stampText.value = 'Skipped'
-  emit('skip')
+  if (done.value || sending.value) return
+  failed.value = false
+  sending.value = true
+  emit('skip', (ok: boolean) => {
+    sending.value = false
+    if (!ok) {
+      failed.value = true
+      return
+    }
+    done.value = true
+    stampText.value = 'Skipped'
+  })
 }
 </script>
 
@@ -90,12 +125,29 @@ function skip() {
           <span class="q-stampkey">&#8629;</span>
         </button>
       </div>
+      <div class="q-custom">
+        <span class="q-custom-label">or write your own</span>
+        <textarea
+          class="q-custom-input"
+          :value="customHere"
+          rows="2"
+          spellcheck="false"
+          :disabled="done || sending"
+          :placeholder="current?.multiple ? 'Type your own answer, it is added after the options you picked' : 'Type your own answer instead of picking an option'"
+          @input="typeCustom"
+        ></textarea>
+        <span class="q-custom-note">{{ customHere.trim() ? (current?.multiple ? 'added after your picks' : 'replaces the picked option') : 'no option fits? write it here' }}</span>
+      </div>
     </div>
     <div class="q-foot">
-      <span class="q-hint">&#8629; confirm &middot; esc skip</span>
-      <button class="q-btn q-skip" type="button" @click="skip">Skip</button>
-      <button class="q-btn q-go" type="button" @click="advance">
-        <span>Submit</span>
+      <span class="q-hint" :class="{ bad: failed }">
+        <template v-if="failed">not sent &middot; try again</template>
+        <template v-else-if="sending">sending &hellip;</template>
+        <template v-else>&#8629; confirm &middot; esc skip</template>
+      </span>
+      <button class="q-btn q-skip" type="button" :disabled="sending" @click="skip">Skip</button>
+      <button class="q-btn q-go" type="button" :disabled="sending" @click="advance">
+        <span>{{ sending ? 'Sending' : 'Submit' }}</span>
         <svg width="11" height="11" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.4"><line x1="4" y1="12" x2="19" y2="12" /><polyline points="13 6 19 12 13 18" /></svg>
       </button>
     </div>
