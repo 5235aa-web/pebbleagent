@@ -66,6 +66,11 @@ gateway/err.txt
 /brag-output/
 /brag-output-*/
 
+# ---------- Code-animation style pack (local assets) ----------
+# 341 styles + 193 stills + offline picker, roughly 15 MB of third-party
+# material under a custom non-commercial license. Kept out of the repo.
+/skills/code-animation-styles/
+
 # ---------- Personal config / backups / logs ----------
 *.bak
 *.log

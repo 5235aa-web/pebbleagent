@@ -6,13 +6,15 @@
   "scripts": {
     "dev": "vite --port 5180",
     "build": "vue-tsc --noEmit && vite build",
-    "preview": "vite preview --port 5180"
+    "preview": "vite preview --port 5180",
+    "tauri": "tauri"
   },
   "dependencies": {
     "mermaid": "^11.17.2",
     "vue": "^3.5.13"
   },
   "devDependencies": {
+    "@tauri-apps/cli": "^2.12.4",
     "@vitejs/plugin-vue": "^5.2.1",
     "typescript": "~5.7.2",
     "vite": "^6.3.0",

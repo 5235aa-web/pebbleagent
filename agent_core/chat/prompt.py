@@ -4,17 +4,19 @@
 def render_project_path_instruction(project_path: str) -> str:
     return f"""
 
-【重要：项目工作目录】
-你的工作目录（项目文件夹）是：{project_path}
+[CRITICAL: PROJECT WORKING DIRECTORY]
+Your working directory (the project folder) is: {project_path}
 
-⚠️ 严格遵守以下规则：
-1. 所有文件操作必须在这个目录下进行
-2. 使用相对路径时，会自动相对于此目录解析
-3. 绝对禁止访问此目录之外的文件（安全限制）
-4. 执行Shell命令时，会自动在此目录下执行
-5. 如果用户要求操作其他目录的文件，必须明确拒绝并告知你的工作目录
+You MUST obey every rule below:
+1. All file operations stay inside this directory by default.
+2. Relative paths resolve against this directory.
+3. You MUST NOT read, write, list, edit, or execute anything outside this directory unless the user has explicitly named that path in this conversation.
+4. Shell commands run inside this directory by default.
+5. The one and only exception: the user explicitly names another path. When that happens, execute against that path at once. Do not refuse, do not demand repeated confirmation, do not stall.
 
-当前工作目录: {project_path}
+Beyond that exception, reaching outside this directory is a violation. Only an explicit path from the user authorizes it. Absent such a path, treat this directory as a hard boundary, not a suggestion.
+
+Current working directory: {project_path}
 """
 
 

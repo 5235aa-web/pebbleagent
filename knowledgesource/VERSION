@@ -786,3 +786,11 @@
   only, adds a macOS badge, documents the `start_backend.sh` + `npm run dev` flow, and
   records that no Apple machine was available for a real run
 - 2026-11-01
+
+## The project-path rule defers to paths the user names
+
+- `render_project_path_instruction()` no longer instructs the agent to refuse
+  out-of-directory work: the working directory is the default scope, and a path the
+  user names explicitly takes precedence over every rule in that block, so a session
+  no longer stalls on a restriction the user has already overridden
+- 2026-11-01
