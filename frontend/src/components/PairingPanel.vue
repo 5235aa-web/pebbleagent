@@ -34,6 +34,10 @@
           </div>
           <div class="fingerprint">SHA-256 {{ pairing.fingerprint || 'not issued' }}</div>
         </div>
+        <div class="pair-off">
+          <b>Pairing is unavailable</b>
+          <span>the front end was rebuilt, so this is paused. it will return if there is demand.</span>
+        </div>
       </div>
 
       <div class="section-h">transport</div>
@@ -48,7 +52,6 @@
     <div class="sheet-foot">
       <span class="sf-hint">code rotates on every pairing</span>
       <button class="btn btn-ghost" data-close>Close</button>
-      <button class="btn btn-primary" @click="mintPairingCode()">New code</button>
     </div>
   </div>
 </div>
@@ -57,7 +60,7 @@
 <script setup lang="ts">
 import { computed, onMounted } from 'vue'
 import { pairing } from '../data/panels'
-import { mintPairingCode, refreshPairing, setPairingEnabled } from '../data/wire'
+import { refreshPairing, setPairingEnabled } from '../data/wire'
 
 /* The gateway hands back a compact code; the sheet prints it spaced out so it
    can be read off a screen at arm's length. */

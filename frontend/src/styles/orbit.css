@@ -5217,7 +5217,35 @@ a { color: inherit; text-decoration: none; }
    PAIRING
    ============================================================ */
 
-.pair-wrap { display: flex; gap: 16px; align-items: center; }
+.pair-wrap { position: relative; display: flex; gap: 16px; align-items: center; }
+
+/* The mobile companion is not shipped in this build. The sheet stays so the bar
+   button does not dead-end, but the code, address and fingerprint behind the
+   film are leftovers from the old client, so they are covered rather than left
+   looking scannable. */
+.pair-off {
+  position: absolute;
+  inset: 0;
+  z-index: 2;
+  display: grid;
+  place-content: center;
+  justify-items: center;
+  gap: 4px;
+  padding: 0 20px;
+  border-radius: 12px;
+  background: var(--glass);
+  backdrop-filter: blur(4px) saturate(.85);
+  -webkit-backdrop-filter: blur(4px) saturate(.85);
+  text-align: center;
+}
+.pair-off b {
+  font-family: var(--font-mono);
+  font-size: 11px;
+  letter-spacing: .06em;
+  text-transform: uppercase;
+  color: var(--ink);
+}
+.pair-off span { font-size: 10.5px; line-height: 1.5; color: var(--muted); }
 .qr {
   width: 132px; height: 132px;
   flex: 0 0 auto;

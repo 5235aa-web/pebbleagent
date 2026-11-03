@@ -1167,3 +1167,14 @@
   reopens it with `Restart now`, so dismissing the sheet does not strand the restart
 - Verified: both scripts pass `node --check`, the extractor returns 7 bullets for 1.0.5 and an empty string for a
   version that is not in the file, `vue-tsc --noEmit` clean, `orbit.css` parses (1731 top-level nodes)
+
+## The pairing sheet says it is gone instead of pretending
+
+- `PairingPanel` still opens from the bar, but the mobile companion is not part of this build, so the QR grid, the
+  LAN address and the SHA-256 line are leftovers from the old client and looked scannable
+- A `.pair-off` film now covers `.pair-wrap`: `--glass` with a 4px blur, `Pairing is unavailable` over
+  `the front end was rebuilt, so this is paused. it will return if there is demand.` The film spans the whole row
+  rather than the QR alone, because the address and fingerprint behind it are equally stale
+- `.pair-wrap` gained `position: relative`. The footer's `New code` button went with `mintPairingCode`: minting a
+  code for a listener nothing can reach is the same dead end the film exists to prevent. Close and the transport
+  toggle still behave as before

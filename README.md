@@ -41,6 +41,10 @@
   <img src="assets/png2.png" alt="PebbleAgent desktop interface, conversation view" width="1000">
 </p>
 
+<p>
+  <img src="assets/png3.png" alt="PebbleAgent desktop interface, current release" width="1000">
+</p>
+
 ## Architecture
 
 ```mermaid
