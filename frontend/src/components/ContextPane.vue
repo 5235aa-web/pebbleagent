@@ -22,6 +22,7 @@
           <div>
             <span class="skill-chip" :class="{ pre: !isTurnLoaded(k) }" v-for="k in skills" :key="k">{{ k }}</span>
           </div>
+          <div class="section-sub" v-if="!hasUserSkills">no user skills · ask the agent to add one to ~/.pebble/skills</div>
 
           <div class="section-h">tools this turn</div>
           <div class="change-row" v-for="(t, i) in tools" :key="i">
@@ -142,6 +143,12 @@ const skills = computed(() => {
   return [...merged].sort((a, b) => a.localeCompare(b))
 })
 const isTurnLoaded = (name: string) => turnLoaded.value.includes(name)
+
+/* `skills loaded` answers what this conversation pulled in, not what is
+   installed, so a skill sitting in the user folder but never loaded is absent
+   here. The hint under it answers the other question. The gateway omits an empty
+   group, so no `User` entry means that folder is empty. */
+const hasUserSkills = computed(() => catalog.skillGroups.some(g => g.name === 'User'))
 
 /* Tool rows for the current turn are read off the transcript: the newest agent
    row carries its tool blocks in order. Before any block exists the list stays

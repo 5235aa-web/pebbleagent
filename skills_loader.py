@@ -7,6 +7,7 @@ Skills Loader - Progressive Disclosure 技能加载器
 
 from pathlib import Path
 from typing import Any, Optional, Dict, List
+import os
 import re
 import logging
 
@@ -14,7 +15,30 @@ import yaml
 
 logger = logging.getLogger(__name__)
 
-SKILLS_DIR = Path(__file__).parent / "skills"
+BUILTIN_SKILLS_DIR = Path(__file__).parent / "skills"
+
+# User-installed skills sit beside the rest of the runtime data. A packaged app
+# unpacks its built-in tree into a PyInstaller temp directory that is recreated
+# on every launch, so that tree can never be extended; this one can.
+USER_SKILLS_DIR = Path(os.environ.get("PEBBLE_HOME") or Path.home() / ".pebble") / "skills"
+
+
+def skill_dirs() -> List[Path]:
+    """Skill roots, highest priority first.
+
+    A user directory shadows a built-in with the same name: copying a built-in
+    into the user tree is how you override it without touching the installer.
+    """
+    return [USER_SKILLS_DIR, BUILTIN_SKILLS_DIR]
+
+
+def _valid_name(name: str) -> bool:
+    """Reject anything that is not a plain directory name.
+
+    `name` reaches this module from the LLM through the `load_skill` tool, so a
+    value like `../../secrets` must not resolve to a path outside the roots.
+    """
+    return bool(name) and name not in (".", "..") and "/" not in name and "\\" not in name
 
 
 def _parse_frontmatter(content: str) -> Dict[str, Any]:
@@ -58,25 +82,29 @@ def list_skills() -> List[Dict[str, str]]:
     Returns:
         技能列表，每项包含 name 和 description
     """
-    if not SKILLS_DIR.exists():
-        logger.info("[Skills] Skills directory not found")
-        return []
-    
+    seen: set = set()
     skills = []
-    for d in sorted(SKILLS_DIR.iterdir()):
-        if d.is_dir():
+    for root in skill_dirs():
+        if not root.is_dir():
+            continue
+        for d in sorted(root.iterdir()):
+            if not d.is_dir() or d.name in seen:
+                continue
             skill_md = d / "SKILL.md"
-            if skill_md.exists():
-                try:
-                    content = skill_md.read_text(encoding="utf-8")
-                    desc = _extract_description(content)
-                    skills.append({
-                        "name": d.name,
-                        "description": desc or "无描述"
-                    })
-                except Exception as e:
-                    logger.warning(f"[Skills] Failed to read {d.name}: {e}")
-    
+            if not skill_md.exists():
+                continue
+            seen.add(d.name)
+            try:
+                content = skill_md.read_text(encoding="utf-8")
+                desc = _extract_description(content)
+                skills.append({
+                    "name": d.name,
+                    "description": desc or "无描述"
+                })
+            except Exception as e:
+                logger.warning(f"[Skills] Failed to read {d.name}: {e}")
+
+    skills.sort(key=lambda s: s["name"])
     logger.info(f"[Skills] Found {len(skills)} skills")
     return skills
 
@@ -91,18 +119,24 @@ def load_skill(name: str) -> Optional[str]:
     Returns:
         SKILL.md 完整内容（含 example.html 示例输出），如果不存在则返回 None
     """
-    skill_path = SKILLS_DIR / name / "SKILL.md"
-    if skill_path.exists():
+    if not _valid_name(name):
+        logger.warning(f"[Skills] Rejected skill name: {name!r}")
+        return None
+
+    for root in skill_dirs():
+        skill_path = root / name / "SKILL.md"
+        if not skill_path.exists():
+            continue
         try:
             content = skill_path.read_text(encoding="utf-8")
             
             # 拼接示例输出（如果存在 example.html）
-            example_path = SKILLS_DIR / name / "example.html"
+            example_path = root / name / "example.html"
             if example_path.exists():
                 html = example_path.read_text(encoding="utf-8")
                 content += f"\n\n## 示例输出\n```html\n{html}\n```"
             
-            logger.info(f"[Skills] Loaded skill: {name}")
+            logger.info(f"[Skills] Loaded skill: {name} from {root}")
             return content
         except Exception as e:
             logger.error(f"[Skills] Failed to load {name}: {e}")
@@ -118,6 +152,11 @@ def get_skill_names() -> List[str]:
     Returns:
         技能名称列表
     """
-    if not SKILLS_DIR.exists():
-        return []
-    return sorted([d.name for d in SKILLS_DIR.iterdir() if d.is_dir() and (d / "SKILL.md").exists()])
+    names = set()
+    for root in skill_dirs():
+        if not root.is_dir():
+            continue
+        for d in root.iterdir():
+            if d.is_dir() and (d / "SKILL.md").exists():
+                names.add(d.name)
+    return sorted(names)

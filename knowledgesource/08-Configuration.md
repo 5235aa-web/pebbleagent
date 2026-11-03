@@ -24,7 +24,7 @@
 | peb_check_holiday.py / peb_check_holiday_env.py / peb_check_pricing_scope.py | Billing-decision checks (holiday main rules 30 cases + isolated env: priority+hot reload+fallback+degradation / peak-scope: all-model time sensitivity + numeric assertions) | user runs manually (python <script>) | 🧪Test |
 | pebble-backend.spec | PyInstaller packaging config (entry run_backend.py; datas bundle skills / agent_core/agents / knowledgesource / config JSONs; output dist/pebble-backend.exe) | build (Tauri sidecar chain, see below) | 📦Build |
 | run_backend.py | Backend entry point (→ gateway/ws_server.py) | user / Tauri sidecar | 🟡Script |
-| skills_loader.py | Skills loader (skills/ directory scan; YAML frontmatter description, single-line fallback for non-standard files) | list_skills / load_skill / get_skill_names | 🟡Aux |
+| skills_loader.py | Skills loader over two roots, user first: `{PEBBLE_HOME}/skills` then the bundled `skills/`. A packaged app unpacks its built-ins into a per-launch PyInstaller temp directory, so the user tree is the only one that can grow, and a user skill with the same name shadows the built-in — `skill_dirs()` is the single ordering every other module reads. YAML frontmatter description with a single-line fallback for non-standard files; `_valid_name` rejects separators so a `../` name from the model cannot escape a root | list_skills / load_skill / get_skill_names / skill_dirs | 🟡Aux |
 | agent_chat.db | Unused DB file; the current message DB is {PEBBLE_HOME}/agent_chat.db (e.g. %USERPROFILE%\.pebble\) | - | 🗑️Deprecated |
 
 ### Tauri Desktop Shell & Packaging Pipeline (frontend/src-tauri/)

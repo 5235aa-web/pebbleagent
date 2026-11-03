@@ -107,11 +107,21 @@ def load_tools_info() -> Dict[str, list]:
 
 
 def load_skills_info() -> Dict[str, list]:
+    """Installed skills, grouped by where they come from.
+
+    The two roots mirror `skills_loader.skill_dirs()`: user skills live beside
+    the runtime data, built-ins inside the app. A user skill shadows a built-in
+    of the same name, so it is listed once, under `User`.
+    """
     skills: Dict[str, list] = {}
-    skills_dir = _PROJECT_ROOT / "skills"
-    if skills_dir.is_dir():
-        for entry in sorted(skills_dir.iterdir()):
-            if entry.is_dir() and (entry / "SKILL.md").exists():
-                category = "Built-in"
-                skills.setdefault(category, []).append(entry.name)
+    roots = [(_DATA_DIR / "skills", "User"), (_PROJECT_ROOT / "skills", "Built-in")]
+    seen: set = set()
+    for root, category in roots:
+        if not root.is_dir():
+            continue
+        for entry in sorted(root.iterdir()):
+            if not entry.is_dir() or entry.name in seen or not (entry / "SKILL.md").exists():
+                continue
+            seen.add(entry.name)
+            skills.setdefault(category, []).append(entry.name)
     return skills

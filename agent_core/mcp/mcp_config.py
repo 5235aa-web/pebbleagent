@@ -759,6 +759,116 @@ class McpConfigManager:
 
 # ==================== 用户覆盖配置（~/.pebble/.mcp.json） ====================
 
+# An entry in this file becomes a *process* the backend launches, so being
+# writable is not the same as being trusted: the agent may write here now, and a
+# config it wrote must not start anything until the user says so. Approval is per
+# entry and pinned to that entry's content — edit a command, an argument or an
+# env value and it needs approving again. Project-level .mcp.json files already
+# follow this rule; this brings the user-level file in line with it.
+
+def _user_mcp_path() -> str:
+    home = os.environ.get("PEBBLE_HOME") or DEFAULT_USER_CONFIG_DIR
+    return os.path.join(home, ".mcp.json")
+
+
+def _user_override_fingerprint(name: str, config: Dict[str, Any]) -> str:
+    import hashlib
+    blob = json.dumps(config, sort_keys=True, ensure_ascii=False, default=str)
+    return f"user|{name}|{hashlib.sha256(blob.encode('utf-8')).hexdigest()}"
+
+
+def _read_user_overrides() -> Dict[str, Any]:
+    path = _user_mcp_path()
+    if not os.path.exists(path):
+        return {}
+    try:
+        with open(path, "r", encoding="utf-8") as f:
+            data = json.load(f)
+    except json.JSONDecodeError as e:
+        logger.error(f"Failed to parse user override .mcp.json: {e}")
+        return {}
+    except Exception as e:
+        logger.error(f"Error loading user override .mcp.json: {e}")
+        return {}
+    servers = data.get("mcpServers") if isinstance(data, dict) else None
+    return servers if isinstance(servers, dict) else {}
+
+
+def _save_trust_store(store: dict) -> bool:
+    try:
+        os.makedirs(os.path.dirname(TRUST_STORE_PATH), exist_ok=True)
+        tmp = TRUST_STORE_PATH + ".tmp"
+        with open(tmp, "w", encoding="utf-8") as f:
+            json.dump(store, f, ensure_ascii=False, indent=2)
+        os.replace(tmp, TRUST_STORE_PATH)
+        return True
+    except Exception as e:
+        logger.warning(f"[MCP Trust] Failed to persist trust store: {e}")
+        return False
+
+
+def _approved_user_entries() -> set:
+    """Approved fingerprints, seeding the file once after an upgrade.
+
+    Without the seed, anyone who had already filled in a token would find their
+    servers waiting for approval the first time this build starts. Entries that
+    exist at seed time count as approved; anything added or edited later does
+    not.
+    """
+    store = _load_trust_store()
+    if not store.get("seeded_user_overrides"):
+        servers = store.setdefault("servers", [])
+        for name, config in _read_user_overrides().items():
+            fp = _user_override_fingerprint(name, config)
+            if fp not in servers:
+                servers.append(fp)
+        store["seeded_user_overrides"] = True
+        store["servers"] = servers[-200:]
+        _save_trust_store(store)
+    return set(store.get("servers") or [])
+
+
+def approve_user_override(name: str) -> bool:
+    """Approve the entry stored under `name`, exactly as it stands now."""
+    config = _read_user_overrides().get(name)
+    if not isinstance(config, dict):
+        return False
+    store = _load_trust_store()
+    servers = store.setdefault("servers", [])
+    fp = _user_override_fingerprint(name, config)
+    # Each edit mints a new fingerprint; keeping the old ones would leave the
+    # store growing one dead entry per save.
+    prefix = f"user|{name}|"
+    servers[:] = [s for s in servers if not s.startswith(prefix)]
+    servers.append(fp)
+    store["servers"] = servers[-200:]
+    store["seeded_user_overrides"] = True
+    return _save_trust_store(store)
+
+
+def reject_user_override(name: str) -> bool:
+    """Withdraw approval, which stops the entry from loading."""
+    store = _load_trust_store()
+    prefix = f"user|{name}|"
+    store["servers"] = [s for s in store.get("servers", []) if not s.startswith(prefix)]
+    store["seeded_user_overrides"] = True
+    return _save_trust_store(store)
+
+
+def pending_user_overrides() -> List[dict]:
+    """Entries in the file that no approval matches, with what they would run."""
+    approved = _approved_user_entries()
+    pending: List[dict] = []
+    for name, config in _read_user_overrides().items():
+        if _user_override_fingerprint(name, config) in approved:
+            continue
+        target = ""
+        if isinstance(config, dict):
+            target = str(config.get("command") or config.get("url") or "")
+        pending.append({"name": name, "target": target})
+    return pending
+
+
 def build_user_override_configs() -> Dict[str, ScopedMcpServerConfig]:
     """
     读取用户数据目录的 .mcp.json（~/.pebble/.mcp.json），构造 dynamic 层配置。
@@ -767,30 +877,62 @@ def build_user_override_configs() -> Dict[str, ScopedMcpServerConfig]:
     （优先级高于 project/local）注入，覆盖内嵌配置中的占位符。
     与 _load_user_configs 的区别：数据源为 .mcp.json（用户可见的运行时覆盖文件），
     而非 mcp_config.json（兼容的 user scope 配置文件）。
+
+    只有已批准的条目才会加载：RPC 写入的条目在写入时即时批准，agent 直接改文件
+    产生的条目则停留在待批准状态，直到用户在面板上点一次。
     """
-    _home = os.environ.get("PEBBLE_HOME") or DEFAULT_USER_CONFIG_DIR
-    config_path = os.path.join(_home, ".mcp.json")
+    approved = _approved_user_entries()
     overrides: Dict[str, ScopedMcpServerConfig] = {}
-    try:
-        if not os.path.exists(config_path):
-            return overrides
-        with open(config_path, "r", encoding="utf-8") as f:
-            data = json.load(f)
-        for name, config in (data.get("mcpServers") or {}).items():
-            validated, errors = validate_server_config(name, config)
-            if validated and not errors:
-                expanded = expand_env_vars_in_config(validated)
-                overrides[name] = ScopedMcpServerConfig(
-                    config=expanded,
-                    scope=ConfigScope.DYNAMIC,
-                )
-            elif errors:
-                logger.warning(f"Invalid user override MCP config '{name}': {errors}")
-    except json.JSONDecodeError as e:
-        logger.error(f"Failed to parse user override .mcp.json: {e}")
-    except Exception as e:
-        logger.error(f"Error loading user override .mcp.json: {e}")
+    for name, config in _read_user_overrides().items():
+        if _user_override_fingerprint(name, config) not in approved:
+            logger.info(f"[MCP Trust] '{name}' awaits approval; not loaded")
+            continue
+        validated, errors = validate_server_config(name, config)
+        if validated and not errors:
+            expanded = expand_env_vars_in_config(validated)
+            overrides[name] = ScopedMcpServerConfig(
+                config=expanded,
+                scope=ConfigScope.DYNAMIC,
+            )
+        elif errors:
+            logger.warning(f"Invalid user override MCP config '{name}': {errors}")
     return overrides
+
+
+_USER_OVERRIDE_FILE_STATE: Optional[str] = None
+
+
+def _user_override_file_state() -> str:
+    """文件身份：路径 + mtime + 大小。内容变化会改写后两项。"""
+    path = _user_mcp_path()
+    try:
+        st = os.stat(path)
+        return f"{path}|{st.st_mtime_ns}|{st.st_size}"
+    except OSError:
+        return f"{path}|absent|0"
+
+
+def sync_user_overrides(force: bool = False) -> Tuple[bool, List[str]]:
+    """把内存里的 dynamic 层对齐到磁盘上的 .mcp.json。
+
+    返回 (是否有变化, 从配置里消失的服务器名)。
+
+    除了后端启动，没有任何东西会重读这个文件。手动编辑（或 agent 删掉一个
+    条目）之后，面板和实际配置会一直对不上，直到某个 RPC 撞上重建点。
+    `mcp.list` 调用它，于是打开面板看到的就是文件当前的状态；文件没变时只做
+    一次 stat，不解析 JSON。
+    """
+    global _USER_OVERRIDE_FILE_STATE
+    state = _user_override_file_state()
+    if not force and state == _USER_OVERRIDE_FILE_STATE:
+        return False, []
+
+    manager = get_mcp_config_manager()
+    before = set(manager._dynamic_configs)
+    overrides = build_user_override_configs()
+    manager.set_dynamic_configs(overrides)
+    _USER_OVERRIDE_FILE_STATE = state
+    return True, sorted(before - set(overrides))
 
 
 # ==================== 全局实例 ====================

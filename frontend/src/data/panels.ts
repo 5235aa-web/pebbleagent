@@ -160,11 +160,12 @@ export const mcp = reactive({
   running: 2,
   idle: 1,
   tools: 18,
-  pending: {
-    title: 'Project config pending approval',
-    path: 'E:\\pebbleagent\\.mcp.json',
-    servers: 'github · filesystem'
-  },
+  /* Approvals the reader still owes. A project-level file is trusted as a whole,
+     one fingerprint per file; a user-level entry is trusted one server at a
+     time, which is what lets the agent write one and have it wait here instead
+     of quietly starting a process. */
+  pendingProject: null as { path: string; servers: string[] } | null,
+  pendingUser: [] as Array<{ name: string; target: string }>,
   optional: [
     { name: 'postgres', desc: 'query a local database', logo: 'P' }
   ]

@@ -228,14 +228,22 @@ _SKILL_SECTION_CACHE: Dict[Any, str] = {}
 
 
 def _skill_signature(names: List[str]) -> Tuple:
-    root = Path(__file__).parent.parent / "skills"
+    from skills_loader import skill_dirs
+
+    roots = skill_dirs()
     sig = []
     for name in names:
-        try:
-            stat = (root / name / "SKILL.md").stat()
-            sig.append((name, stat.st_mtime_ns, stat.st_size))
-        except OSError:
-            sig.append((name, 0, 0))
+        # Whichever root resolves first is the file load_skill() would return,
+        # so that is the one whose changes must invalidate the cache.
+        entry = (name, 0, 0)
+        for root in roots:
+            try:
+                stat = (root / name / "SKILL.md").stat()
+                entry = (name, stat.st_mtime_ns, stat.st_size)
+                break
+            except OSError:
+                continue
+        sig.append(entry)
     return tuple(sig)
 
 

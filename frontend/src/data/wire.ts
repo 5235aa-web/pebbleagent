@@ -1788,6 +1788,22 @@ export async function refreshMcp(): Promise<void> {
     mcp.running = list.filter(s => s.connected).length
     mcp.idle = list.filter(s => s.enabled && !s.connected).length
     mcp.tools = list.reduce((n, s) => n + Number(s.tools ?? 0), 0)
+
+    /* Both queues are replaced wholesale: a banner left over from the previous
+       answer would keep asking for an approval that already happened. */
+    const project = (Array.isArray(mc.pending_project_servers) ? mc.pending_project_servers : []) as Array<Record<string, unknown>>
+    const first = project[0]
+    mcp.pendingProject = first
+      ? {
+          path: String(first.path ?? ''),
+          servers: Array.isArray(first.servers) ? (first.servers as string[]) : []
+        }
+      : null
+    const userPending = (Array.isArray(mc.pending_user_servers) ? mc.pending_user_servers : []) as Array<Record<string, unknown>>
+    mcp.pendingUser = userPending.map(p => ({
+      name: String(p.name ?? ''),
+      target: String(p.target ?? '')
+    }))
   } catch { /* keep prototype numbers */ }
 }
 
@@ -1813,11 +1829,28 @@ export function installMcpServer(name: string): void {
 /** Approves the project-level .mcp.json, which also hot-loads its servers. */
 export function trustMcpProject(): void {
   if (!gateway.connected) return
-  const path = String(mcp.pending.path ?? '')
+  const path = String(mcp.pendingProject?.path ?? '')
   if (!path) return
   void gateway.request('mcp.trust_project', { path })
     .then(() => { void refreshMcp() })
     .catch(() => { /* keep the pending banner */ })
+}
+
+/** Approves one entry of the user-level file. An entry becomes a process, so
+    this is the step that lets an agent-written server run at all. */
+export function approveMcpServer(name: string): void {
+  if (!gateway.connected || !name) return
+  void gateway.request('mcp.approve_server', { server: name })
+    .then(() => { void refreshMcp() })
+    .catch(() => { /* stays in the queue */ })
+}
+
+/** Withdraws approval, which also stops a server that is already connected. */
+export function rejectMcpServer(name: string): void {
+  if (!gateway.connected || !name) return
+  void gateway.request('mcp.reject_server', { server: name })
+    .then(() => { void refreshMcp() })
+    .catch(() => { /* stays in the queue */ })
 }
 
 export function reloadMcp(): void {

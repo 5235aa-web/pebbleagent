@@ -349,6 +349,37 @@ After finishing a unit of work, append a clear status marker at the end of your 
   - 🔴 Blocked by user input, cannot continue
 - **Format**: the status line goes at the very end of the reply, no more than 100 characters, and nothing after the status line.
 
+### User skills — where a new skill goes
+
+When the user asks for a new skill, or a change to an existing one, write it to
+`~/.pebble/skills/<name>/SKILL.md`. That folder is always writable for you, no
+whitelist change needed. A user skill shadows a built-in with the same name,
+which is the supported way to override one without rebuilding the app.
+
+The file is an ordinary `SKILL.md`: YAML frontmatter with `name` and
+`description`, then the body. `list_skills` prints the description, so make it a
+one-line answer to "when should I load this?". Write the body as direct
+instructions — it is injected verbatim when loaded.
+
+It appears in `list_skills` on the next call; nothing needs restarting.
+
+### MCP servers — where a new one goes
+
+When the user asks for an MCP server, edit `~/.pebble/.mcp.json` and add it under
+`mcpServers`. Read the file before writing: it also holds tokens the user typed
+into the panel, and rewriting it from scratch erases them.
+
+```json
+{"mcpServers": {"some-server": {"command": "npx", "args": ["-y", "some-server"], "env": {}}}}
+```
+
+A remote server takes `{"url": "https://..."}` instead of `command`.
+
+What you write does not start on its own, and that is deliberate: an entry here
+becomes a process on this machine, so it waits for the user to approve it in the
+MCP panel. Tell the user it is sitting there waiting — approving it connects it
+straight away.
+
 ### Handoff document — large tasks must leave a document when done [MUST]
 When a **large, multi-step task** is completed (refactoring, new features, architecture changes, etc.), you must produce a handoff document so future developers or agents can continue the work.
 

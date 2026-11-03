@@ -15,14 +15,27 @@
     </header>
 
     <div class="mc-body">
-      <div class="mc-pending">
+      <div class="section-sub">new servers are processes · each one waits here until you approve it</div>
+
+      <div class="mc-pending" v-if="mcp.pendingProject">
         <span class="mc-pend-ico">!</span>
         <div class="mc-pend-main">
-          <div class="mc-pend-t">{{ mcp.pending.title }}</div>
-          <div class="mc-pend-p">{{ mcp.pending.path }}</div>
-          <div class="mc-pend-s">{{ mcp.pending.servers }}</div>
+          <div class="mc-pend-t">Project config pending approval</div>
+          <div class="mc-pend-p">{{ mcp.pendingProject.path }}</div>
+          <div class="mc-pend-s">{{ mcp.pendingProject.servers.join(' · ') }}</div>
         </div>
         <button class="mc-approve" id="mcApprove" @click="trustMcpProject()">Approve</button>
+      </div>
+
+      <div class="mc-pending" v-for="p in mcp.pendingUser" :key="'pending-' + p.name">
+        <span class="mc-pend-ico">!</span>
+        <div class="mc-pend-main">
+          <div class="mc-pend-t">{{ p.name }} wants to run</div>
+          <div class="mc-pend-p">{{ p.target || 'no command declared' }}</div>
+          <div class="mc-pend-s">from ~/.pebble/.mcp.json</div>
+        </div>
+        <button class="mc-approve" @click="approveMcpServer(p.name)">Approve</button>
+        <button class="mc-reject" @click="rejectMcpServer(p.name)">Dismiss</button>
       </div>
 
       <div class="mc-rack">
@@ -83,7 +96,7 @@
 <script setup lang="ts">
 import { ref } from 'vue'
 import { mcp, type McpServer } from '../data/panels'
-import { toggleMcpServer, installMcpServer, trustMcpProject, setMcpSecret } from '../data/wire'
+import { toggleMcpServer, installMcpServer, trustMcpProject, setMcpSecret, approveMcpServer, rejectMcpServer } from '../data/wire'
 
 /* An enabled server lists every tool it exposes. `chips` only carries the first
    four for the collapsed row, so the full list comes from `toolNames`; a server

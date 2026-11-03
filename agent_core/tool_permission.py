@@ -80,6 +80,20 @@ class PathBoundaryChecker:
     # 用户配置的额外白名单路径（始终检查，不依赖 allow_system_paths）
     USER_PATH_WHITELIST: List[str] = []
 
+    # Paths the application itself owns and the agent may always reach. Kept
+    # apart from USER_PATH_WHITELIST because these are not user choices and must
+    # not consume one of the five whitelist slots. Exactly two: the skills
+    # folder, where user skills are installed, and the MCP override file, which
+    # the agent may edit even though its entries still need approval before any
+    # of them is launched. The rest of the data home holds the gateway token and
+    # the provider API keys, which no tool should be able to rewrite.
+    _PEBBLE_HOME = os.environ.get("PEBBLE_HOME") or os.path.join(os.path.expanduser("~"), ".pebble")
+
+    APP_PATH_WHITELIST: List[str] = [
+        os.path.realpath(os.path.join(_PEBBLE_HOME, "skills")),
+        os.path.realpath(os.path.join(_PEBBLE_HOME, ".mcp.json")),
+    ]
+
     @classmethod
     def set_user_whitelist(cls, paths: List[str]) -> None:
         """设置用户白名单路径（始终允许访问；解析为真实绝对路径）"""
@@ -177,6 +191,11 @@ class PathBoundaryChecker:
         for allowed_path in cls.USER_PATH_WHITELIST:
             if allowed_path and cls.is_subpath(normalized, allowed_path):
                 return True, f"Path is within user whitelist: {allowed_path}"
+
+        # 检查是否在应用自身的技能目录中：用户让 agent 安装 skill 时的落点
+        for allowed_path in cls.APP_PATH_WHITELIST:
+            if allowed_path and cls.is_subpath(normalized, allowed_path):
+                return True, f"Path is within user skills directory: {allowed_path}"
         
         # 检查是否在系统白名单中
         if allow_system_paths:

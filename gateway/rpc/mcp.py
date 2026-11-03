@@ -46,6 +46,37 @@ def _config_fingerprint(scoped) -> str:
     return "|".join(parts)
 
 
+def _drop_servers(srv, mgr, names) -> None:
+    """断开并从内存里移除这些服务器。
+
+    Submitted onto the WS loop instead of awaited: `mcp.list` must answer with
+    the reconciled view immediately, and closing a transport is the slow half.
+    """
+    if not names or not getattr(mgr, "_initialized", False):
+        return
+    loop = getattr(srv, "_ws_loop", None)
+    if not loop:
+        return
+
+    async def _drop():
+        for name in names:
+            cur = mgr._clients.get(name)
+            if cur and getattr(cur, "_client", None):
+                try:
+                    await cur._client.close()
+                except Exception:
+                    pass
+            mgr._clients.pop(name, None)
+            mgr._configs.pop(name, None)
+            mgr._update_tools_for_server(name, [])
+        mgr._notify_state_change()
+
+    try:
+        asyncio.run_coroutine_threadsafe(_drop(), loop)
+    except Exception as e:
+        logger.warning(f"[Server] failed to drop MCP servers {names}: {e}")
+
+
 def handle(ctx, method):
     srv = ctx.srv
     params = ctx.params
@@ -55,14 +86,24 @@ def handle(ctx, method):
         servers = []
         tools_list = []
         pending = []
+        pending_user = []
         try:
             from agent_core.mcp.mcp_config import (
-                get_mcp_config_manager, get_pending_project_mcp,
+                get_mcp_config_manager, get_pending_project_mcp, pending_user_overrides,
+                sync_user_overrides,
             )
             from agent_core.mcp.mcp_manager import get_mcp_manager
 
             cfg_mgr = get_mcp_config_manager()
             cfg_mgr.set_project_path(str(srv._PROJECT_ROOT))
+
+            # The file is the truth. Nothing re-reads it between launches, so a
+            # server deleted from it would otherwise stay on the rack — and stay
+            # connected — until the backend restarted.
+            _, vanished = sync_user_overrides()
+            if vanished:
+                _drop_servers(srv, get_mcp_manager(), vanished)
+
             all_configs = cfg_mgr.get_all_configs()
 
             mgr = get_mcp_manager()
@@ -104,9 +145,10 @@ def handle(ctx, method):
                 for s in servers for tn in s["tool_names"]
             ]
             pending = get_pending_project_mcp(str(srv._PROJECT_ROOT))
+            pending_user = pending_user_overrides()
         except Exception as e:
             logger.warning(f"[Server] mcp.list failed: {e}")
-        return {"id": rid, "result": {"servers": servers, "tools": tools_list, "pending_project_servers": pending}}
+        return {"id": rid, "result": {"servers": servers, "tools": tools_list, "pending_project_servers": pending, "pending_user_servers": pending_user}}
 
     if method == "mcp.toggle":
         """连接/断开指定 MCP 服务器（持久化到全局禁用列表，热生效）。
@@ -266,6 +308,73 @@ def handle(ctx, method):
             logger.error(f"[Server] mcp.trust_project failed: {e}")
             return {"id": rid, "result": {"ok": False, "error": str(e)}}
 
+    if method == "mcp.approve_server":
+        """批准用户级 .mcp.json 里的一条配置，并让它立即连接。
+
+        批准绑定的是条目当前内容：之后再改 command / args / env，指纹随之变化，
+        条目会重新回到待批准状态。"""
+        server_name = str(params.get("server") or "").strip()
+        if not server_name:
+            return {"id": rid, "error": {"code": -32602, "message": "server is required"}}
+        try:
+            from agent_core.mcp.mcp_config import (
+                approve_user_override, build_user_override_configs, get_mcp_config_manager,
+            )
+            from agent_core.mcp.mcp_manager import get_mcp_manager
+
+            if not approve_user_override(server_name):
+                return {"id": rid, "result": {"ok": False, "error": "entry not found in .mcp.json"}}
+
+            cfg_mgr = get_mcp_config_manager()
+            cfg_mgr.set_project_path(str(srv._PROJECT_ROOT))
+            overrides = build_user_override_configs()
+            cfg_mgr.set_dynamic_configs(overrides)
+
+            mgr = get_mcp_manager()
+            connecting = False
+            if mgr._initialized and server_name in overrides:
+                mgr._configs[server_name] = overrides[server_name]
+                if srv._ws_loop:
+                    asyncio.run_coroutine_threadsafe(
+                        mgr.reconnect_server(server_name), srv._ws_loop
+                    )
+                    connecting = True
+            logger.info(f"[Server] MCP user override approved: {server_name} (connecting={connecting})")
+            return {"id": rid, "result": {"ok": True, "connecting": connecting}}
+        except Exception as e:
+            logger.error(f"[Server] mcp.approve_server failed: {e}")
+            return {"id": rid, "result": {"ok": False, "error": str(e)}}
+
+    if method == "mcp.reject_server":
+        """撤销批准。条目仍留在文件里，只是不再加载。"""
+        server_name = str(params.get("server") or "").strip()
+        if not server_name:
+            return {"id": rid, "error": {"code": -32602, "message": "server is required"}}
+        try:
+            from agent_core.mcp.mcp_config import (
+                build_user_override_configs, get_mcp_config_manager, reject_user_override,
+            )
+            from agent_core.mcp.mcp_manager import get_mcp_manager
+
+            reject_user_override(server_name)
+            cfg_mgr = get_mcp_config_manager()
+            cfg_mgr.set_project_path(str(srv._PROJECT_ROOT))
+            overrides = build_user_override_configs()
+            cfg_mgr.set_dynamic_configs(overrides)
+
+            mgr = get_mcp_manager()
+            if mgr._initialized and server_name in mgr._configs and server_name not in overrides:
+                mgr._configs.pop(server_name, None)
+                client = mgr._clients.pop(server_name, None)
+                inner = getattr(client, "_client", None)
+                if inner is not None and srv._ws_loop:
+                    asyncio.run_coroutine_threadsafe(inner.close(), srv._ws_loop)
+            logger.info(f"[Server] MCP user override rejected: {server_name}")
+            return {"id": rid, "result": {"ok": True}}
+        except Exception as e:
+            logger.error(f"[Server] mcp.reject_server failed: {e}")
+            return {"id": rid, "result": {"ok": False, "error": str(e)}}
+
     if method == "mcp.set_secret":
         """写入 MCP 密钥到用户数据目录 .mcp.json 并热生效（如 GitHub Token）。
         参数：server / env_key / value。写入策略：以现有用户文件（或内嵌文件）为
@@ -300,6 +409,11 @@ def handle(ctx, method):
         env[env_key] = value
         server_cfg["env"] = env
         srv._atomic_write_json(user_mcp_path, data)
+        # The write came through an RPC, which makes it the user's own edit:
+        # approve it here, or the token they just typed would land in the
+        # pending queue and the server would silently stop connecting.
+        from agent_core.mcp.mcp_config import approve_user_override as _approve_override
+        _approve_override(server_name)
         reconnected = False
         try:
             from agent_core.mcp.mcp_config import build_user_override_configs, get_mcp_config_manager
@@ -403,6 +517,9 @@ def handle(ctx, method):
                 data["mcpServers"] = {}
             data["mcpServers"][server_name] = {"command": exe_path, "args": []}
             srv._atomic_write_json(user_mcp_path, data)
+            # Installed through the UI, so it is approved by definition.
+            from agent_core.mcp.mcp_config import approve_user_override as _approve_override
+            _approve_override(server_name)
         except Exception as e:
             logger.error(f"[Server] Failed to write .mcp.json for '{server_name}': {e}")
             return {"id": rid, "result": {"ok": False, "error": f"config write failed: {e}"}}

@@ -174,8 +174,17 @@ class McpToolExecutorFactory:
         if not parsed:
             return f"Error: Invalid MCP tool name '{tool_name}'"
         
-        server_name, original_tool_name = parsed
-        
+        server_name, parsed_tool_name = parsed
+
+        # `build_mcp_tool_name()` lowercases the tool and rewrites `-` as `_` so
+        # the name passes the function-name rules of the LLM APIs. The server
+        # only answers to the name it registered, so the call has to use that
+        # one: `get-sum` does not answer to `get_sum`. `SerializedMCPTool` keeps
+        # the registered form as `original_tool_name`; a tool that is not in the
+        # catalogue falls back to the parsed segment.
+        info = self._manager.get_tool_info(tool_name)
+        server_tool_name = info.original_tool_name if info and info.original_tool_name else parsed_tool_name
+
         # 获取取消事件（如果 context 提供了）
         cancel_event = None
         if context and hasattr(context, 'cancel_event'):
@@ -199,14 +208,14 @@ class McpToolExecutorFactory:
             
             # 调用工具（传递取消事件和超时）
             start_time = time.time()
-            result = await call_mcp_tool(server, original_tool_name, args, cancel_event=cancel_event)
+            result = await call_mcp_tool(server, server_tool_name, args, cancel_event=cancel_event)
             elapsed = int((time.time() - start_time) * 1000)
             
             # 格式化输出
             if result.is_error:
                 error_text = result.get_text()
                 logger.warning(f"[MCP] Tool '{tool_name}' returned error: {error_text[:200]}")
-                return f"Error ({server_name}/{original_tool_name}, {elapsed}ms): {error_text}"
+                return f"Error ({server_name}/{server_tool_name}, {elapsed}ms): {error_text}"
             
             text = result.get_text()
             if not text:

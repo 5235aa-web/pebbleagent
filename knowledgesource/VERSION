@@ -1022,3 +1022,85 @@
 - `Build the desktop app` now opens with a one-line note pointing at the latest GitHub release, because the
   installer already carries the Python backend and most Windows readers only wanted the app. The build steps stay
   for people who actually intend to compile the shell
+
+## User skills live in the data home
+
+- `skills_loader.py` now searches two roots, `{PEBBLE_HOME}/skills` before the bundled `skills/`, and a user skill
+  with the same name shadows the built-in. A packaged app unpacks its built-ins into a per-launch PyInstaller temp
+  directory, so before this an installed copy had no way to gain a skill at all. `load_skill` also rejects names
+  containing separators, closing a `../` escape the old single-root join allowed
+- `gateway/config.py:load_skills_info()` groups by origin, so the tools sheet grows a `User` heading by itself;
+  `agent_loader._skill_signature()` measures whichever root resolves first, so the preload cache follows the file
+  that would actually be loaded
+- `tool_permission.py` gains `APP_PATH_WHITELIST`, holding exactly `{PEBBLE_HOME}/skills`. Without it that folder sat
+  outside the project boundary and outside the user whitelist (which ships empty), so the agent could not have
+  written a skill there at all. It is checked right after the user whitelist and does not consume one of the five
+  slots; the gateway token and provider keys in the same data home stay unreachable
+- `code_agent_prompt.md` states the target path and frontmatter shape so the agent knows where a requested skill
+  goes; `ToolsPanel.vue` prints `no user skills · ask the agent to add one to ~/.pebble/skills` until one exists
+- Verified with a temporary `PEBBLE_HOME`: a new skill lists and loads, a same-named copy wins over the built-in and
+  is listed once, `../secrets` and `..` are refused, and `check_path_boundary` allows the skill file while still
+  denying `gateway.token`. `ruff check`, `py_compile`, `vue-tsc --noEmit` pass
+
+## MCP servers can be added from the app, and only run once approved
+
+- `~/.pebble/.mcp.json` is now writable by the agent, but its entries are gated. An entry is a process the backend
+  launches, so `build_user_override_configs()` loads one only when `user|<name>|<sha256 of canonical JSON>` is in
+  `mcp_trusted.json`. Unapproved entries surface through `pending_user_overrides()` and `mcp.list`'s
+  `pending_user_servers`
+- Approval is bound to content: editing a command, an argument or an env value mints a new fingerprint and the entry
+  drops back to pending. `mcp.set_secret` and `mcp.install_server` approve what they write, so anything typed in the
+  panel never enters the queue
+- `_approved_user_entries()` seeds every entry that exists on first run (`seeded_user_overrides`), so upgrading does
+  not strand a token the user had already filled in
+- New RPCs `mcp.approve_server` / `mcp.reject_server`; approving also connects the server through
+  `reconnect_server`, rejecting disconnects it. `agent_core/tool_permission.py` adds `{PEBBLE_HOME}/.mcp.json` to
+  `APP_PATH_WHITELIST` — the file only, not the folder, so the gateway token and provider keys beside it stay out
+  of reach
+- `McpPanel` shows one banner per waiting entry with Approve / Dismiss and opens with
+  `new servers are processes · they wait for your approval here, then need a reload or restart`. The old banner
+  rendered prototype text (`E:\pebbleagent\.mcp.json`) unconditionally; it now comes from the gateway
+- `code_agent_prompt.md` tells the agent to read-modify-write that file, keep existing entries, and say the entry is
+  waiting for approval
+- Verified with a temp `PEBBLE_HOME` across seven checks: fresh install seeds empty, an unapproved entry does not
+  load, approval loads it, editing revokes it, reject stops it, a pre-existing entry survives the upgrade, and the
+  path guard allows `.mcp.json` while denying `gateway.token` / `llm_providers.json` / `usernote.json`.
+  `ruff check`, `py_compile`, `vue-tsc --noEmit`, postcss parse all pass
+
+## The user-skill hint sits in the context pane
+
+- The `no user skills · ask the agent to add one to ~/.pebble/skills` line was first written into `ToolsPanel`
+  (the Tools & skills sheet), where nobody looks for it. It now sits under `skills loaded` in the right-dock context
+  pane and the `ToolsPanel` copy is gone
+- It reads `catalog.skillGroups` for a `User` group, which the gateway only sends when the folder has members —
+  `skills loaded` itself lists what the conversation pulled in, so an installed-but-unloaded skill is invisible there
+
+## Hyphenated MCP tools are callable again
+
+- `build_mcp_tool_name()` rewrites `-` as `_` and lowercases so the name passes the function-name rules of the LLM
+  APIs, but nothing mapped it back. `McpToolExecutorFactory.execute_mcp_tool()` passed the alias to the server, which
+  answered -32602 `Tool get_sum not found` — the variable was even named `original_tool_name`
+- It now resolves the alias through `McpManager.get_tool_info()`, which returns the `SerializedMCPTool` holding
+  `original_tool_name`. Tools without hyphens are unaffected, so `echo` kept working throughout
+- Found while testing the user-level MCP approval flow: `@modelcontextprotocol/server-everything@2.1.0` exposes 16
+  tools of which 15 are hyphenated, so exactly one was callable. Verified with a mocked executor: `get_sum` is
+  dispatched as `get-sum`, `echo` as `echo`
+
+## The MCP hint stops promising a reload
+
+- `McpPanel`'s line read `... then need a reload or restart`, which is not what happens: `mcp.approve_server`
+  rebuilds the dynamic layer and calls `reconnect_server` in the same call, so approving connects the server
+  immediately. The line is now `new servers are processes · each one waits here until you approve it`
+- `reloadMcp()` in `wire.ts` stays unused — no UI calls it, and no step in the approval flow needs it
+
+## Deleting an MCP entry no longer leaves it on the rack
+
+- Nothing re-reads `~/.pebble/.mcp.json` between launches: the dynamic layer is an in-memory copy built at
+  `set_dynamic_configs()` time, so an entry deleted from the file stayed listed and stayed connected until the
+  backend restarted. A running `server-everything` process survived exactly that way
+- `sync_user_overrides()` fingerprints the file by mtime + size and rebuilds the dynamic layer only when it moved.
+  `mcp.list` calls it first, then `_drop_servers()` closes the transports of whatever the file no longer names
+  (submitted onto the WS loop so the reply is not held up by closing a pipe)
+- Verified on a temp home: first sync loads both entries, an unchanged file reports no work, deleting one returns it
+  in the removed list, re-adding identical content restores it, and editing the content drops it back to pending —
+  the fingerprint rule still applies
