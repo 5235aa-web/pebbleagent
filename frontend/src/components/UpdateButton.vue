@@ -17,38 +17,46 @@
 
   <!-- The notes travel in `Update.body`, which the feed carries, so the reader
        sees what changed before anything is downloaded. Installing from this
-       sheet is the only path that starts a download. -->
-  <div v-if="supported" class="overlay" :class="{ open: sheet }" @click.self="sheet = false">
-    <div class="sheet up">
-      <header class="sheet-hdr">
-        <span class="sheet-ico">
-          <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8">
-            <path d="M12 3v11" />
-            <polyline points="7.5 9.5 12 14 16.5 9.5" />
-            <path d="M4 17v2a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2v-2" />
-          </svg>
-        </span>
-        <div class="sheet-title">
-          Update {{ version }}
-          <small>{{ released || 'release notes' }}</small>
+       sheet is the only path that starts a download.
+
+       Teleported to the body because this button is mounted inside the title
+       bar, and that bar carries a backdrop-filter: a filtered ancestor becomes
+       the containing block for `position: fixed`, so an overlay left in place
+       would size itself against the 78px strip and hang off the top of the
+       window instead of covering the viewport. -->
+  <Teleport v-if="supported" to="body">
+    <div class="overlay" :class="{ open: sheet }" @click.self="sheet = false">
+      <div class="sheet up">
+        <header class="sheet-hdr">
+          <span class="sheet-ico">
+            <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8">
+              <path d="M12 3v11" />
+              <polyline points="7.5 9.5 12 14 16.5 9.5" />
+              <path d="M4 17v2a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2v-2" />
+            </svg>
+          </span>
+          <div class="sheet-title">
+            Update {{ version }}
+            <small>{{ released || 'release notes' }}</small>
+          </div>
+          <button class="sheet-x" @click="sheet = false">&#215;</button>
+        </header>
+        <div class="sheet-body">
+          <pre class="up-notes">{{ notes || 'This release was published without notes.' }}</pre>
+          <div v-if="phase === 'downloading'" class="up-bar"><i :style="{ width: percent + '%' }" /></div>
+          <div v-if="phase === 'error'" class="up-err">The download did not finish. Start it again from the update button.</div>
         </div>
-        <button class="sheet-x" @click="sheet = false">&#215;</button>
-      </header>
-      <div class="sheet-body">
-        <pre class="up-notes">{{ notes || 'This release was published without notes.' }}</pre>
-        <div v-if="phase === 'downloading'" class="up-bar"><i :style="{ width: percent + '%' }" /></div>
-        <div v-if="phase === 'error'" class="up-err">The download did not finish. Start it again from the update button.</div>
+        <footer class="sheet-foot">
+          <span class="sf-hint">{{ phase === 'ready' ? 'ready to restart' : 'nothing downloads until you install' }}</span>
+          <button v-if="phase === 'ready'" class="btn btn-sm" @click="restart">Restart now</button>
+          <button v-else class="btn btn-sm" :disabled="phase === 'downloading'" @click="install">
+            {{ phase === 'downloading' ? percent + '%' : 'Install update' }}
+          </button>
+          <button class="btn btn-ghost btn-sm" @click="sheet = false">{{ phase === 'ready' ? 'Close' : 'Later' }}</button>
+        </footer>
       </div>
-      <footer class="sheet-foot">
-        <span class="sf-hint">{{ phase === 'ready' ? 'ready to restart' : 'nothing downloads until you install' }}</span>
-        <button v-if="phase === 'ready'" class="btn btn-sm" @click="restart">Restart now</button>
-        <button v-else class="btn btn-sm" :disabled="phase === 'downloading'" @click="install">
-          {{ phase === 'downloading' ? percent + '%' : 'Install update' }}
-        </button>
-        <button class="btn btn-ghost btn-sm" @click="sheet = false">{{ phase === 'ready' ? 'Close' : 'Later' }}</button>
-      </footer>
     </div>
-  </div>
+  </Teleport>
 </template>
 
 <script setup lang="ts">

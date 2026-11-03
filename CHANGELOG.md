@@ -7,6 +7,11 @@ which is what the in-app update sheet shows before installing. Add the section
 before running `npm run release`; the release stops if it is missing, because a
 feed with empty notes tells the user nothing.
 
+## 1.0.8
+
+- Fixed the update sheet opening above the window. It was mounted inside the title bar, and the bar's blur effect made the overlay size itself against that 78px strip instead of the window, so the notes were cut off at the top and could not be read.
+- Carries what 1.0.7 shipped, since that release's own notes were unreadable because of the bug above: the LLM pane can add and switch providers from the panel (the provider grid ends with a `new provider` card, and clicking a card makes it the active endpoint; before this, adding one meant editing `llm_providers.json` by hand), and the pairing sheet is marked unavailable instead of showing a QR code and a code button for a mobile companion that is not part of this build.
+
 ## 1.0.7
 
 - The LLM pane can add and switch providers from the panel now. The provider grid ends with a `new provider` card, and clicking a card makes it the active endpoint. Before this, adding one meant editing `llm_providers.json` by hand, and clicking a card only changed its outline.

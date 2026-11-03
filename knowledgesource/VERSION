@@ -1194,3 +1194,15 @@
   applies its default when the key is absent. It is now `get("slug") or str(uuid.uuid4())`
 - Verified: `test_provider_headers.py` grew five checks for the append path (53 pass), `tests/run_all.py` 35/35,
   `vue-tsc --noEmit` clean, `node --check runtime.js` clean, `orbit.css` parses at 1742 nodes
+
+## The update sheet no longer hangs off the top of the window
+
+- The sheet is mounted inside `UpdateButton`, which lives in `.orbital`, and that bar carries
+  `backdrop-filter: blur(18px) saturate(1.4)`. A filtered ancestor becomes the containing block for
+  `position: fixed`, so `.overlay { inset: 0 }` sized itself against the 78px title strip rather than the viewport
+  and the sheet's upper half landed above the window
+- Measured in Chromium: one `position: fixed; inset: 0` element reports height 78 inside a `backdrop-filter`
+  parent and 700 (the full viewport) as a body child. Every other sheet is mounted at app level, which is why only
+  this one broke
+- `<Teleport to="body">` moves the overlay out of the bar; `v-if="supported"` moved onto the Teleport so nothing
+  renders when the shell has no updater
