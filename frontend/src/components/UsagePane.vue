@@ -83,7 +83,7 @@
 import { computed, onMounted, ref } from 'vue'
 import { usage as usageState, llm, fmtTokens, fmtCost } from '../data/panels'
 import { streamState } from '../data/stream'
-import { runTiming, getConfig, savePricing } from '../data/wire'
+import { formatRate, getConfig, savePricing } from '../data/wire'
 
 const usage = usageState
 
@@ -108,15 +108,8 @@ const pricingOf = computed(() => {
 const priced = computed(() => pricingOf.value.known)
 const tier = computed(() => (pricingOf.value.tiered ? 'tiered' : 'standard'))
 
-/* No constant rate: characters the live row has produced divided by this run's
-   wall clock, the same 3.6 chars-per-token estimate the composer uses. */
-const liveRate = computed(() => {
-  const row = streamState.items[streamState.items.length - 1]
-  const chars = row && row.streaming ? (row.plain ?? '').length : 0
-  const ms = runTiming.running ? Date.now() - runTiming.startAt : runTiming.elapsedMs
-  if (!chars || !ms) return '—'
-  return (chars / 3.6 / (ms / 1000)).toFixed(1)
-})
+/* Same source as the island: one measurement, two readouts. */
+const liveRate = computed(() => formatRate())
 
 /* ---- pricing table ----
 

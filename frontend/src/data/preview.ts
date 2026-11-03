@@ -11,6 +11,7 @@ import { computed, reactive, watch } from 'vue'
 import { gateway } from './gateway'
 import { streamState } from './stream'
 import { sessionState } from './store'
+import type { ClarifyAnswer } from './panels'
 import imageLibSource from '../vendor/html-to-image.js?raw'
 import { FEEDBACK_CSS, FEEDBACK_JS } from './previewBridge'
 
@@ -312,10 +313,13 @@ export function clearComments(): void {
     the picked option asks for a change, the annotations replace that answer and
     the agent reads them as the instruction. Without such an option the comments
     stay put, so a decision they were not meant for never carries them away. */
-export function mergePreviewComments(answers: Record<string, string>): Record<string, string> {
+export function mergePreviewComments(answers: Record<string, ClarifyAnswer>): Record<string, ClarifyAnswer> {
   const comments = previewState.comments
   if (!comments.length) return answers
-  const key = Object.keys(answers).find(name => /修改|modify/i.test(answers[name] || ''))
+  const key = Object.keys(answers).find(name => {
+    const answer = answers[name]
+    return /修改|modify/i.test([...answer.picked, answer.custom].join(' '))
+  })
   if (!key) return answers
   const lines = comments.map(c =>
     `- Location: ${c.selector}\n  Element: <${c.tag}>\n  Original: "${c.textSnippet}"\n  Comment: ${c.body}`
@@ -323,5 +327,6 @@ export function mergePreviewComments(answers: Record<string, string>): Record<st
   const merged =
     `Modify\n\n[HTML Page Feedback] The user annotated ${comments.length} edits on the page:\n` +
     lines.join('\n\n')
-  return { ...answers, [key]: merged }
+  // The annotations are the instruction now, so they replace the answer whole.
+  return { ...answers, [key]: { picked: [], custom: merged } }
 }

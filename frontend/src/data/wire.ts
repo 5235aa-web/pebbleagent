@@ -16,12 +16,119 @@ import { notify as notifySound } from './notify'
 export const runTiming = reactive({
   startAt: 0,
   elapsedMs: 0,
-  running: false,
-  /* Output tokens produced by the run, sampled from `usage.tokensOut` at the
-     start so the island can show a real rate instead of a constant. */
-  startTokens: 0,
-  tokensOut: 0
+  running: false
 })
+
+/* ---- live generation rate ----
+
+   Every chunk the backend emits already carries `tokens`, its running count for
+   the call in flight, reasoning included. The divisor here is only the time
+   between chunks, so tool execution, API round-trips and waiting on a clarify
+   card never reach it. The previous readout divided visible text by the run's
+   whole wall clock with a 3.6-characters-per-token guess, which is why it sat
+   near zero: tool time inflated the divisor, reasoning was missing from the
+   dividend and Chinese text was counted at an English ratio.
+
+   A window opens on the first chunk after any other event and ends on that
+   event, so an interleaved tool call stops the measurement instead of
+   stretching it. When a call settles, `message.usage.latest_output_tokens`
+   replaces the estimate banked for that call. */
+export const runRate = reactive({
+  tokens: 0,
+  ms: 0,
+  /* Open between two chunks of the same generation. */
+  open: false,
+  lastAt: 0,
+  /* Tokens already banked for the call in flight: the backend counts from zero
+     per call, so the next call's counter must not be read as a delta. */
+  banked: 0,
+  rate: 0,
+  measured: false
+})
+
+/* A longer gap is a stall rather than generation, so it is dropped instead of
+   inflating the divisor. */
+const RATE_MAX_GAP_MS = 1200
+/* One chunk a few milliseconds after the previous one is noise, not a rate. */
+const RATE_MIN_MS = 250
+
+function rateSettle(): void {
+  if (runRate.ms < RATE_MIN_MS || runRate.tokens <= 0) return
+  runRate.rate = runRate.tokens / (runRate.ms / 1000)
+  runRate.measured = true
+}
+
+function rateChunk(rawTokens: unknown): void {
+  const now = Date.now()
+  const cum = Number(rawTokens)
+  if (Number.isFinite(cum)) {
+    /* A counter that went backwards means the next call started. */
+    if (cum < runRate.banked) runRate.banked = 0
+    const added = cum - runRate.banked
+    if (added > 0) {
+      runRate.tokens += added
+      runRate.banked = cum
+    }
+  }
+  if (runRate.open) {
+    const gap = now - runRate.lastAt
+    if (gap > 0 && gap <= RATE_MAX_GAP_MS) runRate.ms += gap
+  }
+  runRate.open = true
+  runRate.lastAt = now
+  rateSettle()
+}
+
+/* Events that mean the model stopped generating: a tool took over, the call
+   settled, or the turn is waiting on a person. Side-channel pushes in the
+   middle of a stream (todos, file changes, a session title) are not in here,
+   so they cannot cut a generation window in half and inflate the rate. */
+const RATE_STOP_EVENTS = new Set([
+  'tool.start',
+  'tool.complete',
+  'permission.request',
+  'clarify.request',
+  'message.complete',
+  'message.usage',
+  'error'
+])
+
+/** Runs once per event before its branch: a chunk feeds the window, a real stop
+    ends it, and a settled call rewrites its own share with the exact count the
+    provider reported. */
+function rateOnEvent(type: string, p: Record<string, unknown>): void {
+  if (type === 'message.delta' || type === 'thinking.delta' || type === 'tool.call_streaming') {
+    rateChunk(p.tokens)
+    return
+  }
+  if (!RATE_STOP_EVENTS.has(type)) return
+  runRate.open = false
+  runRate.lastAt = 0
+  /* Nothing was measured for this call, so there is no window to correct. */
+  if (type !== 'message.usage' || !runRate.banked) return
+  const exact = Number(p.latest_output_tokens)
+  if (!Number.isFinite(exact) || exact < 0) return
+  runRate.tokens = Math.max(0, runRate.tokens - runRate.banked + exact)
+  runRate.banked = 0
+  rateSettle()
+}
+
+function rateReset(): void {
+  runRate.tokens = 0
+  runRate.ms = 0
+  runRate.open = false
+  runRate.lastAt = 0
+  runRate.banked = 0
+  runRate.rate = 0
+  runRate.measured = false
+}
+
+/** Tokens per second of generation for this run; `—` until a window lands, so a
+    turn that produced nothing never reads as a plausible zero. The island and
+    the usage pane both call this, which is what keeps them in agreement. */
+export function formatRate(): string {
+  return runRate.measured ? runRate.rate.toFixed(1) : '—'
+}
 
 watch(
   () => streamState.streaming,
@@ -29,20 +136,20 @@ watch(
     if (now && !before) {
       runTiming.startAt = Date.now()
       runTiming.elapsedMs = 0
-      runTiming.startTokens = usage.tokensOut
-      runTiming.tokensOut = 0
       runTiming.running = true
+      rateReset()
       return
     }
     if (!now && before) {
       runTiming.elapsedMs = runTiming.startAt ? Date.now() - runTiming.startAt : 0
-      runTiming.tokensOut = Math.max(0, usage.tokensOut - runTiming.startTokens)
       runTiming.running = false
+      runRate.open = false
+      runRate.lastAt = 0
     }
   }
 )
 import { permissions, plan, sessions, sessionState, projects, setCatalog, bucketFor, type Session, type SessionGroup } from './store'
-import { usage, files, mcp, ledger, context, llm, notes, pairing, search, image, type BillRow, type ClarifyQuestion } from './panels'
+import { usage, files, mcp, ledger, context, llm, notes, pairing, search, image, type BillRow, type ClarifyQuestion, type ClarifyAnswer } from './panels'
 import type { StreamItem } from './stream'
 import { renderUserBubble, nowClock, clockOf, escapeHtml, type AttachmentView, type ToolCallView, type ToolState } from './render'
 import { markPreviewChanged, mergePreviewComments, clearComments } from './preview'
@@ -235,6 +342,7 @@ function finishLive(interrupted = false, messageId?: number) {
 
 function onEvent(ev: GatewayEvent) {
   const p = ev.payload
+  rateOnEvent(ev.type, p)
   switch (ev.type) {
     case 'user_message.saved': {
       const text = String(p.text ?? '')
@@ -1222,12 +1330,21 @@ function showClarify(requestId: string, questions: ClarifyQuestion[]): void {
 
 /** Resolves true once the gateway accepted the answer. A false result leaves the
     card editable, so a dropped connection costs one click instead of the reply. */
-export function respondClarify(requestId: string, answers: Record<string, string>): Promise<boolean> {
+/** Flattened copy of one answer, for the broadcast that only announces the
+    reply. The structured payload is what the agent actually reads. */
+function answerText(answer: ClarifyAnswer): string {
+  const picks = answer.picked.join(', ')
+  const typed = answer.custom.trim()
+  if (picks && typed) return `${picks} · ${typed}`
+  return picks || typed
+}
+
+export function respondClarify(requestId: string, answers: Record<string, ClarifyAnswer>): Promise<boolean> {
   if (!gateway.connected || !requestId) return Promise.resolve(false)
   // Annotations made on the preview travel with the answer that asks for a
   // change, so the agent gets them as the instruction instead of a side note.
   const merged = mergePreviewComments(answers)
-  const flat = Object.values(merged).join(', ')
+  const flat = Object.values(merged).map(answerText).join(' | ')
   return gateway.request('clarify.respond', { request_id: requestId, answer: flat, answers: merged })
     .then(() => { clearComments(); return true })
     .catch(() => false)

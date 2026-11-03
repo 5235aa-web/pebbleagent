@@ -38,6 +38,7 @@ import StreamMessage from './StreamMessage.vue'
 import CompactDivider from './CompactDivider.vue'
 import ClarifyCard from './ClarifyCard.vue'
 import type { StreamItem } from '../data/stream'
+import type { ClarifyAnswer } from '../data/panels'
 
 const stream = computed(() => streamState.items)
 
@@ -48,7 +49,7 @@ function onToggle(item: StreamItem) {
 
 /** The card stays editable until the gateway confirms, so an unreachable
     backend costs a retry instead of silently swallowing the answer. */
-function onClarifySubmit(item: StreamItem, answers: Record<string, string>, settle: (ok: boolean) => void) {
+function onClarifySubmit(item: StreamItem, answers: Record<string, ClarifyAnswer>, settle: (ok: boolean) => void) {
   const rid = item.clarify?.requestId
   if (!rid) {
     settle(false)

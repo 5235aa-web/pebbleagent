@@ -36,7 +36,7 @@ import { computed, onBeforeUnmount, onMounted, ref } from 'vue'
 import { streamState } from '../data/stream'
 import { usage, context, llm } from '../data/panels'
 import { plan, activeSession } from '../data/store'
-import { runTiming } from '../data/wire'
+import { runTiming, formatRate } from '../data/wire'
 
 /* The clock ticks on its own so the readout moves while the agent works, but it
    stops being authoritative the moment the run ends: `runTiming` then holds the
@@ -176,15 +176,9 @@ const costLabel = computed(() => '$' + (usage.costToday ?? 0).toFixed(2))
 const costDetail = computed(
   () => '$' + (usage.sessionCost ?? 0).toFixed(3) + ' session · ' + usage.calls + ' calls'
 )
-/* No constant rates: the figure is characters the live row has actually produced
-   divided by the run's wall clock, using the same 3.6 characters-per-token
-   estimate the composer shows. Before anything lands it reads as a dash rather
-   than a plausible-looking lie. */
-const liveChars = computed(() => (liveRow.value?.plain ?? '').length)
-const rateLabel = computed(() => {
-  const ms = elapsedMs.value
-  const chars = liveChars.value
-  if (!ms || !chars) return '— tok/s'
-  return (chars / 3.6 / (ms / 1000)).toFixed(1) + ' tok/s'
-})
+/* No constant rates: `formatRate` owns the measurement (backend token counts
+   over generation time only), so this readout and the usage pane can never
+   disagree. Before any window lands it reads as a dash rather than a
+   plausible-looking lie. */
+const rateLabel = computed(() => formatRate() + ' tok/s')
 </script>

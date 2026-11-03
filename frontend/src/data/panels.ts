@@ -31,7 +31,6 @@ export const usage = reactive({
   tokensOut: 8206,
   cacheHit: 0,
   calls: 7,
-  liveRate: 48,
   sessionCost: 0.42,
   priced: true,
   tier: 'standard',
@@ -204,6 +203,13 @@ export const context = reactive({
 export interface ClarifyOption {
   label: string
   detail: string
+}
+
+/** One question's answer. Presets and free-form text stay apart: a single
+    joined string left option labels and typed text indistinguishable. */
+export interface ClarifyAnswer {
+  picked: string[]
+  custom: string
 }
 
 export interface ClarifyQuestion {

@@ -1,10 +1,10 @@
 <script setup lang="ts">
 import { computed, ref } from 'vue'
-import type { ClarifyQuestion } from '../data/panels'
+import type { ClarifyQuestion, ClarifyAnswer } from '../data/panels'
 
 const props = defineProps<{ requestId: string; questions: ClarifyQuestion[] }>()
 const emit = defineEmits<{
-  (e: 'submit', answers: Record<string, string>, settle: (ok: boolean) => void): void
+  (e: 'submit', answers: Record<string, ClarifyAnswer>, settle: (ok: boolean) => void): void
   (e: 'skip', settle: (ok: boolean) => void): void
 }>()
 
@@ -32,27 +32,24 @@ function choose(label: string) {
     if (at > -1) row.splice(at, 1)
     else row.push(label)
   } else {
-    // A single-choice answer is either a preset or a typed one, never both.
+    // One preset per single-choice question; typed text rides along with it.
     row.splice(0, row.length, label)
-    custom.value[step.value] = ''
   }
 }
 
-/** Typing on a single-choice question takes over from the preset selection. */
+/** Typed text joins the answer on every question, preset picked or not. */
 function typeCustom(ev: Event) {
   if (done.value || sending.value) return
   const idx = step.value
   custom.value[idx] = (ev.target as HTMLTextAreaElement).value
-  if (!current.value?.multiple && custom.value[idx].trim()) picked.value[idx] = []
 }
 
-function collect(): Record<string, string> {
-  const out: Record<string, string> = {}
+function collect(): Record<string, ClarifyAnswer> {
+  const out: Record<string, ClarifyAnswer> = {}
   props.questions.forEach((q, i) => {
-    const parts = [...(picked.value[i] ?? [])]
+    const picks = [...(picked.value[i] ?? [])]
     const typed = (custom.value[i] ?? '').trim()
-    if (typed) parts.push(typed)
-    if (parts.length) out[q.prompt] = parts.join(', ')
+    if (picks.length || typed) out[q.prompt] = { picked: picks, custom: typed }
   })
   return out
 }
@@ -126,17 +123,17 @@ function skip() {
         </button>
       </div>
       <div class="q-custom">
-        <span class="q-custom-label">or write your own</span>
+        <span class="q-custom-label">add your own words</span>
         <textarea
           class="q-custom-input"
           :value="customHere"
           rows="2"
           spellcheck="false"
           :disabled="done || sending"
-          :placeholder="current?.multiple ? 'Type your own answer, it is added after the options you picked' : 'Type your own answer instead of picking an option'"
+          :placeholder="current?.multiple ? 'Type your own answer, it is added to the options you picked' : 'Type your own answer, it is added to the option you pick'"
           @input="typeCustom"
         ></textarea>
-        <span class="q-custom-note">{{ customHere.trim() ? (current?.multiple ? 'added after your picks' : 'replaces the picked option') : 'no option fits? write it here' }}</span>
+        <span class="q-custom-note">{{ customHere.trim() ? (current?.multiple ? 'added to your picks' : 'added to your pick') : 'no option fits? write it here' }}</span>
       </div>
     </div>
     <div class="q-foot">

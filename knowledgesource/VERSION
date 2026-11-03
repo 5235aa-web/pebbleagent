@@ -813,3 +813,44 @@
   its focus ring follow every palette; the `done` state disables it
 - 2026-11-02
 
+
+- 2026-11-02
+
+## Clarify answers keep picks and typed text apart
+
+- `ClarifyAnswer` is `{picked, custom}`: `ClarifyCard.collect()` emits the object, `wire.ts` derives the broadcast
+  copy through `answerText()`, and `mergePreviewComments` probes both fields and replaces the custom text when the
+  preview annotations are the instruction. Option labels and typed text are no longer joined by a separator either
+  side could contain
+- The gateway and `QuestionManager` carry the payload unchanged, since answers are already `Dict[str, Any]`
+- 2026-11-02
+
+## Clarify typed text always joins the picks
+
+- `ClarifyCard.vue` no longer clears the free-form field when an option is clicked: `choose` replaces only the
+  single-choice preset (`row.splice(0, row.length, label)`) and leaves `custom` alone, while `typeCustom` no longer
+  empties `picked`. Preset and typed text therefore both reach `collect()` on single- and multiple-choice questions,
+  so clicking an option can no longer wipe what the user wrote
+- The placeholder and helper line state the new semantics (`added to the option you pick` / `added to the options you
+  picked`), and the field label reads `add your own words`
+- `frontend/dist` is not rebuilt; `vue-tsc --noEmit` passes
+- 2026-11-03
+
+## Live tok/s measures generation, not the whole run
+
+- The island and the usage pane both read `formatRate()` from `wire.ts`, backed by a new `runRate` state. A
+  `message.delta` / `thinking.delta` / `tool.call_streaming` chunk banks its token delta (the backend already sends a
+  cumulative per-call count, reasoning included) plus the gap since the previous chunk; `RATE_STOP_EVENTS` closes the
+  window on tool start/complete, clarify, permission, usage, complete and error, so tool execution and waits never
+  reach the divisor, while side-channel pushes such as `todos.update` leave it open. A gap above 1200 ms counts as a
+  stall and is dropped, and nothing is reported until a window reaches 250 ms
+- `message.usage.latest_output_tokens` replaces the estimate banked for the call it settles, so streamed estimates
+  are corrected by the provider count at each call boundary. The previous formula divided visible characters by the
+  run's wall clock and again by 3.6 characters per token, which under-reported tool-heavy, reasoning and Chinese
+  turns by one to two orders of magnitude
+- `runTiming.startTokens` / `tokensOut` are gone: they were written but never read. The placeholder `liveRate: 48` in
+  `panels.ts` is gone too, since a constant could only mask a broken measurement
+- Verified with a harness that ran the extracted state machine under a fake clock (pure generation, a 90 s tool call,
+  a mid-stream side-channel push, an exact-count settle, a second call in the same turn, reset); `vue-tsc --noEmit`
+  passes. `frontend/dist` is not rebuilt
+- 2026-11-03
