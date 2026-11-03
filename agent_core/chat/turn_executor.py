@@ -9,7 +9,7 @@ from typing import Any, AsyncIterator, Dict, List, Optional, Tuple
 
 from openai import AsyncOpenAI
 
-from ..agent_loader import get_cached_agent, get_agent_system_prompt
+from ..agent_loader import get_cached_agent, get_agent_system_prompt, get_agent_prompt_parts
 from .. import agent_chat_history as history
 from ..llm_client import build_default_headers
 from .prompt import compose_system_prompt
@@ -70,6 +70,14 @@ class TurnState:
     pending_todo_events: List[Any] = field(default_factory=list)
     full_message: str = ""
     aborted: bool = False
+    # Real prompt parts, measured once per turn: the agent prompt (with the
+    # experience / project / usernote additions), the preloaded SKILL.md block,
+    # and the tool schemas. The context panel needs the split; the conversation
+    # share is what the provider's prompt_tokens leaves after these three.
+    prompt_base_tokens: int = 0
+    prompt_skills_tokens: int = 0
+    tools_tokens: int = 0
+    tools_signature: int = 0
 
 
 async def prepare_turn(service, params: Dict[str, Any], state: TurnState) -> AsyncIterator[dict]:
@@ -178,7 +186,8 @@ async def prepare_turn(service, params: Dict[str, Any], state: TurnState) -> Asy
     state.final_thinking_enabled = thinking_enabled if thinking_enabled is not None else True
     state.final_reasoning_effort = reasoning_effort if reasoning_effort is not None else "high"
 
-    system_prompt = get_agent_system_prompt(agent_def)
+    own_prompt, skills_prompt = get_agent_prompt_parts(agent_def)
+    system_prompt = own_prompt + skills_prompt
     experience_prompt = ""
     try:
         ledger = service._ledger
@@ -206,6 +215,11 @@ async def prepare_turn(service, params: Dict[str, Any], state: TurnState) -> Asy
     system_prompt = compose_system_prompt(
         system_prompt, experience_prompt, service._current_project_path, usernote_content
     )
+
+    # The skill block sits inside the composed prompt, so its own count has to be
+    # taken from the same text the provider will bill for.
+    state.prompt_skills_tokens = count_tokens(skills_prompt)
+    state.prompt_base_tokens = max(0, count_tokens(system_prompt) - state.prompt_skills_tokens)
 
     messages = [{"role": "system", "content": system_prompt}]
     for msg in state.context_messages[:-1]:

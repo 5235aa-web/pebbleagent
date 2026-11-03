@@ -854,3 +854,53 @@
   a mid-stream side-channel push, an exact-count settle, a second call in the same turn, reset); `vue-tsc --noEmit`
   passes. `frontend/dist` is not rebuilt
 - 2026-11-03
+
+## Skills loaded is per-turn, and the context split is measured
+
+- `session.info` now carries `agent_skills` (the active agent's yaml `skills:` preload list) beside the on-disk
+  `skills` catalogue, through `load_agent_skills()` in server.py
+- `ContextPane` renders `skills loaded` as that preload list plus the `load_skill` calls of the turn in flight
+  (`turnSkills` in wire.ts, fed from `tool.start` arguments, cleared when `streaming` flips on). Preloaded chips draw
+  weak, the ones this turn loaded draw solid, and the on-disk catalogue remains the tools sheet's list
+- `agent_loader.get_agent_prompt_parts` splits the agent prompt from the preloaded SKILL.md block, caching the block
+  against each skill file's mtime and size so an edited SKILL.md is picked up
+- `message.usage` carries `context_breakdown` (`system_base` / `skills` / `tools`), measured once per turn with
+  tiktoken from the composed prompt, the skill block and the tool schemas (the tool tuple is re-measured only when its
+  JSON length changes). The pane derives the conversation share by subtracting the three from `prompt_tokens`, scaling
+  down when the estimates overshoot, and draws five segments (system prompt / preloaded skills / conversation / tool
+  schemas / free). A gateway without a breakdown shows the whole request as conversation
+- Verified: `python -m py_compile` on the touched backend files; a throwaway script measured `base=8833`,
+  `skills=1605`, `tools=7090` tokens for code_agent with 46 tool definitions; the `turnSkills` state machine passed six
+  cases (record, dedupe, half-streamed JSON ignored, missing name ignored, blank name ignored, reset); `vue-tsc
+  --noEmit` passes. `frontend/dist` is not rebuilt
+- 2026-11-03
+
+## Cache hit has a readout, and the plan card retires itself
+
+- `UsagePane` gains a `cache hit · session` stat box: `usage.cacheHit` from `usage.stats.total_cache_hit_tokens` against
+  `usage.tokensIn`, which the gateway reports as `SUM(input_tokens + cache_hit_tokens)` (full input, cached and
+  uncached), so the percentage is a session-wide share and is clamped at 100. The `cache hit` text in the pricing editor
+  stays what it always was, a per-million price input
+- `todos.update` now closes the card when every step is `completed`, through `schedulePlanHide()` (1200 ms so the full
+  ring and the last check are visible). A new list cancels a pending hide, an empty list closes at once, and
+  `closePlan()` beats the timer for the close button
+- `PlanCard.vue` wires its close button with `@click="closePlan"`; the dead `#planClose` listener in `orbit/runtime.js`
+  is gone, and the remaining `setPlanOpen` (command palette only) toggles the class the CSS reads instead of assigning
+  to an undefined global `plan`
+- Verified: a throwaway harness ran the real extracted timing helpers (frame the list completes, retire after 1200 ms,
+  new list cancels, manual close is final, empty list immediate), all pass; `vue-tsc --noEmit` passes. `frontend/dist` is
+  not rebuilt
+- 2026-11-03
+
+## The price label reads the same table as billing
+
+- `model.options` now reads `model_pricing.json` from the data dir and falls back to the bundled root copy, the same
+  pair `UsageTracker` uses. A fresh install, whose table exists only at the root, used to report every model as
+  `unpriced` while the backend billed from that very table
+- A model with `pricing_tier_high` ships `tier_threshold`; the pane compares it with the measured prompt size and prints
+  `flat rate` / `standard tier` / `high tier` instead of a constant `standard tier`
+- `saveTable` also refreshes the model options, so the tag updates without a resume or a model switch
+- Verified with a real `model.options` call under an isolated `PEBBLE_HOME`: the bundled table comes back (4 models),
+  `deepseek-v4-pro` resolves, and no flat-rate model carries a threshold; `python -m py_compile gateway/rpc/model.py`
+  and `vue-tsc --noEmit` pass. `frontend/dist` is not rebuilt
+- 2026-11-03

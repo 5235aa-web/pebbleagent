@@ -25,6 +25,14 @@ export const usage = reactive({
   contextLimit: 0,
   /* Output tokens of the latest call, kept out of `tokensOut` for the same reason. */
   contextOut: 0,
+  /* Real prompt parts measured by the gateway: the agent prompt (experience,
+     project path and user note included), the preloaded SKILL.md block, and the
+     tool schemas. The conversation share is what the provider's prompt_tokens
+     leaves after these three, so the split always adds up to the real total
+     instead of being a scaled guess. */
+  contextBase: 0,
+  contextSkills: 0,
+  contextTools: 0,
   costToday: 1.84,
   currency: 'usd',
   tokensIn: 62140,
@@ -307,7 +315,7 @@ export const llm = reactive({
   model: '',
   provider: '',
   currency: 'CNY',
-  pricing: {} as Record<string, { input?: number; cache_hit?: number; output?: number }>,
+  pricing: {} as Record<string, { input?: number; cache_hit?: number; output?: number; tier_threshold?: number }>,
   temperature: 1,
   topP: 1,
   maxTokens: 8192,

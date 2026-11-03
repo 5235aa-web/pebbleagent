@@ -15,7 +15,7 @@
             <span class="plan-title">{{ plan.title }}</span>
             <span class="plan-sub">{{ plan.sub }}</span>
           </div>
-          <button class="plan-x" id="planClose" data-tip="Hide plan">
+          <button class="plan-x" id="planClose" data-tip="Hide plan" type="button" @click="closePlan">
             <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><line x1="18" y1="6" x2="6" y2="18"/><line x1="6" y1="6" x2="18" y2="18"/></svg>
           </button>
         </header>
@@ -43,6 +43,7 @@
 <script setup lang="ts">
 import { computed } from 'vue'
 import { plan, planProgress } from '../data/store'
+import { closePlan } from '../data/wire'
 
 const progress = computed(() => planProgress())
 </script>

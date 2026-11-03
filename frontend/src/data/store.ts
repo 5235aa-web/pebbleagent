@@ -121,7 +121,11 @@ export interface CatalogGroup {
    same headings the prototype shows. */
 export const catalog = reactive({
   toolGroups: [] as CatalogGroup[],
-  skillGroups: [] as CatalogGroup[]
+  skillGroups: [] as CatalogGroup[],
+  /* Skills the active agent preloads into its prompt (the yaml `skills:` list).
+     `skillGroups` answers a different question: every skill directory on disk.
+     The context panel shows this list plus whatever the turn loads itself. */
+  agentSkills: [] as string[]
 })
 
 export function setCatalog(tools: unknown, skills: unknown): void {

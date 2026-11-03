@@ -319,6 +319,23 @@ _running_prompt_futures: Dict[str, concurrent.futures.Future[Any]] = {}
 _current_agent = "code_agent"
 
 
+def load_agent_skills() -> list:
+    """Skills preloaded into the current agent's system prompt.
+
+    `load_skills_info()` answers a different question: it lists every skill
+    directory on disk, so a panel fed from it describes the catalogue rather
+    than this conversation. The preload list is the `skills:` field of the
+    active agent's yaml, the same list agent_loader appends to the prompt.
+    """
+    try:
+        from agent_core.agent_loader import get_cached_agent
+        agent = get_cached_agent(_current_agent)
+        return [str(name) for name in (agent.skills or [])] if agent else []
+    except Exception as e:
+        logger.warning(f"[Server] Failed to read agent skills: {e}")
+        return []
+
+
 def _get_llm_client(session_id: str = "") -> tuple:
     """获取当前 LLM 客户端和配置"""
     llm_config = load_llm_config(_current_agent)
@@ -938,9 +955,11 @@ def handle_prompt_submit(
                             except Exception as e:
                                 logger.warning(f"[file.change] failed: {e}")
                 elif event_type == "todo_update":
+                    # An empty list is a real state: the agent cleared its plan and
+                    # the card has to close. Dropping it left the previous list on
+                    # screen, because the frontend only learns about a clear here.
                     todos = event.get("todos", [])
-                    if todos:
-                        write_event("todos.update", {"todos": todos})
+                    write_event("todos.update", {"todos": todos if isinstance(todos, list) else []})
                 elif event_type == "ask_question":
                     questions = event.get("questions", [])
                     if questions:
@@ -967,7 +986,7 @@ def handle_prompt_submit(
                 elif event_type == "title_updated":
                     write_event("session.updated", {"title": event.get("title", ""), "session_id": sid})
                 elif event_type == "usage":
-                    write_event("message.usage", {"model": event.get("model", ""), "session_cost_cny": event.get("session_cost_cny", 0), "latest_input_tokens": event.get("latest_input_tokens", 0), "latest_output_tokens": event.get("latest_output_tokens", 0), "model_context_limit": event.get("model_context_limit", 0), "period": event.get("period"), "this_call": event.get("this_call")})
+                    write_event("message.usage", {"model": event.get("model", ""), "session_cost_cny": event.get("session_cost_cny", 0), "latest_input_tokens": event.get("latest_input_tokens", 0), "latest_output_tokens": event.get("latest_output_tokens", 0), "model_context_limit": event.get("model_context_limit", 0), "period": event.get("period"), "context_breakdown": event.get("context_breakdown"), "this_call": event.get("this_call")})
                 elif event_type == "chat_completed":
                     chat_completed_data = event
                     break

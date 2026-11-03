@@ -30,7 +30,10 @@ def handle(ctx, method):
         "info": {
         "title": session.get("title", ""),
         "model": ctx.active_model,
+        # Catalogue of every skill on disk, and the subset this agent preloads
+        # into its prompt. The context panel shows the second one.
         "skills": srv.load_skills_info(),
+        "agent_skills": srv.load_agent_skills(),
         "tools": srv.load_tools_info(),
         }
         }
@@ -97,7 +100,10 @@ def handle(ctx, method):
         "info": {
         "title": session.get("title", ""),
         "model": ctx.active_model,
+        # Catalogue of every skill on disk, and the subset this agent preloads
+        # into its prompt. The context panel shows the second one.
         "skills": srv.load_skills_info(),
+        "agent_skills": srv.load_agent_skills(),
         "tools": srv.load_tools_info(),
         }
         }

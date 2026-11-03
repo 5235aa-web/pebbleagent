@@ -313,18 +313,18 @@ export function initOrbit() {
   /* ---------------- live plan slip ---------------- */
   var streamEl = document.querySelector(".stream");
   var planCard = document.getElementById("planCard");
-  var planClose = document.getElementById("planClose");
 
+  /* The card's own close button is wired in PlanCard.vue now. This function
+     only serves the command palette's "Toggle task list", and it drives the
+     class the CSS reads instead of a store plain JS cannot reach. */
   function setPlanOpen(open) {
     if (!streamEl || !planCard) return;
-    // The class on .stream and aria-hidden on the card both come from the store.
-    plan.open = open;
+    streamEl.classList.toggle("plan-open", open);
     if (!open) {
       planCard.style.setProperty("--rx", "0deg");
       planCard.style.setProperty("--ry", "0deg");
     }
   }
-  if (planClose) planClose.addEventListener("click", function () { setPlanOpen(false); });
 
   if (planCard) {
     planCard.addEventListener("mousemove", function (e) {

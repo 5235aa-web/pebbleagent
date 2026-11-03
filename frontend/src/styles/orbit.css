@@ -3832,6 +3832,7 @@ a { color: inherit; text-decoration: none; }
 }
 .ctx-bar i { display: block; height: 100%; transition: width .8s var(--ease-out); }
 .ctx-bar .seg-sys { background: var(--teal); }
+.ctx-bar .seg-skill { background: var(--ok); }
 .ctx-bar .seg-hist { background: var(--gold); }
 .ctx-bar .seg-tool { background: var(--accent); }
 .ctx-bar .seg-free { background: var(--surface-3); }
@@ -3958,6 +3959,14 @@ a { color: inherit; text-decoration: none; }
   font-size: 9px;
   color: var(--muted);
   margin: 0 4px 4px 0;
+}
+
+/* Preloaded for every turn, not pulled in by this one: still listed, but the
+   solid chips are the ones that belong to the turn being read. */
+.skill-chip.pre {
+  background: transparent;
+  border-style: dashed;
+  color: var(--faint);
 }
 
 /* ============================================================

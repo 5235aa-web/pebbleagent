@@ -56,6 +56,8 @@ chunk.usage → _calculate_cost(model, usage)
 
 **Unpriced models (subscription providers such as OpenCode Go):** `calculate_cost` returns `None` when the model has no entry in model_pricing.json, and `_unpriced_cost_info` (agent_chat_service_v2.py) then builds the same dict shape with real token counts and every cost field 0. The usage event, token totals, context ring and call history therefore keep working while the displayed cost stays 0.000. `_cache_hit_tokens` reads DeepSeek's private `prompt_cache_hit_tokens` first and falls back to the OpenAI-standard `prompt_tokens_details.cached_tokens` (OpenCode Go reports the latter; its gateway returns usage even without `stream_options.include_usage`).
 
+**Pricing label:** the usage pane's `priced` flag comes from `model.options.pricing`, which reads the same two candidates as `UsageTracker` (data dir first, then the bundled root copy). Without that fallback a fresh install, whose table only exists at the root, reported every model as unpriced while the backend still billed from the same table. A model carrying `pricing_tier_high` also ships `tier_threshold`, and the pane compares it against the measured prompt size to print `standard tier` or `high tier`; a model without the block prints `flat rate`.
+
 **Context-ring denominator:** `get_model_context_limit` substring-matches the lowercased model name against `MODEL_CONTEXT_LIMITS` (vendor prefixes, first match in insertion order; unmatched names fall back to 128K). deepseek / mimo / minimax resolve to 1M, gemini to 1M, gpt-4 to 128K, sonnet / opus / haiku to 200K. The value only sets the denominator of the frontend context ring and never gates compaction.
 
 ### ⏱ DeepSeek Time-of-Day Pricing (holidays)

@@ -6,7 +6,7 @@ Agent YAML Loader - Agent定义YAML加载器
 
 import yaml
 from pathlib import Path
-from typing import Dict, List, Optional, Any
+from typing import Dict, List, Optional, Any, Tuple
 from dataclasses import dataclass, field
 import logging
 
@@ -221,37 +221,69 @@ def list_available_agents() -> List[Dict[str, str]]:
     return list_available_agents_from_yaml()
 
 
-def get_agent_system_prompt(agent_def: AgentDefinition) -> str:
-    """
-    获取Agent的系统提示词
-    
-    如果Agent有预加载skills，将其附加到prompt中
-    """
-    prompt = agent_def.system_prompt
-    
-    # 如果有skills，加载并附加
-    if agent_def.skills:
+# Preloaded skill blocks, keyed by (agent, [(skill, mtime, size)]). An edited
+# SKILL.md changes the signature, so the cache never serves stale text for the
+# life of the process.
+_SKILL_SECTION_CACHE: Dict[Any, str] = {}
+
+
+def _skill_signature(names: List[str]) -> Tuple:
+    root = Path(__file__).parent.parent / "skills"
+    sig = []
+    for name in names:
         try:
-            import sys
-            parent_dir = Path(__file__).parent.parent
-            if str(parent_dir) not in sys.path:
-                sys.path.insert(0, str(parent_dir))
-            from skills_loader import load_skill
-            
-            skill_sections = []
-            for skill_name in agent_def.skills:
-                content = load_skill(skill_name)
-                if content:
-                    skill_sections.append(f"=== {skill_name} ===\n{content}")
-                    logger.debug(f"[AgentLoader] Preloaded skill: {skill_name}")
-            
-            if skill_sections:
-                prompt += "\n\n[预加载技能参考]\n" + "\n\n".join(skill_sections)
-                
-        except Exception as e:
-            logger.error(f"[AgentLoader] Error preloading skills: {e}")
-    
-    return prompt
+            stat = (root / name / "SKILL.md").stat()
+            sig.append((name, stat.st_mtime_ns, stat.st_size))
+        except OSError:
+            sig.append((name, 0, 0))
+    return tuple(sig)
+
+
+def get_agent_prompt_parts(agent_def: AgentDefinition) -> Tuple[str, str]:
+    """Return (own_prompt, preloaded_skills_block).
+
+    The block stays separate from the agent's own prompt because the context
+    panel measures it on its own line: a preloaded SKILL.md can run to several
+    thousand tokens, and hiding that inside "system prompt" is what makes the
+    window breakdown unreadable.
+    """
+    names = list(agent_def.skills or [])
+    if not names:
+        return agent_def.system_prompt, ""
+
+    key = (agent_def.name, _skill_signature(names))
+    cached = _SKILL_SECTION_CACHE.get(key)
+    if cached is not None:
+        return agent_def.system_prompt, cached
+
+    section = ""
+    try:
+        import sys
+        parent_dir = Path(__file__).parent.parent
+        if str(parent_dir) not in sys.path:
+            sys.path.insert(0, str(parent_dir))
+        from skills_loader import load_skill
+
+        skill_sections = []
+        for skill_name in names:
+            content = load_skill(skill_name)
+            if content:
+                skill_sections.append(f"=== {skill_name} ===\n{content}")
+                logger.debug(f"[AgentLoader] Preloaded skill: {skill_name}")
+        if skill_sections:
+            section = "\n\n[预加载技能参考]\n" + "\n\n".join(skill_sections)
+    except Exception as e:
+        logger.error(f"[AgentLoader] Error preloading skills: {e}")
+        return agent_def.system_prompt, ""
+
+    _SKILL_SECTION_CACHE[key] = section
+    return agent_def.system_prompt, section
+
+
+def get_agent_system_prompt(agent_def: AgentDefinition) -> str:
+    """The agent's prompt with its preloaded skills appended."""
+    own, skills = get_agent_prompt_parts(agent_def)
+    return own + skills
 
 
 # 缓存已加载的Agent定义

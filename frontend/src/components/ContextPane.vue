@@ -20,7 +20,7 @@
 
           <div class="section-h">skills loaded</div>
           <div>
-            <span class="skill-chip" v-for="(k, i) in skills" :key="i">{{ k }}</span>
+            <span class="skill-chip" :class="{ pre: !isTurnLoaded(k) }" v-for="k in skills" :key="k">{{ k }}</span>
           </div>
 
           <div class="section-h">tools this turn</div>
@@ -48,6 +48,7 @@ import { computed } from 'vue'
 import { context, ledger, llm, usage } from '../data/panels'
 import { catalog } from '../data/store'
 import { streamState } from '../data/stream'
+import { turnSkills } from '../data/wire'
 
 /* The prototype filled this panel with literals: four fixed context segments, a
    fixed agent line, six fixed skill names and three invented tool rows. Everything
@@ -70,40 +71,38 @@ const windowSize = computed(() => {
   return 1_000_000
 })
 
-/* The gateway reports how much a request occupied but not how it splits, so the
-   three used segments are estimated from text we can see and then scaled so they
-   add up to the measured total: the proportions come from real content, the
-   denominator from the gateway. */
+/* The gateway measures the agent prompt, the preloaded skill block and the tool
+   schemas on every call. The conversation share is what the provider's
+   prompt_tokens leaves after those three, so the segments describe the request
+   that was actually billed instead of proportional guesses. */
 const split = computed(() => {
   const limit = windowSize.value
   if (!limit) return null
   const used = Math.min(usedTokens.value, limit)
+  /* The breakdown covers the input side only; the completion is part of what
+     occupies the window, so it stays inside the conversation share. */
+  const prompt = Math.min(usage.contextTokens || used, used)
 
-  let convChars = 0
-  let toolChars = 0
-  streamState.items.forEach(item => {
-    if (item.blocks) {
-      convChars += (item.plain ?? '').length
-      item.blocks.forEach(b => {
-        if (b.kind === 'tool') toolChars += JSON.stringify((b as { call?: unknown }).call ?? {}).length
-      })
-    } else {
-      convChars += (item.plain ?? item.innerHTML ?? '').replace(/<[^>]*>/g, ' ').length
-    }
-  })
-
-  const toolCatalog = catalog.toolGroups.reduce((n, g) => n + g.items.length, 0)
-  const skillCatalog = catalog.skillGroups.reduce((n, g) => n + g.items.length, 0)
-  // Prompt scaffolding plus roughly one line per tool and per skill.
-  const sysTokens = 900 + toolCatalog * 45 + skillCatalog * 30
-  const convTokens = Math.round(convChars / 3.6)
-  const toolTokens = Math.round(toolChars / 3.6)
-
-  const raw = sysTokens + convTokens + toolTokens || 1
-  const scale = used / raw
-  const sys = Math.round(sysTokens * scale)
-  const conv = Math.round(convTokens * scale)
-  return { sys, conv, tool: Math.max(0, used - sys - conv), free: Math.max(0, limit - used), limit }
+  let base = usage.contextBase
+  let skills = usage.contextSkills
+  let tool = usage.contextTools
+  /* An older gateway reports no breakdown. Show the request as conversation
+     rather than inventing a split. */
+  if (!base && !skills && !tool) {
+    return { base: 0, skills: 0, conv: used, tool: 0, free: Math.max(0, limit - used), limit }
+  }
+  /* Tokenizer estimates can overshoot the provider's own count on a short
+     request; scale them down rather than let the conversation share go
+     negative. */
+  const known = base + skills + tool
+  if (known > prompt && known > 0) {
+    const scale = prompt / known
+    base = Math.round(base * scale)
+    skills = Math.round(skills * scale)
+    tool = Math.round(tool * scale)
+  }
+  const conv = Math.max(0, used - base - skills - tool)
+  return { base, skills, conv, tool, free: Math.max(0, limit - used), limit }
 })
 
 const segments = computed(() => {
@@ -113,9 +112,10 @@ const segments = computed(() => {
   }
   const pct = (n: number) => (n > 0 ? Math.max(1, Math.round((n / s.limit) * 100)) : 0)
   return [
-    { cls: 'seg-sys', pct: pct(s.sys), color: 'var(--teal)', label: 'system prompt', value: `${s.sys.toLocaleString()} · ${pct(s.sys)}%` },
+    { cls: 'seg-sys', pct: pct(s.base), color: 'var(--teal)', label: 'system prompt', value: `${s.base.toLocaleString()} · ${pct(s.base)}%` },
+    { cls: 'seg-skill', pct: pct(s.skills), color: 'var(--ok)', label: 'preloaded skills', value: `${s.skills.toLocaleString()} · ${pct(s.skills)}%` },
     { cls: 'seg-hist', pct: pct(s.conv), color: 'var(--gold)', label: 'conversation', value: `${s.conv.toLocaleString()} · ${pct(s.conv)}%` },
-    { cls: 'seg-tool', pct: pct(s.tool), color: 'var(--accent)', label: 'tool results', value: `${s.tool.toLocaleString()} · ${pct(s.tool)}%` },
+    { cls: 'seg-tool', pct: pct(s.tool), color: 'var(--accent)', label: 'tool schemas', value: `${s.tool.toLocaleString()} · ${pct(s.tool)}%` },
     { cls: 'seg-free', pct: pct(s.free), color: 'var(--surface-3)', label: 'free', value: `${s.free.toLocaleString()} · ${pct(s.free)}%` }
   ]
 })
@@ -132,7 +132,16 @@ const agentSub = computed(() => {
 /* Skills come from the catalogue the gateway returned in `session.info`; before
    that lands there is nothing honest to show, so the row stays empty rather than
    listing the prototype's names. */
-const skills = computed(() => catalog.skillGroups.flatMap(g => g.items).slice(0, 12))
+/* Loaded means this turn: the agent's preload list plus whatever it pulled in
+   with `load_skill` since the turn started. The second half resets next turn,
+   and the on-disk catalogue is a different list (the tools sheet browses it). */
+const preloadedSkills = computed(() => catalog.agentSkills)
+const turnLoaded = computed(() => turnSkills.names)
+const skills = computed(() => {
+  const merged = new Set<string>([...preloadedSkills.value, ...turnLoaded.value])
+  return [...merged].sort((a, b) => a.localeCompare(b))
+})
+const isTurnLoaded = (name: string) => turnLoaded.value.includes(name)
 
 /* Tool rows for the current turn are read off the transcript: the newest agent
    row carries its tool blocks in order. Before any block exists the list stays

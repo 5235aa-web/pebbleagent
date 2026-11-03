@@ -42,22 +42,36 @@ def handle(ctx, method):
         if custom_model and custom_model not in ("inherit", "custom"):
             current_model = custom_model
         # Per-model pricing, so the picker can show cost inline instead of
-        # forcing a second round trip (and a second source of truth).
+        # forcing a second round trip (and a second source of truth). The table
+        # lives in the data dir once the pricing pane has saved it, but a fresh
+        # install only has the bundled copy, so both are read here. UsageTracker
+        # uses the same pair, which keeps the label and the billing in step.
         pricing_out = {}
         currency = "CNY"
         try:
             import json
-            pf = srv._DATA_DIR / "model_pricing.json"
-            if pf.exists():
+            pf = None
+            for cand in (srv._DATA_DIR / "model_pricing.json", srv._PROJECT_ROOT / "model_pricing.json"):
+                if cand.exists():
+                    pf = cand
+                    break
+            if pf is not None:
                 raw = json.loads(pf.read_text(encoding="utf-8"))
                 currency = raw.get("default_currency") or "CNY"
                 for name, entry in (raw.get("models") or {}).items():
                     p = entry.get("pricing") or {}
-                    pricing_out[name] = {
+                    tier = entry.get("pricing_tier_high") or {}
+                    row = {
                         "input": p.get("input_per_million"),
                         "cache_hit": p.get("cache_hit_per_million"),
                         "output": p.get("output_per_million"),
                     }
+                    # Only models with a second tier carry a threshold; the pane
+                    # needs it to tell "standard tier" from "high tier" instead
+                    # of printing a word that never changes.
+                    if tier:
+                        row["tier_threshold"] = tier.get("threshold_tokens")
+                    pricing_out[name] = row
         except Exception as e:
             logger.warning(f"[Server] Failed to read model pricing: {e}")
         return {

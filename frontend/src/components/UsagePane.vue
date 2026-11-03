@@ -14,13 +14,14 @@
               <div class="usage-sub">{{ usage.tokensIn.toLocaleString() }} in / {{ usage.tokensOut.toLocaleString() }} out · {{ usage.calls }} calls</div>
               <div class="usage-tag">
                 <svg width="8" height="8" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="3"><polyline points="20 6 9 17 4 12"/></svg>
-                {{ priced ? 'priced' : 'unpriced' }} · {{ tier }} tier
+                {{ priced ? 'priced · ' + tier : 'unpriced · ' + tier }}
               </div>
             </div>
           </div>
 
           <div class="stat-grid">
             <div class="stat-box"><div class="k">input tokens</div><div class="v">{{ fmtTokens(usage.tokensIn) }} <small>· {{ inShare }}%</small></div></div>
+            <div class="stat-box"><div class="k">cache hit · session</div><div class="v">{{ fmtTokens(usage.cacheHit) }} <small>· {{ cacheRate }}% of input</small></div></div>
             <div class="stat-box"><div class="k">output tokens</div><div class="v">{{ fmtTokens(usage.tokensOut) }} <small>· {{ outShare }}%</small></div></div>
             <div class="stat-box"><div class="k">live rate</div><div class="v">{{ liveRate }} <small>tok/s</small></div></div>
             <div class="stat-box"><div class="k">session cost</div><div class="v">{{ fmtCost(usage.sessionCost, usage.currency) }}</div></div>
@@ -83,7 +84,7 @@
 import { computed, onMounted, ref } from 'vue'
 import { usage as usageState, llm, fmtTokens, fmtCost } from '../data/panels'
 import { streamState } from '../data/stream'
-import { formatRate, getConfig, savePricing } from '../data/wire'
+import { formatRate, getConfig, savePricing, refreshLlm } from '../data/wire'
 
 const usage = usageState
 
@@ -96,17 +97,35 @@ const total = computed(() => usage.tokensIn + usage.tokensOut || 1)
 const inShare = computed(() => Math.round((usage.tokensIn / total.value) * 100))
 const outShare = computed(() => 100 - inShare.value)
 
+/* Session-wide cache hit rate. `tokensIn` is the full input the gateway bills
+   (cached + uncached, see `SUM(input_tokens + cache_hit_tokens)`), so the hit
+   share divides straight into it. Clamped because a stale pair of payloads can
+   briefly report a hit count from a newer session than the denominator. */
+const cacheRate = computed(() => {
+  const hit = usage.cacheHit || 0
+  const input = usage.tokensIn || 0
+  if (!input) return '—'
+  return Math.min(100, (hit / input) * 100).toFixed(1)
+})
+
 /* Pricing comes from the table the gateway loaded out of model_pricing.json. A
-   model with no entry is genuinely unpriced rather than "standard"; a model that
-   carries a `pricing_tier_high` block is billed on two tiers. */
+   model with no entry has no rate at all, which is the honest state for a
+   subscription provider whose cost only exists in its own dashboard. A model
+   with a second tier reports the tier this request actually bills at, judged by
+   the prompt size against the threshold the gateway sent. */
 const pricingOf = computed(() => {
-  const table = llm.pricing as Record<string, { pricing_tier_high?: unknown }> | undefined
+  const table = llm.pricing as Record<string, { tier_threshold?: number }> | undefined
   const name = streamState.model || llm.model || ''
   const entry = name && table ? table[name] : undefined
-  return { known: Boolean(entry), tiered: Boolean(entry?.pricing_tier_high) }
+  return { known: Boolean(entry), threshold: Number(entry?.tier_threshold ?? 0) }
 })
 const priced = computed(() => pricingOf.value.known)
-const tier = computed(() => (pricingOf.value.tiered ? 'tiered' : 'standard'))
+const tier = computed(() => {
+  const threshold = pricingOf.value.threshold
+  if (!threshold) return 'flat rate'
+  const prompt = usage.contextTokens || 0
+  return prompt >= threshold ? 'high tier' : 'standard tier'
+})
 
 /* Same source as the island: one measurement, two readouts. */
 const liveRate = computed(() => formatRate())
@@ -231,7 +250,13 @@ async function saveTable(): Promise<void> {
   )
   pricingSaving.value = false
   pricingHint.value = ok ? 'saved · applies to the next call' : 'save failed'
-  if (ok) void loadPricing()
+  if (ok) {
+    /* The unpriced/flat-rate tag reads `llm.pricing`, which only refreshes with
+       the model options, so a save has to pull it again or the label keeps
+       describing the previous table. */
+    void loadPricing()
+    void refreshLlm()
+  }
   window.setTimeout(() => {
     pricingHint.value = 'edits apply to the active period'
   }, 3200)

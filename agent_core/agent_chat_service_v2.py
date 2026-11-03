@@ -1102,6 +1102,14 @@ class AgentChatServiceV2:
                 
                 # ========== 调用 LLM ==========
                 tools = self._get_tools_definition(agent_def)
+                # The same schemas go out every round, so measure them once per
+                # turn; the length check catches an MCP server adding tools
+                # mid-conversation without re-encoding the whole set each round.
+                if tools:
+                    tools_json = json.dumps(tools, ensure_ascii=False)
+                    if len(tools_json) != state.tools_signature:
+                        state.tools_tokens = count_tokens(tools_json)
+                        state.tools_signature = len(tools_json)
                 
                 stream_params = {
                     "model": use_model,
@@ -1199,6 +1207,13 @@ class AgentChatServiceV2:
                             "latest_output_tokens": cost_info.get("output_tokens", 0),
                             "model_context_limit": get_model_context_limit(use_model),
                             "period": cost_info.get("period"),  # 本次计费时段 peak/offpeak（分时模型）
+                            # 上下文分项：提示词（含经验/项目/备注）、预加载技能、工具 schema。
+                            # 会话历史由前端用 prompt_tokens 减去这三项得到，四项之和恒等于真实占用。
+                            "context_breakdown": {
+                                "system_base": state.prompt_base_tokens,
+                                "skills": state.prompt_skills_tokens,
+                                "tools": state.tools_tokens,
+                            },
                             "this_call": {**cost_info, "model": use_model}
                         }
                     except Exception as e:

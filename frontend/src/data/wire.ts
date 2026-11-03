@@ -130,6 +130,25 @@ export function formatRate(): string {
   return runRate.measured ? runRate.rate.toFixed(1) : '—'
 }
 
+/* ---- skills of the current turn ----
+
+   The agent preloads a fixed list (the yaml `skills:`) and then pulls in more
+   with `load_skill` as the task needs them. "skills loaded" describes exactly
+   that per-turn union, so this list is cleared when the next turn starts rather
+   than persisted: the catalogue on disk is a different thing and lives in
+   `catalog.skillGroups`. */
+export const turnSkills = reactive({ names: [] as string[] })
+
+/** `load_skill` takes `{"name": ...}`; a half-streamed argument object fails to
+    parse and is ignored, which is correct because the call has not run yet. */
+function noteLoadedSkill(raw: string): void {
+  try {
+    const parsed = JSON.parse(raw) as { name?: unknown }
+    const name = String(parsed?.name ?? '').trim()
+    if (name && !turnSkills.names.includes(name)) turnSkills.names.push(name)
+  } catch { /* not a complete argument object yet */ }
+}
+
 watch(
   () => streamState.streaming,
   (now, before) => {
@@ -138,6 +157,7 @@ watch(
       runTiming.elapsedMs = 0
       runTiming.running = true
       rateReset()
+      turnSkills.names.splice(0, turnSkills.names.length)
       return
     }
     if (!now && before) {
@@ -148,7 +168,7 @@ watch(
     }
   }
 )
-import { permissions, plan, sessions, sessionState, projects, setCatalog, bucketFor, type Session, type SessionGroup } from './store'
+import { permissions, plan, sessions, sessionState, projects, setCatalog, catalog, bucketFor, type Session, type SessionGroup } from './store'
 import { usage, files, mcp, ledger, context, llm, notes, pairing, search, image, type BillRow, type ClarifyQuestion, type ClarifyAnswer } from './panels'
 import type { StreamItem } from './stream'
 import { renderUserBubble, nowClock, clockOf, escapeHtml, type AttachmentView, type ToolCallView, type ToolState } from './render'
@@ -338,6 +358,46 @@ function finishLive(interrupted = false, messageId?: number) {
   notifySound('finished')
 }
 
+/* ---- live plan card ----
+
+   The card hides itself once every step is done, but not on the same frame: an
+   instant hide means the reader never sees the full ring and the last check,
+   which is the only confirmation that the plan finished. A fresh list cancels a
+   pending hide, so a plan written right after the previous one closed stays up. */
+let planHideTimer = 0
+
+function cancelPlanHide(): void {
+  if (!planHideTimer) return
+  window.clearTimeout(planHideTimer)
+  planHideTimer = 0
+}
+
+/** Also wired to the card's own close button, which has to beat the timer. */
+export function closePlan(): void {
+  cancelPlanHide()
+  plan.open = false
+}
+
+/** The plan belongs to the session on screen: a resume of another conversation
+    drops it, otherwise the previous checklist stays up until the next
+    `todos.update` happens to arrive. */
+function resetPlan(): void {
+  cancelPlanHide()
+  plan.open = false
+  plan.title = ''
+  plan.sub = ''
+  plan.token = ''
+  plan.steps.splice(0, plan.steps.length)
+}
+
+function schedulePlanHide(): void {
+  cancelPlanHide()
+  planHideTimer = window.setTimeout(() => {
+    planHideTimer = 0
+    plan.open = false
+  }, 1200)
+}
+
 /* ---- event handlers ---- */
 
 function onEvent(ev: GatewayEvent) {
@@ -424,6 +484,9 @@ function onEvent(ev: GatewayEvent) {
         })
       } else {
         const args = String(p.args_text ?? existing?.arg ?? '')
+        // tool.start carries the complete argument object; the streaming phase
+        // usually carries half of it, so a failed parse just means "not yet".
+        if (name === 'load_skill') noteLoadedSkill(args)
         upsertTool(id, {
           name,
           arg: args.length > 90 ? args.slice(0, 90) + '…' : args,
@@ -444,9 +507,11 @@ function onEvent(ev: GatewayEvent) {
     case 'todos.update': {
       const todos = Array.isArray(p.todos) ? (p.todos as Array<Record<string, unknown>>) : []
       if (!todos.length) {
-        plan.open = false
+        closePlan()
         return
       }
+      /* A new list arrives before the old one finished hiding: keep it up. */
+      cancelPlanHide()
       plan.open = true
       plan.title = String(p.title ?? plan.title)
       plan.sub = String(p.agent ?? plan.sub)
@@ -458,6 +523,8 @@ function onEvent(ev: GatewayEvent) {
           state: (t.status === 'completed' ? 'done' : t.status === 'in_progress' ? 'now' : 'queued') as 'done' | 'now' | 'queued'
         }))
       )
+      /* Every step done: the card retires on its own after the ring fills. */
+      if (todos.every(t => String(t.status ?? '') === 'completed')) schedulePlanHide()
       return
     }
 
@@ -1109,11 +1176,15 @@ export async function loadSession(sessionId: string): Promise<void> {
     segmentBuild.clear()
     expandedCompacts.clear()
     dropClarifyRow()
+    resetPlan()
     if (result?.info?.model) streamState.model = result.info.model
     const info = result?.info as Record<string, unknown> | undefined
     sessionState.toolCount = countGrouped(info?.tools)
     sessionState.skillCount = countGrouped(info?.skills)
     setCatalog(info?.tools, info?.skills)
+    catalog.agentSkills = Array.isArray(info?.agent_skills)
+      ? (info.agent_skills as unknown[]).map(String).filter(Boolean)
+      : []
     const restored = result?.messages ?? []
     // The header counts exchanges, not stored rows: tool output and compaction
     // bookkeeping live in the same table but are not messages anyone sent.
@@ -1452,6 +1523,15 @@ function syncUsage(p: Record<string, unknown>): void {
      feeds the window occupancy. */
   if (Number.isFinite(tin)) usage.contextTokens = tin
   if (Number.isFinite(tout)) usage.contextOut = tout
+  /* Real prompt parts from the gateway. The panel subtracts them from
+     `contextTokens` to get the conversation share, so no part is a guess. */
+  const breakdown = p.context_breakdown
+  if (breakdown && typeof breakdown === 'object') {
+    const parts = breakdown as Record<string, unknown>
+    usage.contextBase = Math.max(0, Number(parts.system_base) || 0)
+    usage.contextSkills = Math.max(0, Number(parts.skills) || 0)
+    usage.contextTools = Math.max(0, Number(parts.tools) || 0)
+  }
   const cache = Number(p.cache_hit_tokens ?? NaN)
   if (Number.isFinite(cache)) usage.cacheHit = cache
   const limit = Number(p.model_context_limit ?? NaN)
