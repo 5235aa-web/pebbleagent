@@ -9,7 +9,7 @@ from typing import Any, AsyncIterator, Dict, List, Optional, Tuple
 
 from openai import AsyncOpenAI
 
-from ..agent_loader import get_cached_agent, get_agent_system_prompt, get_agent_prompt_parts
+from ..agent_loader import get_cached_agent, get_agent_prompt_parts
 from .. import agent_chat_history as history
 from ..llm_client import build_default_headers
 from .prompt import compose_system_prompt
