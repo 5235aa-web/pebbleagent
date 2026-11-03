@@ -1104,3 +1104,11 @@
 - Verified on a temp home: first sync loads both entries, an unchanged file reports no work, deleting one returns it
   in the removed list, re-adding identical content restores it, and editing the content drops it back to pending —
   the fingerprint rule still applies
+
+## The prompt/tool contract test stops flagging prose keys
+
+- Adding the user-skill and MCP sections to `code_agent_prompt.md` put `name`, `description`, and `command` in
+  backticks. `test_code_agent_prompt_contract.py` reads every backticked snake_case word as a tool name, so all
+  three came back as unknown tools and the CI python job failed on both 3.11 and 3.14
+- The three are SKILL.md frontmatter fields and the `mcpServers` entry key, so they join `NON_TOOL_TOKENS`
+  alongside the prose values already listed there. Local run: 45 passed, 0 failed
