@@ -226,7 +226,7 @@ def main() -> int:
     srv.handle_request("model.provider.save", {"index": 0, "provider": {
         "slug": "opencode-go", "name": "opencode", "apiKey": "k",
         "baseUrl": "https://opencode.ai/inference/go/openai/v1",
-        "models": ["glm-5.3-flash"], "temperature": 0.2, "topP": 0.2, "maxTokens": 4096,
+        "models": ["glm-5.3-flash"], "temperature": 0.2, "topP": 0.2,
         "extraHeaders": {}, "sessionHeader": "", "reasoningMode": "thinking",
     }}, "3")
     with open(providers_path, encoding="utf-8") as f:

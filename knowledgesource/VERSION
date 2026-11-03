@@ -1112,3 +1112,58 @@
   three came back as unknown tools and the CI python job failed on both 3.11 and 3.14
 - The three are SKILL.md frontmatter fields and the `mcpServers` entry key, so they join `NON_TOOL_TOKENS`
   alongside the prose values already listed there. Local run: 45 passed, 0 failed
+
+## The MCP rack header and its hint line are readable at a glance
+
+- The three status chips (`3 running` / `0 idle` / `64 tools`) were 7.5px inside a 17px pill, and the
+  `.section-sub` line under the header was 9px. Both were below comfortable reading size at normal zoom
+- `.mc-pill` is now 10px in a 20px pill with `0 8px` padding, a 4px gap and a 5px dot. `.mc-hdr` is a flex row
+  with no fixed height, so the taller chip does not move anything else
+- `.section-sub` is now 11px. The class is shared with `FilesPane`'s whitelist note and `ContextPane`'s empty-user
+  skills hint, so all three secondary lines grew together instead of one pane carrying a different size for the
+  same element. `orbit.css` still parses clean (1725 top-level nodes)
+
+## Dock section headings are readable, not disabled-looking
+
+- Every area heading in the right dock sat at 8-8.5px in `--faint` (`#6E6459` on dark), which reads as disabled
+  text rather than as a heading. `.section-h`, `.lm-h`, `.stat-box .k` and `.cost-cell .k` are now 11px in
+  `--ink`, the same colour the figures underneath them use
+- Tracking drops from `.14em` to `.10em` on the two heading classes: at 11px the old spacing pulled the caps apart.
+  The `.stat-box` / `.cost-cell` keys use `.06em`, because four of them share the dock and `cache hit · session`
+  measured 143.4px at `.10em` against a 140px cell when the dock narrows to 348px; at `.06em` it measures 135px.
+  Measured in Chromium with the same font stack, not estimated
+- Trailing notes stay a step below the heading: `.section-h .hint` and `.lm-h span` went to 10px
+- `.section-h` is shared beyond the dock, so the sheets that reuse it (model, theme, notifications, pairing,
+  tools) grew with it
+
+## `max tok` is gone, because it never reached the API
+
+- The slider in `LlmPane` wrote `maxTokens` into `llm_providers.json` and read it back for display, but
+  `stream_params` in `agent_chat_service_v2.py` never carried `max_tokens`: the request body was model / messages /
+  stream / temperature / top_p plus the thinking and tools keys. The control did nothing, and its 31744 ceiling was
+  `min=512 max=32000 step=512` running out of steps, not a model output limit
+- Removed end to end: the `maxtok` gauge and `tokPct` in `LlmPane.vue`; `maxTokens` in `panels.ts`; the read in
+  `wire.ts` (`active.max_tokens`) and the write in `model.provider.save`; `max_tokens` in `model.options` and
+  `maxTokens` in the provider save branch; and the two `max_tokens: None` entries the model switch wrote into the
+  agent config, which nothing reads (`model_source` and `custom_model` are the only keys consumed there)
+- The key is gone from `llm_providers.json` in the repo and from `~/.pebble/llm_providers.json` (three providers
+  carried 31744 / 30208 / 31744). Nothing is sent now, which is what was already happening: the provider's own
+  default output ceiling applies
+- Verified: `maxTokens` returns no hits across the repo, `vue-tsc --noEmit` clean, `tests/run_all.py` passes,
+  `test_provider_headers.py` 48/48, both JSON files parse
+
+## An update explains itself before it installs
+
+- The feed has carried `notes` all along and the updater exposes it as `Update.body`, but `UpdateButton` kept only
+  `found.version`, so the text never reached the window. It was not worth showing anyway: `release.mjs` never
+  passed `--notes`, so every release said `Pebble Orbit {version}`, and editing the release page by hand afterwards
+  changed nothing the app could read
+- `CHANGELOG.md` is now the single source. `publish.mjs` extracts the `## {version}` section into both the GitHub
+  release body and the feed's `notes` (an explicit `--notes` still overrides), and stops when the section is absent
+- `release.mjs` checks the same section before `tauri build`, so an empty release fails in a second instead of after
+  a full build
+- `UpdateButton` opens a sheet on both settled states instead of installing on the click: version, `pub_date`, the
+  notes as prose at a reading measure, then Install / Later. The download bar lives in the sheet, and `ready`
+  reopens it with `Restart now`, so dismissing the sheet does not strand the restart
+- Verified: both scripts pass `node --check`, the extractor returns 7 bullets for 1.0.5 and an empty string for a
+  version that is not in the file, `vue-tsc --noEmit` clean, `orbit.css` parses (1731 top-level nodes)

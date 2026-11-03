@@ -340,7 +340,6 @@ export const llm = reactive({
   pricing: {} as Record<string, { input?: number; cache_hit?: number; output?: number; tier_threshold?: number }>,
   temperature: 1,
   topP: 1,
-  maxTokens: 8192,
   reasoningEffort: 'high',
   thinkingEnabled: true,
   reasoningMode: 'thinking',

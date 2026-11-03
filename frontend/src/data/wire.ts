@@ -1909,7 +1909,6 @@ export async function refreshLlm(): Promise<void> {
       llm.provider = String(active.name ?? '')
       llm.temperature = numOf(active.temperature, llm.temperature)
       llm.topP = numOf(active.topP, llm.topP)
-      llm.maxTokens = numOf(active.max_tokens, llm.maxTokens)
       llm.reasoningEffort = textOf(active.reasoning_effort) || llm.reasoningEffort
       llm.thinkingEnabled = active.thinking_enabled !== false
       llm.reasoningMode = textOf(active.reasoningMode) || llm.reasoningMode
@@ -1989,7 +1988,6 @@ export function saveProvider(index: number): void {
       models: p.models,
       temperature: llm.temperature,
       topP: llm.topP,
-      maxTokens: llm.maxTokens,
       reasoning_effort: llm.reasoningEffort,
       thinking_enabled: llm.thinkingEnabled,
       extraHeaders: headers,

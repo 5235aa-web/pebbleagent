@@ -3381,8 +3381,8 @@ a { color: inherit; text-decoration: none; }
 .lm-glow { position: absolute; inset: -40% -30% auto; height: 70%; background: radial-gradient(60% 100% at 50% 0%, var(--accent-soft), transparent 70%); opacity: 0; transition: opacity .3s var(--ease); pointer-events: none; }
 .lm-pcard.on .lm-glow { opacity: 1; }
 .lm-sec { margin-bottom: 12px; }
-.lm-h { display: flex; align-items: center; gap: 6px; font-family: var(--font-mono); font-size: 8px; letter-spacing: .14em; text-transform: uppercase; color: var(--faint); margin-bottom: 7px; }
-.lm-h span { margin-left: auto; letter-spacing: 0; text-transform: none; font-size: 7.5px; opacity: .7; }
+.lm-h { display: flex; align-items: center; gap: 6px; font-family: var(--font-mono); font-size: 11px; letter-spacing: .10em; text-transform: uppercase; color: var(--ink); margin-bottom: 7px; }
+.lm-h span { margin-left: auto; letter-spacing: 0; text-transform: none; font-size: 10px; opacity: .7; }
 .lm-gauge { display: flex; align-items: center; gap: 8px; margin-bottom: 8px; }
 .lm-k { width: 46px; flex: 0 0 auto; font-family: var(--font-mono); font-size: 8.5px; color: var(--muted); }
 .lm-track { position: relative; flex: 1 1 auto; height: 16px; display: flex; align-items: center; }
@@ -3570,7 +3570,7 @@ a { color: inherit; text-decoration: none; }
   text-transform: uppercase;
   letter-spacing: .08em;
 }
-.section-h .hint { margin-left: auto; text-transform: none; letter-spacing: .02em; font-size: 8.5px; opacity: .75; }
+.section-h .hint { margin-left: auto; text-transform: none; letter-spacing: .02em; font-size: 10px; opacity: .75; }
 
 /* ---- user-note editor ----
 
@@ -3990,7 +3990,7 @@ a { color: inherit; text-decoration: none; }
   border: 1px solid var(--line);
   background: var(--surface);
 }
-.stat-box .k { font-family: var(--font-mono); font-size: 8px; letter-spacing: .10em; text-transform: uppercase; color: var(--faint); }
+.stat-box .k { font-family: var(--font-mono); font-size: 11px; letter-spacing: .06em; text-transform: uppercase; color: var(--ink); }
 .stat-box .v { font-family: var(--font-mono); font-size: 13px; color: var(--ink); margin-top: 2px; }
 .stat-box .v small { font-size: 8.5px; color: var(--faint); }
 
@@ -4016,10 +4016,10 @@ a { color: inherit; text-decoration: none; }
 }
 .cost-cell .k {
   font-family: var(--font-mono);
-  font-size: 8px;
-  letter-spacing: .10em;
+  font-size: 11px;
+  letter-spacing: .06em;
   text-transform: uppercase;
-  color: var(--faint);
+  color: var(--ink);
 }
 .cost-cell .v {
   margin-top: 2px;
@@ -4071,7 +4071,7 @@ a { color: inherit; text-decoration: none; }
 .ctx-lr .k { color: var(--muted); flex: 1 1 auto; }
 .ctx-lr .v { font-family: var(--font-mono); font-size: 9.5px; color: var(--ink-2); }
 
-.section-h .sh-note { margin-left: auto; font-size: 8px; letter-spacing: .06em; color: var(--faint); text-transform: none; }
+.section-h .sh-note { margin-left: auto; font-size: 10px; letter-spacing: .06em; color: var(--faint); text-transform: none; }
 /* The one action in a section header that a reader has to find and hit, so it
    sits two steps above the 8.5px header it lives in and carries its own weight.
    Padding grows with it; at 10.5px the old 1px let the border clip the caps. */
@@ -4172,10 +4172,10 @@ a { color: inherit; text-decoration: none; }
   gap: 7px;
   margin: 11px 0 7px;
   font-family: var(--font-mono);
-  font-size: 8.5px;
-  letter-spacing: .14em;
+  font-size: 11px;
+  letter-spacing: .10em;
   text-transform: uppercase;
-  color: var(--faint);
+  color: var(--ink);
 }
 .section-h::after { content: ""; flex: 1 1 auto; height: 1px; background: var(--line-2); }
 
@@ -4183,7 +4183,7 @@ a { color: inherit; text-decoration: none; }
    rest of the header row, so this drops to its own line instead of competing
    for it; the negative top margin cancels part of the header's 7px bottom so
    the two read as one unit. */
-.section-sub { margin: -3px 0 7px; font-size: 9px; line-height: 1.5; color: var(--faint); }
+.section-sub { margin: -3px 0 7px; font-size: 11px; line-height: 1.5; color: var(--faint); }
 
 .skill-chip {
   display: inline-flex;
@@ -4622,6 +4622,25 @@ a { color: inherit; text-decoration: none; }
   background: var(--surface-2);
 }
 .sheet-foot .sf-hint { flex: 1 1 auto; font-family: var(--font-mono); font-size: 8.5px; color: var(--faint); }
+
+/* ---- update sheet ----
+
+   The one sheet that reads as prose, so the notes use the text face at a
+   reading measure instead of the mono face the rest of the dock uses. */
+
+.sheet.up { max-width: 468px; }
+.up-notes {
+  margin: 0;
+  font-family: var(--font-sans);
+  font-size: 11.5px;
+  line-height: 1.75;
+  color: var(--ink-2);
+  white-space: pre-wrap;
+  word-break: break-word;
+}
+.up-bar { margin-top: 12px; height: 4px; border-radius: 2px; background: var(--surface-3); overflow: hidden; }
+.up-bar i { display: block; height: 100%; background: var(--accent); transition: width .18s var(--ease); }
+.up-err { margin-top: 10px; font-size: 10.5px; color: var(--err); }
 
 .field { margin-bottom: 10px; }
 .field-lbl {
@@ -5093,8 +5112,8 @@ a { color: inherit; text-decoration: none; }
 .mc-ico { width: 26px; height: 26px; display: grid; place-items: center; border-radius: 7px; background: var(--teal-soft); color: var(--teal); flex: 0 0 auto; }
 .mc-title { flex: 1 1 auto; font-size: 12.5px; font-weight: 650; color: var(--ink); }
 .mc-title small { display: block; font-weight: 400; font-size: 9px; color: var(--faint); }
-.mc-pill { display: inline-flex; align-items: center; gap: 3px; height: 17px; padding: 0 6px; border-radius: 999px; border: 1px solid var(--line); font-family: var(--font-mono); font-size: 7.5px; color: var(--muted); }
-.mc-pill i { width: 4px; height: 4px; border-radius: 50%; background: var(--muted); }
+.mc-pill { display: inline-flex; align-items: center; gap: 4px; height: 20px; padding: 0 8px; border-radius: 999px; border: 1px solid var(--line); font-family: var(--font-mono); font-size: 10px; color: var(--muted); }
+.mc-pill i { width: 5px; height: 5px; border-radius: 50%; background: var(--muted); }
 .mc-pill.on { color: var(--ok); border-color: rgba(47, 125, 79, .25); background: var(--ok-soft); }
 .mc-pill.on i { background: var(--ok); }
 

@@ -67,6 +67,20 @@ if (!process.env.GITHUB_TOKEN) {
   process.exit(1)
 }
 
+/* Stop before a several-minute build when the changelog has no section for this
+   version. The release body and the updater's `notes` both come from there, and
+   an update that explains nothing is the exact problem this check exists to
+   prevent. */
+const changelogPath = path.join(frontend, '..', 'CHANGELOG.md')
+const releaseVersion = asked || JSON.parse(await readFile(confPath, 'utf8')).version
+const changelog = existsSync(changelogPath) ? await readFile(changelogPath, 'utf8') : ''
+const section = new RegExp(`^##\\s+v?${releaseVersion.replace(/\./g, '\\.')}\\s*$`, 'm')
+if (!section.test(changelog)) {
+  console.error(`CHANGELOG.md has no "## ${releaseVersion}" section.`)
+  console.error('Write it first: the release body and the in-app update notes both come from it.')
+  process.exit(1)
+}
+
 /** Inherit stdio so the build's own progress stays visible. `npx` is a .cmd shim
     and needs a shell on Windows, but process.execPath is a real binary whose
     path contains a space ("C:\Program Files\nodejs\node.exe") — letting a shell

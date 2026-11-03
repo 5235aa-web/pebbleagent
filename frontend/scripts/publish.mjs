@@ -61,10 +61,33 @@ if (!existsSync(sigPath)) {
 const signature = (await readFile(sigPath, 'utf8')).trim()
 const installerBytes = await readFile(path.join(bundleDir, installer))
 
+/* Release notes come from CHANGELOG.md, one `## x.y.z` section per version. The
+   same text goes to the GitHub release body and to the `notes` field of
+   latest.json, so the release page and the in-app update sheet cannot drift
+   apart the way they did when the page was edited by hand after publishing. */
+function notesFor(text, wanted) {
+  const lines = text.split(/\r?\n/)
+  const heading = new RegExp(`^##\\s+v?${wanted.replace(/\./g, '\\.')}\\s*$`)
+  const start = lines.findIndex(line => heading.test(line.trim()))
+  if (start === -1) return ''
+  const body = []
+  for (const line of lines.slice(start + 1)) {
+    if (/^##\s/.test(line)) break
+    body.push(line)
+  }
+  return body.join('\n').trim()
+}
+
+const changelogPath = path.join(frontend, '..', 'CHANGELOG.md')
 const notesArg = process.argv.indexOf('--notes')
-const notes = notesArg > -1 && process.argv[notesArg + 1]
-  ? process.argv[notesArg + 1]
-  : `Pebble Orbit ${version}`
+const explicitNotes = notesArg > -1 ? (process.argv[notesArg + 1] || '').trim() : ''
+const notes = explicitNotes
+  || (existsSync(changelogPath) ? notesFor(await readFile(changelogPath, 'utf8'), version) : '')
+if (!notes) {
+  console.error(`No release notes for ${version}.`)
+  console.error(`Add a "## ${version}" section to ${changelogPath}, or pass --notes "..."`)
+  process.exit(1)
+}
 
 /** One place for the auth header and the error shape, so a rejected call
     reports GitHub's reason instead of a bare status. */

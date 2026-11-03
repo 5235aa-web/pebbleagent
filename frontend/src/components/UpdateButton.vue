@@ -14,6 +14,41 @@
     </svg>
     <span v-if="live" class="up-dot" />
   </button>
+
+  <!-- The notes travel in `Update.body`, which the feed carries, so the reader
+       sees what changed before anything is downloaded. Installing from this
+       sheet is the only path that starts a download. -->
+  <div v-if="supported" class="overlay" :class="{ open: sheet }" @click.self="sheet = false">
+    <div class="sheet up">
+      <header class="sheet-hdr">
+        <span class="sheet-ico">
+          <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8">
+            <path d="M12 3v11" />
+            <polyline points="7.5 9.5 12 14 16.5 9.5" />
+            <path d="M4 17v2a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2v-2" />
+          </svg>
+        </span>
+        <div class="sheet-title">
+          Update {{ version }}
+          <small>{{ released || 'release notes' }}</small>
+        </div>
+        <button class="sheet-x" @click="sheet = false">&#215;</button>
+      </header>
+      <div class="sheet-body">
+        <pre class="up-notes">{{ notes || 'This release was published without notes.' }}</pre>
+        <div v-if="phase === 'downloading'" class="up-bar"><i :style="{ width: percent + '%' }" /></div>
+        <div v-if="phase === 'error'" class="up-err">The download did not finish. Start it again from the update button.</div>
+      </div>
+      <footer class="sheet-foot">
+        <span class="sf-hint">{{ phase === 'ready' ? 'ready to restart' : 'nothing downloads until you install' }}</span>
+        <button v-if="phase === 'ready'" class="btn btn-sm" @click="restart">Restart now</button>
+        <button v-else class="btn btn-sm" :disabled="phase === 'downloading'" @click="install">
+          {{ phase === 'downloading' ? percent + '%' : 'Install update' }}
+        </button>
+        <button class="btn btn-ghost btn-sm" @click="sheet = false">{{ phase === 'ready' ? 'Close' : 'Later' }}</button>
+      </footer>
+    </div>
+  </div>
 </template>
 
 <script setup lang="ts">
@@ -35,12 +70,23 @@ function toast(title: string, message: string, kind: 'ok' | 'warn' | 'err' = 'ok
    plugin hands back. */
 type Phase = 'idle' | 'checking' | 'available' | 'downloading' | 'ready' | 'current' | 'error'
 
+/** What the updater hands back, narrowed to the fields the sheet renders. */
+type PendingUpdate = {
+  version: string
+  body?: string
+  date?: string
+  downloadAndInstall: (cb: (e: unknown) => void) => Promise<void>
+}
+
 const supported = ref(false)
 const phase = ref<Phase>('idle')
 const version = ref('')
 const percent = ref(0)
+const notes = ref('')
+const released = ref('')
+const sheet = ref(false)
 
-let pending: { version: string; downloadAndInstall: (cb: (e: unknown) => void) => Promise<void> } | null = null
+let pending: PendingUpdate | null = null
 let timer = 0
 
 const busy = computed(() => phase.value === 'checking' || phase.value === 'downloading')
@@ -49,7 +95,7 @@ const live = computed(() => phase.value === 'available' || phase.value === 'read
 const tip = computed(() => {
   switch (phase.value) {
     case 'checking': return 'Checking for updates…'
-    case 'available': return `Update ${version.value} available — click to install`
+    case 'available': return `Update ${version.value} available — click to see what changed`
     case 'downloading': return `Downloading ${percent.value}%`
     case 'ready': return 'Restart to finish updating'
     case 'current': return 'Up to date'
@@ -65,14 +111,26 @@ function rest(): void {
   }, 3200)
 }
 
+/** `pub_date` is ISO-8601; the sheet shows the day only. */
+function formatDate(iso?: string): string {
+  if (!iso) return ''
+  const d = new Date(iso)
+  if (Number.isNaN(d.getTime())) return ''
+  const pad = (n: number): string => String(n).padStart(2, '0')
+  return `${d.getFullYear()}-${pad(d.getMonth() + 1)}-${pad(d.getDate())}`
+}
+
 async function checkNow(silent = false): Promise<void> {
   if (!silent) phase.value = 'checking'
   try {
     const { check } = await import('@tauri-apps/plugin-updater')
     const found = await check()
     if (found) {
-      pending = found as unknown as typeof pending
-      version.value = found.version
+      const meta = found as unknown as PendingUpdate
+      pending = meta
+      version.value = meta.version
+      notes.value = (meta.body ?? '').trim()
+      released.value = formatDate(meta.date)
       phase.value = 'available'
       return
     }
@@ -129,8 +187,9 @@ async function restart(): Promise<void> {
 }
 
 function run(): void {
-  if (phase.value === 'ready') { void restart(); return }
-  if (phase.value === 'available') { void install(); return }
+  /* Both settled states open the sheet: it is where the notes live, and after a
+     download it is where the restart button lives. */
+  if (phase.value === 'available' || phase.value === 'ready') { sheet.value = true; return }
   if (busy.value) return
   void checkNow()
 }

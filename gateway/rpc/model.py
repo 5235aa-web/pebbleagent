@@ -30,7 +30,6 @@ def handle(ctx, method):
             "topP": p.get("topP"),
             "reasoning_effort": p.get("reasoning_effort"),
             "thinking_enabled": p.get("thinking_enabled") is not False,
-            "max_tokens": p.get("maxTokens", 4096),
             "extraHeaders": p.get("extraHeaders") or {},
             "sessionHeader": p.get("sessionHeader") or "",
             "reasoningMode": p.get("reasoningMode") or "thinking",
@@ -100,7 +99,6 @@ def handle(ctx, method):
                 "model_source": model,
                 "custom_model": None,
                 "temperature": None,
-                "max_tokens": None,
                 }
                 srv._write_agent_model_config(agent_cfg)
                 srv.broadcast_event("model.changed", {"model": model, "provider_index": idx})
@@ -118,7 +116,6 @@ def handle(ctx, method):
         "baseUrl": provider_data.get("baseUrl", ""),
         "models": provider_data.get("models", []),
         "temperature": srv._num(provider_data.get("temperature")),
-        "maxTokens": srv._num(provider_data.get("maxTokens")) or 4096,
         "topP": srv._num(provider_data.get("topP")),
         "reasoning_effort": srv._str(provider_data.get("reasoning_effort")),
         "thinking_enabled": srv._bool(provider_data.get("thinking_enabled"), True),
@@ -184,7 +181,6 @@ def handle(ctx, method):
             "model_source": model,
             "custom_model": None,
             "temperature": None,
-            "max_tokens": None,
             }
             srv._write_agent_model_config(agent_cfg)
             srv.broadcast_event("model.changed", {"model": model, "provider_index": idx})

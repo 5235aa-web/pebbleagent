@@ -68,11 +68,6 @@
               <div class="lm-track"><i :style="{ '--v': toppPct + '%' }"></i><b :style="{ '--v': toppPct + '%' }"></b><input type="range" min="0" max="1" step="0.05" v-model.number="llm.topP" @change="setModelParams" /></div>
               <span class="lm-v">{{ llm.topP.toFixed(2) }}</span>
             </div>
-            <div class="lm-gauge" data-k="maxtok" data-max="32000" data-unit="k">
-              <span class="lm-k">max tok</span>
-              <div class="lm-track"><i :style="{ '--v': tokPct + '%' }"></i><b :style="{ '--v': tokPct + '%' }"></b><input type="range" min="512" max="32000" step="512" v-model.number="llm.maxTokens" @change="setModelParams" /></div>
-              <span class="lm-v">{{ llm.maxTokens.toLocaleString() }}</span>
-            </div>
           </div>
 
           <div class="lm-sec">
@@ -164,7 +159,6 @@ const activeModels = computed(() => llm.providers[activeIndex.value]?.models ?? 
 
 const tempPct = computed(() => Math.min(100, (llm.temperature / 2) * 100))
 const toppPct = computed(() => Math.min(100, llm.topP * 100))
-const tokPct = computed(() => Math.min(100, ((llm.maxTokens - 512) / (32000 - 512)) * 100))
 
 const editingName = computed({
   get: () => llm.providers[activeIndex.value]?.name ?? '',

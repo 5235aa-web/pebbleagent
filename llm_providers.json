@@ -10,7 +10,6 @@
         "deepseek-pro"
       ],
       "temperature": 0.2,
-      "maxTokens": 4096,
       "topP": 0.15,
       "reasoning_effort": "max",
       "thinking_enabled": true
@@ -25,7 +24,6 @@
         "mimo-v2.6-pro"
       ],
       "temperature": 0.2,
-      "maxTokens": 4096,
       "topP": 0.2,
       "reasoning_effort": "high",
       "thinking_enabled": true
