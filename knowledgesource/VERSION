@@ -1178,3 +1178,19 @@
 - `.pair-wrap` gained `position: relative`. The footer's `New code` button went with `mintPairingCode`: minting a
   code for a listener nothing can reach is the same dead end the film exists to prevent. Close and the transport
   toggle still behave as before
+
+## The LLM pane can add and switch providers
+
+- The pane rendered `v-for="p in llm.providers"` with no add control, so a new endpoint meant hand-editing
+  `~/.pebble/llm_providers.json`. `model.provider.save` already appends when `index` is -1 and moves
+  `activeProviderIndex` to the new entry, so only the front end was missing
+- The provider grid ends in a dashed `new provider` card that calls that path with `index: -1` and an empty
+  template; the card lands selected, and `addModel` now promotes the first model added to a card that owns none,
+  because a request naming no owned model falls back to `providers[0]` rather than the active index
+- Cards were not clickable either: `runtime.js` carried a leftover delegate for `#lmProv` and `#lmDel` that only
+  toggled the `.on` class and fired a "Provider removed / Fell back to the default provider" toast. Both delegates
+  are gone; clicks now call `model.provider.set` with the model that moves with the card
+- `model.provider.save` gave a new entry an empty `id` when the request carried `slug: ""`, since `get` only
+  applies its default when the key is absent. It is now `get("slug") or str(uuid.uuid4())`
+- Verified: `test_provider_headers.py` grew five checks for the append path (53 pass), `tests/run_all.py` 35/35,
+  `vue-tsc --noEmit` clean, `node --check runtime.js` clean, `orbit.css` parses at 1742 nodes

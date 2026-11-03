@@ -236,6 +236,31 @@ def main() -> int:
     check("reasoningMode back to default", cleared.get("reasoningMode") == "thinking",
           f"{cleared.get('reasoningMode')}")
 
+    # ---- a new card: index -1 appends and takes over as the active provider ----
+    with open(providers_path, encoding="utf-8") as f:
+        before = json.load(f)
+    count_before = len(before.get("providers", []))
+    srv.handle_request("model.provider.save", {
+        "index": -1,
+        "provider": {
+            "name": "commandcode", "apiKey": "", "baseUrl": "",
+            "models": [], "temperature": 0.2,
+        },
+    }, "4")
+    with open(providers_path, encoding="utf-8") as f:
+        after = json.load(f)
+    added = after.get("providers", [])
+    check("index -1 appends a provider", len(added) == count_before + 1,
+          f"{len(added)} vs {count_before}")
+    check("the new provider becomes active",
+          after.get("activeProviderIndex") == len(added) - 1,
+          f"{after.get('activeProviderIndex')} vs {len(added) - 1}")
+    check("the new provider is given an id", bool(added[-1].get("id")), f"{added[-1].get('id')}")
+    check("the new provider keeps the name from the request",
+          added[-1].get("provider") == "commandcode", f"{added[-1].get('provider')}")
+    check("an empty model list survives the round trip",
+          added[-1].get("models") == [], f"{added[-1].get('models')}")
+
     # ---- the agent-side config (main chat path) must carry the shaping fields ----
     with open(providers_path, "w", encoding="utf-8") as f:
         json.dump({"providers": [{

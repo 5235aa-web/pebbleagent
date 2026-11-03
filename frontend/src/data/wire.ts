@@ -2023,6 +2023,54 @@ export function deleteProvider(index: number): void {
     })
 }
 
+/** Adds a blank provider card. The gateway appends it and points
+    `activeProviderIndex` at the new entry when `index` is -1, so the card lands
+    already selected and is one save away from being usable. */
+export function addProvider(): void {
+  if (!gateway.connected) {
+    notify('Add skipped', 'Not connected to the gateway, so nothing was written.', 'err')
+    return
+  }
+  void gateway.request('model.provider.save', {
+    index: -1,
+    provider: {
+      name: 'New provider',
+      apiKey: '',
+      baseUrl: '',
+      models: [],
+      temperature: llm.temperature,
+      topP: llm.topP,
+      reasoning_effort: llm.reasoningEffort,
+      thinking_enabled: llm.thinkingEnabled,
+      extraHeaders: {},
+      sessionHeader: '',
+      reasoningMode: llm.reasoningMode,
+      maxEffort: llm.maxEffort
+    }
+  }).then(() => {
+    notify('Provider added', 'Fill in its base url and key, add a model, then save.', 'ok')
+    void refreshLlm()
+  }).catch(e => {
+    notify('Add failed', e instanceof Error ? e.message : 'The gateway refused the write.', 'err')
+  })
+}
+
+/** Switches the active provider. The model travels with it because the backend
+    resolves a request by finding which provider owns the model, and falls back
+    to the first provider in the file when no provider claims it — so moving the
+    index alone would leave the next turn talking to the old endpoint. */
+export function switchProvider(index: number, model: string): void {
+  if (!gateway.connected) {
+    notify('Switch skipped', 'Not connected to the gateway, so nothing changed.', 'err')
+    return
+  }
+  void gateway.request('model.provider.set', { index, model })
+    .then(() => { void refreshLlm() })
+    .catch(e => {
+      notify('Switch failed', e instanceof Error ? e.message : 'The gateway refused the change.', 'err')
+    })
+}
+
 /* ---------------- message actions ---------------- */
 
 type ToastFn = (title: string, message: string, kind?: string) => void

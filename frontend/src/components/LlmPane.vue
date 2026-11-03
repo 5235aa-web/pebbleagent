@@ -20,15 +20,21 @@
 
           <div class="lm-prov" id="lmProv">
             <button
-              v-for="p in llm.providers"
+              v-for="(p, i) in llm.providers"
               :key="p.slug || p.name"
               class="lm-pcard"
               :class="{ on: p.current }"
+              @click="selectProvider(i)"
             >
               <span class="lm-brand" :style="{ '--b': 'var(--accent)' }">{{ p.name.slice(0, 1).toUpperCase() }}</span>
               <span class="lm-pname">{{ p.name }}</span>
               <span class="lm-pmeta">{{ p.models.length }} model{{ p.models.length === 1 ? '' : 's' }}{{ p.current ? ' · active' : '' }}</span>
               <span v-if="p.current" class="lm-glow"></span>
+            </button>
+            <button class="lm-padd" type="button" @click="addProvider">
+              <span class="lm-padd-plus">+</span>
+              <span class="lm-pname">new provider</span>
+              <span class="lm-pmeta">base url · key · models</span>
             </button>
           </div>
 
@@ -135,7 +141,7 @@
 <script setup lang="ts">
 import { computed, ref } from 'vue'
 import { llm } from '../data/panels'
-import { switchAgent, switchModel, setModelParams, saveProvider, deleteProvider } from '../data/wire'
+import { switchAgent, switchModel, setModelParams, saveProvider, deleteProvider, addProvider, switchProvider } from '../data/wire'
 
 const EFFORTS = [
   { key: 'low', label: 'low', h: '34%' },
@@ -193,6 +199,19 @@ function pickMaxEffort(e: string) {
   saveProvider(activeIndex.value)
 }
 
+/* The backend picks the provider by asking which one owns the requested model,
+   falling back to the first provider in the file when none does. Switching the
+   card alone would therefore keep the next turn on the old endpoint, so the
+   model moved with it: the current model if the new card has it, otherwise its
+   first one, which is what the card shows as selected. */
+function selectProvider(index: number) {
+  if (index === activeIndex.value) return
+  const provider = llm.providers[index]
+  if (!provider) return
+  const model = provider.models.includes(llm.model) ? llm.model : (provider.models[0] ?? '')
+  switchProvider(index, model)
+}
+
 function addModel() {
   const name = newModel.value.trim()
   const provider = llm.providers[activeIndex.value]
@@ -200,8 +219,14 @@ function addModel() {
     newModel.value = ''
     return
   }
+  const owned = provider.models.includes(llm.model)
   provider.models = [...provider.models, name]
   newModel.value = ''
+  /* A brand-new card owns no model, and a request naming a model no provider
+     claims falls back to the first provider in the file. The first model added
+     to such a card becomes the active one, so the card works without a second
+     click on the chip that just appeared. */
+  if (!owned) llm.model = name
   saveProvider(activeIndex.value)
 }
 

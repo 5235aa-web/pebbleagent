@@ -3380,6 +3380,16 @@ a { color: inherit; text-decoration: none; }
 .lm-pmeta { font-size: 8px; color: var(--faint); }
 .lm-glow { position: absolute; inset: -40% -30% auto; height: 70%; background: radial-gradient(60% 100% at 50% 0%, var(--accent-soft), transparent 70%); opacity: 0; transition: opacity .3s var(--ease); pointer-events: none; }
 .lm-pcard.on .lm-glow { opacity: 1; }
+/* The add card sits in the same grid as the provider cards and takes the next
+   free cell, so adding a provider is where the eye already is. */
+.lm-padd { display: flex; flex-direction: column; gap: 2px; padding: 9px 10px; border-radius: 10px; border: 1px dashed var(--line-strong); background: transparent; text-align: left; transition: border-color .2s var(--ease), background .2s var(--ease); }
+.lm-padd:hover { border-color: var(--accent); background: var(--accent-soft-2); }
+.lm-padd .lm-pname { color: var(--muted); }
+.lm-padd .lm-pmeta { color: var(--faint); }
+.lm-padd:hover .lm-pname,
+.lm-padd:hover .lm-pmeta,
+.lm-padd:hover .lm-padd-plus { color: var(--accent); }
+.lm-padd-plus { font-family: var(--font-mono); font-size: 13px; font-weight: 700; line-height: 20px; color: var(--faint); transition: color .2s var(--ease); }
 .lm-sec { margin-bottom: 12px; }
 .lm-h { display: flex; align-items: center; gap: 6px; font-family: var(--font-mono); font-size: 11px; letter-spacing: .10em; text-transform: uppercase; color: var(--ink); margin-bottom: 7px; }
 .lm-h span { margin-left: auto; letter-spacing: 0; text-transform: none; font-size: 10px; opacity: .7; }

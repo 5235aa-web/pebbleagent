@@ -1276,17 +1276,6 @@ export function initOrbit() {
       var on = think.classList.toggle("on");
       think.querySelector(".lm-tstate").textContent = on ? "enabled" : "disabled";
     });
-    var prov = pane.querySelector("#lmProv");
-    if (prov) prov.addEventListener("click", function (e) {
-      var b = e.target.closest(".lm-pcard");
-      if (!b) return;
-      prov.querySelectorAll(".lm-pcard").forEach(function (x) { x.classList.remove("on"); });
-      b.classList.add("on");
-    });
-    var del = pane.querySelector("#lmDel");
-    if (del) del.addEventListener("click", function () {
-      toast("Provider removed", "Fell back to the default provider.", "warn");
-    });
   })();
 
   /* ---------------- message timeline ---------------- */

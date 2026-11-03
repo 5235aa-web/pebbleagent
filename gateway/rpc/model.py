@@ -110,7 +110,7 @@ def handle(ctx, method):
         data = srv._read_providers()
         providers = data.get("providers", [])
         new_provider = {
-        "id": provider_data.get("slug", str(uuid.uuid4())),
+        "id": provider_data.get("slug") or str(uuid.uuid4()),
         "provider": provider_data.get("name", "New Provider"),
         "apiKey": provider_data.get("apiKey", ""),
         "baseUrl": provider_data.get("baseUrl", ""),
