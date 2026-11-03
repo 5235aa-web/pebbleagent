@@ -66,6 +66,9 @@ NON_TOOL_TOKENS = {
     "scope", "project", "global", "rationale", "status",
     # OpenAI request-body field name, not a tool
     "tools",
+    # SKILL.md frontmatter fields and the mcpServers entry key, both named in
+    # the user-extension sections; prose, not tools
+    "name", "description", "command",
 }
 
 TOOL_TOKEN_RE = re.compile(r"`([a-z][a-z0-9_]{2,})`")
