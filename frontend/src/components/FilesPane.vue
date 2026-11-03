@@ -63,6 +63,7 @@
             </div>
           </div>
           <div class="section-h">whitelisted paths</div>
+          <div class="section-sub">up to 5 paths the LLM can access</div>
           <div class="snap" v-for="(p, i) in files.paths" :key="i">
             <span class="snap-ico">
               <svg width="10" height="10" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M22 19a2 2 0 0 1-2 2H4a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h5l2 3h9a2 2 0 0 1 2 2z"/></svg>

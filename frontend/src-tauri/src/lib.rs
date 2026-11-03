@@ -1,6 +1,8 @@
+use std::ffi::c_void;
 use std::process::{Child, Command as StdCommand, Stdio};
 use std::os::windows::process::CommandExt;
 use std::os::windows::io::AsRawHandle;
+use std::sync::atomic::{AtomicIsize, Ordering};
 use std::sync::Mutex;
 use tauri::Manager;
 
@@ -11,6 +13,11 @@ const ABOVE_NORMAL_PRIORITY_CLASS: u32 = 0x00008000;
 
 static SIDECAR_PID: Mutex<Option<u32>> = Mutex::new(None);
 
+/// Held open for the whole process on purpose. Closing the last handle to a job
+/// with KILL_ON_JOB_CLOSE is what kills its members, so this handle must never
+/// be closed early — the kernel closing it on process death is the mechanism.
+static SIDECAR_JOB: AtomicIsize = AtomicIsize::new(0);
+
 extern "system" {
     fn SetPriorityClass(handle: isize, priority: u32) -> i32;
     fn GetCurrentProcess() -> isize;
@@ -20,6 +27,9 @@ extern "system" {
     fn Process32NextW(snap: isize, entry: *mut PROCESSENTRY32W) -> i32;
     fn CloseHandle(handle: isize) -> i32;
     fn OpenProcess(access: u32, inherit: i32, pid: u32) -> isize;
+    fn CreateJobObjectW(attrs: *mut c_void, name: *const u16) -> isize;
+    fn SetInformationJobObject(job: isize, class: u32, info: *const c_void, len: u32) -> i32;
+    fn AssignProcessToJobObject(job: isize, process: isize) -> i32;
 }
 
 const TH32CS_SNAPPROCESS: u32 = 0x00000002;
@@ -38,6 +48,45 @@ struct PROCESSENTRY32W {
     pcPriClassBase: i32,
     dwFlags: u32,
     szExeFile: [u16; MAX_PATH],
+}
+
+const JOB_OBJECT_LIMIT_KILL_ON_JOB_CLOSE: u32 = 0x0000_2000;
+const JOB_OBJECT_EXTENDED_LIMIT_INFORMATION_CLASS: u32 = 9;
+
+#[repr(C)]
+#[derive(Default)]
+struct JOBOBJECT_BASIC_LIMIT_INFORMATION {
+    per_process_user_time_limit: i64,
+    per_job_user_time_limit: i64,
+    limit_flags: u32,
+    minimum_working_set_size: usize,
+    maximum_working_set_size: usize,
+    active_process_limit: u32,
+    affinity: usize,
+    priority_class: u32,
+    scheduling_class: u32,
+}
+
+#[repr(C)]
+#[derive(Default)]
+struct IO_COUNTERS {
+    read_operation_count: u64,
+    write_operation_count: u64,
+    other_operation_count: u64,
+    read_transfer_count: u64,
+    write_transfer_count: u64,
+    other_transfer_count: u64,
+}
+
+#[repr(C)]
+#[derive(Default)]
+struct JOBOBJECT_EXTENDED_LIMIT_INFORMATION {
+    basic_limit_information: JOBOBJECT_BASIC_LIMIT_INFORMATION,
+    io_info: IO_COUNTERS,
+    process_memory_limit: usize,
+    job_memory_limit: usize,
+    peak_process_memory_used: usize,
+    peak_job_memory_used: usize,
 }
 
 unsafe fn boost_all_backends() {
@@ -80,12 +129,84 @@ fn get_gateway_token() -> Option<String> {
 }
 
 fn kill_tree(pid: u32) {
+  // `status()` blocks until taskkill returns, so a caller that is about to
+  // write over the executable knows the tree is already gone; `spawn()` only
+  // queued the request and returned.
   let _ = StdCommand::new("taskkill")
     .args(["/F", "/T", "/PID", &pid.to_string()])
     .creation_flags(CREATE_NO_WINDOW)
     .stdout(Stdio::null())
     .stderr(Stdio::null())
-    .spawn();
+    .status();
+}
+
+/// Terminates every backend process on the machine.
+///
+/// Only meaningful before this app spawns its own. A copy left behind by an
+/// earlier run keeps the sidecar executable mapped and locked, which is exactly
+/// what makes the NSIS updater fail with "Error opening file for writing": the
+/// installer replaces that file while the orphan still holds it open.
+fn kill_orphan_backends() {
+  unsafe {
+    let snap = CreateToolhelp32Snapshot(TH32CS_SNAPPROCESS, 0);
+    if snap == -1 { return; }
+    let mut entry: PROCESSENTRY32W = std::mem::zeroed();
+    entry.dwSize = std::mem::size_of::<PROCESSENTRY32W>() as u32;
+    if Process32FirstW(snap, &mut entry) != 0 {
+      loop {
+        let name: Vec<u16> = entry.szExeFile.iter().take_while(|&&c| c != 0).copied().collect();
+        let name_str = String::from_utf16_lossy(&name);
+        if name_str.contains("pebble-backend") {
+          let pid = entry.th32ProcessID;
+          eprintln!("[pebble-backend] killing orphan pid: {}", pid);
+          kill_tree(pid);
+        }
+        if Process32NextW(snap, &mut entry) == 0 { break; }
+      }
+    }
+    CloseHandle(snap);
+  }
+}
+
+/// Creates the job that owns the sidecar. Returns 0 when the job could not be
+/// set up, in which case the taskkill paths remain the only defence.
+///
+/// KILL_ON_JOB_CLOSE makes the kernel terminate every member once the last
+/// handle closes, and a process's handles all close when that process dies — by
+/// any route, including the hard termination the updater and the NSIS installer
+/// use. `RunEvent::Exit` never runs on those routes, so the guarantee has to
+/// come from the kernel rather than from a callback.
+unsafe fn create_sidecar_job() -> isize {
+  let job = CreateJobObjectW(std::ptr::null_mut(), std::ptr::null());
+  if job == 0 { return 0; }
+
+  let mut info = JOBOBJECT_EXTENDED_LIMIT_INFORMATION::default();
+  info.basic_limit_information.limit_flags = JOB_OBJECT_LIMIT_KILL_ON_JOB_CLOSE;
+  let size = std::mem::size_of::<JOBOBJECT_EXTENDED_LIMIT_INFORMATION>() as u32;
+  let ok = SetInformationJobObject(
+    job,
+    JOB_OBJECT_EXTENDED_LIMIT_INFORMATION_CLASS,
+    &info as *const _ as *const c_void,
+    size,
+  );
+  if ok == 0 {
+    eprintln!("[pebble-backend] job limits rejected, falling back to taskkill");
+    CloseHandle(job);
+    return 0;
+  }
+
+  SIDECAR_JOB.store(job, Ordering::SeqCst);
+  job
+}
+
+/// Puts a freshly spawned process into the app's job so it cannot outlive it.
+/// The PyInstaller bootloader's own child inherits membership, so the pair dies
+/// together.
+unsafe fn adopt_into_job(job: isize, child: &Child) {
+  if job == 0 { return; }
+  if AssignProcessToJobObject(job, child.as_raw_handle() as isize) == 0 {
+    eprintln!("[pebble-backend] AssignProcessToJobObject failed, relying on taskkill");
+  }
 }
 
 #[cfg_attr(mobile, tauri::mobile_entry_point)]
@@ -118,15 +239,24 @@ pub fn run() {
         .join(exe_name);
 
       if sidecar.exists() {
+        // Clear a copy left over from an earlier run before spawning: it holds
+        // the executable this instance is about to run, and it is also what an
+        // installer would trip over later.
+        kill_orphan_backends();
+        let job = unsafe { create_sidecar_job() };
+
         let mut cmd = StdCommand::new(sidecar);
         cmd.stdout(Stdio::null()).stderr(Stdio::null());
         cmd.env("PYTHONUNBUFFERED", "1");
         cmd.creation_flags(CREATE_NO_WINDOW | CREATE_NEW_PROCESS_GROUP);
         match cmd.spawn() {
-          Ok(mut child) => {
+          Ok(child) => {
             let pid = child.id();
-            unsafe { SetPriorityClass(child.as_raw_handle() as isize, HIGH_PRIORITY_CLASS); }
-            unsafe { NtSetInformationProcess(child.as_raw_handle() as isize, ProcessIoPriority, &IoPriorityNormal, 4); }
+            unsafe {
+              SetPriorityClass(child.as_raw_handle() as isize, HIGH_PRIORITY_CLASS);
+              NtSetInformationProcess(child.as_raw_handle() as isize, ProcessIoPriority, &IoPriorityNormal, 4);
+              adopt_into_job(job, &child);
+            }
             eprintln!("[pebble-backend] started (pid: {})", pid);
             // 等 PyInstaller bootloader 衍生出 Python 子进程后再抬一遍
             std::thread::spawn(|| {

@@ -19,6 +19,15 @@
 <script setup lang="ts">
 import { computed, onMounted, ref } from 'vue'
 
+type ToastFn = (title: string, message: string, kind?: string) => void
+
+/** The toast stack belongs to runtime.js and is shared through the window, so
+    the updater reports through that host instead of growing a second one. */
+function toast(title: string, message: string, kind: 'ok' | 'warn' | 'err' = 'ok'): void {
+  const fn = (window as unknown as { __pebbleToast?: ToastFn }).__pebbleToast
+  if (fn) fn(title, message, kind)
+}
+
 /* `check()` returns an Update when the endpoint advertises a newer semver, and
    null when this build is current — so the button has three resting states:
    quiet, "update available", and "restart to finish". The download phase is the
@@ -70,12 +79,16 @@ async function checkNow(silent = false): Promise<void> {
     if (!silent) {
       phase.value = 'current'
       rest()
+      /* A manual click has to answer: the button returns to its resting shape in
+         a few seconds, which reads as "nothing happened" without this. */
+      toast('No update', "You're on the latest version.")
     }
   } catch (err) {
     console.warn('[Updater] check failed', err)
     if (!silent) {
       phase.value = 'error'
       rest()
+      toast('Update check failed', 'Could not reach the release feed.', 'warn')
     }
   }
 }

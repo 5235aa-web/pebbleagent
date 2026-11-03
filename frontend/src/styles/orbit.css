@@ -4072,13 +4072,17 @@ a { color: inherit; text-decoration: none; }
 .ctx-lr .v { font-family: var(--font-mono); font-size: 9.5px; color: var(--ink-2); }
 
 .section-h .sh-note { margin-left: auto; font-size: 8px; letter-spacing: .06em; color: var(--faint); text-transform: none; }
+/* The one action in a section header that a reader has to find and hit, so it
+   sits two steps above the 8.5px header it lives in and carries its own weight.
+   Padding grows with it; at 10.5px the old 1px let the border clip the caps. */
 .sh-act {
   font-family: var(--font-sans);
-  font-size: 8.5px;
+  font-size: 10.5px;
+  font-weight: 700;
   letter-spacing: 0;
   text-transform: none;
   color: var(--accent);
-  padding: 1px 6px;
+  padding: 2px 7px;
   border-radius: 4px;
   border: 1px solid var(--line);
   background: var(--surface);
@@ -4174,6 +4178,12 @@ a { color: inherit; text-decoration: none; }
   color: var(--faint);
 }
 .section-h::after { content: ""; flex: 1 1 auto; height: 1px; background: var(--line-2); }
+
+/* Explanation line under a header. The `::after` hairline already occupies the
+   rest of the header row, so this drops to its own line instead of competing
+   for it; the negative top margin cancels part of the header's 7px bottom so
+   the two read as one unit. */
+.section-sub { margin: -3px 0 7px; font-size: 9px; line-height: 1.5; color: var(--faint); }
 
 .skill-chip {
   display: inline-flex;

@@ -972,3 +972,47 @@
 - Not verified: `@tauri-apps/api`, `@tauri-apps/plugin-updater` and `@tauri-apps/plugin-process` are declared in
   `package.json` but not installed, so `vue-tsc` reports exactly two "cannot find module" errors and nothing else; the
   Rust build and a real update cycle were not run. `frontend/dist` is not rebuilt
+
+## Update button answers a manual check
+
+- `UpdateButton.vue` reports through the shared toast host (`window.__pebbleToast`, owned by `runtime.js`) instead of
+  staying silent: a manual check with nothing newer prints `No update` / `You're on the latest version.`, and a failed
+  fetch prints `Update check failed` / `Could not reach the release feed.` as a warning. The silent check on mount stays
+  silent so a launch never produces a toast
+- `vue-tsc --noEmit` passes. `frontend/dist` is not rebuilt; the running 1.0.2 still ships the silent version
+
+## Token shares keep two decimals
+
+- `UsagePane.vue` printed the `input tokens` / `output tokens` boxes as whole percent, so a session with 79.1M input
+  against 350.6k output read `100%` and `0%` — the output share vanished even though it was real. Both figures now
+  round to two decimals and are computed independently instead of deriving output from `100 - input`, which only
+  passed the input's rounding error along
+- `vue-tsc --noEmit` passes
+
+## `Accept all` legible at section-header size
+
+- `.sh-act` (used only by the `Accept all` control in the `FilesPane` section header) was 8.5px — the same size as
+  the uppercase header it sits in, so the one mandatory action read as another label. It is now 10.5px at weight
+  700, and its padding grew from `1px 6px` to `2px 7px` so the border no longer touches the caps
+- Checked by parsing `src/styles/orbit.css` with the project's own postcss: 1721 top-level nodes, `.sh-act` matches
+  the new block
+
+## `whitelisted paths` explains itself
+
+- The section header in `FilesPane.vue` named the boundary without saying what it was for. A `.section-sub` line
+  now sits under it: `up to 5 paths the LLM can access`
+- The ceiling in that sentence is the backend's, not a UI invention: `path_whitelist.save` rejects more than five
+  with `maximum 5 paths allowed`, and `addWhitelistPath` refuses to add a sixth. `.section-sub` goes on its own
+  line because `.section-h::after` already runs a hairline across the rest of the header row
+- Verified by parsing `orbit.css` with postcss (1723 top-level nodes, `.section-sub` present) and `vue-tsc --noEmit`
+
+## Version badge follows the build
+
+- `OrbitalBar.vue` printed a literal `v1.0`; it now renders `v{{ appVersion }}`, where `appVersion` is
+  `__APP_VERSION__` — defined by `vite.config.ts` from `version` in `src-tauri/tauri.conf.json`, declared in
+  `src/vite-env.d.ts`. `npm run release -- 1.0.3` rewrites that file before building, so the badge cannot disagree
+  with the installer it ships in
+- `package.json` was left alone as a source: it still reads 0.1.0 and nothing keeps it in step. Reading the Tauri
+  config removes the second place a version could go stale
+- Verified: the same path resolution prints `v1.0.2` against the current config, and `vue-tsc --noEmit` passes with
+  the new global declared. No rebuild of `frontend/dist`

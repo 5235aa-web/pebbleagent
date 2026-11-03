@@ -5,7 +5,7 @@
   <header class="orbital" data-tauri-drag-region>
     <div class="brand" data-tauri-drag-region>
       <div class="brand-mark" data-tauri-drag-region>PEBBLE<em>—</em>AGENT</div>
-      <span class="brand-ver" data-tauri-drag-region>v1.0</span>
+      <span class="brand-ver" data-tauri-drag-region>v{{ appVersion }}</span>
     </div>
     <div class="bar-div" data-tauri-drag-region></div>
 
@@ -25,4 +25,7 @@ import ProjectSwitcher from './ProjectSwitcher.vue'
 import SessionSwitcher from './SessionSwitcher.vue'
 import IslandWrap from './IslandWrap.vue'
 import BarActions from './BarActions.vue'
+
+// Replaced at build time with the version from tauri.conf.json.
+const appVersion = __APP_VERSION__
 </script>

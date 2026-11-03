@@ -3,6 +3,14 @@ import vue from '@vitejs/plugin-vue'
 import { readFileSync } from 'node:fs'
 import { homedir } from 'node:os'
 import { join } from 'node:path'
+import { fileURLToPath } from 'node:url'
+
+// The version badge must name the build it was compiled into, so the number is
+// read from the one file the release script rewrites and the updater compares
+// against. package.json drifts (it still says 0.1.0); tauri.conf.json cannot,
+// because `npm run release -- 1.0.3` writes it before the build starts.
+const tauriConfPath = fileURLToPath(new URL('./src-tauri/tauri.conf.json', import.meta.url))
+const appVersion: string = JSON.parse(readFileSync(tauriConfPath, 'utf8')).version
 
 // whitespace: 'preserve' keeps the hand-written HTML spacing intact.
 // The prototype relies on newline-generated gaps between inline elements;
@@ -37,6 +45,9 @@ function injectGatewayToken(): Plugin {
 }
 
 export default defineConfig({
+  define: {
+    __APP_VERSION__: JSON.stringify(appVersion)
+  },
   plugins: [
     vue({
       template: {

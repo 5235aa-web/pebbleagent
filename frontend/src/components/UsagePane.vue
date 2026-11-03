@@ -108,8 +108,13 @@ const usage = usageState
    unreported window leaves it empty instead. */
 const ringOffset = computed(() => (usage.contextLimit ? 100 - usage.contextPct : 100))
 const total = computed(() => usage.tokensIn + usage.tokensOut || 1)
-const inShare = computed(() => Math.round((usage.tokensIn / total.value) * 100))
-const outShare = computed(() => 100 - inShare.value)
+
+/* Two decimals, each rounded on its own. Whole percent turned a 79.1M/350.6k
+   split into "100% / 0%", which reads as if nothing was ever written back.
+   Rounding independently keeps each figure honest about its own share; deriving
+   one from 100 minus the other just hands it the other's rounding error. */
+const inShare = computed(() => ((usage.tokensIn / total.value) * 100).toFixed(2))
+const outShare = computed(() => ((usage.tokensOut / total.value) * 100).toFixed(2))
 
 /* Session-wide cache hit rate. `tokensIn` is the full input the gateway bills
    (cached + uncached, see `SUM(input_tokens + cache_hit_tokens)`), so the hit

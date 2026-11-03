@@ -1,7 +1,7 @@
 {
   "$schema": "../node_modules/@tauri-apps/cli/config.schema.json",
   "productName": "pebble-orbit",
-  "version": "1.0.2",
+  "version": "1.0.4",
   "identifier": "com.pebble.agent.orbit",
   "build": {
     "frontendDist": "../dist",
@@ -47,6 +47,11 @@
       "nsis"
     ],
     "createUpdaterArtifacts": true,
+    "windows": {
+      "nsis": {
+        "installerHooks": "nsis/hooks.nsh"
+      }
+    },
     "resources": {
       "binaries/*": "./"
     },

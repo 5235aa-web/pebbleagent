@@ -34,6 +34,8 @@ frontend/.stylelintcache
 frontend/.tsc.log
 frontend/build*.log
 frontend/.verify-scroll/
+# Throwaway build output from verification runs (`vite build --outDir`).
+frontend/.verify-dist/
 
 # ---------- Frontend local env ----------
 frontend/.env.local
