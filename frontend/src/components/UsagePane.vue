@@ -10,7 +10,13 @@
               <div class="lbl"><b>{{ usage.contextLimit ? usage.contextPct + '%' : '—' }}</b><span>context</span></div>
             </div>
             <div class="usage-info">
-              <div class="usage-big">{{ fmtCost(usage.costToday, usage.currency) }} <small>today</small></div>
+              <div class="usage-top">
+                <div class="usage-big">{{ fmtMoney(usage.costToday) }} <small>today</small></div>
+                <div class="cur-switch">
+                  <button :class="{ on: usage.displayCurrency === 'cny' }" @click="setDisplayCurrency('cny')">CNY</button>
+                  <button :class="{ on: usage.displayCurrency === 'usd' }" @click="setDisplayCurrency('usd')">USD</button>
+                </div>
+              </div>
               <div class="usage-sub">{{ usage.tokensIn.toLocaleString() }} in / {{ usage.tokensOut.toLocaleString() }} out · {{ usage.calls }} calls</div>
               <div class="usage-tag">
                 <svg width="8" height="8" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="3"><polyline points="20 6 9 17 4 12"/></svg>
@@ -24,7 +30,15 @@
             <div class="stat-box"><div class="k">cache hit · session</div><div class="v">{{ fmtTokens(usage.cacheHit) }} <small>· {{ cacheRate }}% of input</small></div></div>
             <div class="stat-box"><div class="k">output tokens</div><div class="v">{{ fmtTokens(usage.tokensOut) }} <small>· {{ outShare }}%</small></div></div>
             <div class="stat-box"><div class="k">live rate</div><div class="v">{{ liveRate }} <small>tok/s</small></div></div>
-            <div class="stat-box"><div class="k">session cost</div><div class="v">{{ fmtCost(usage.sessionCost, usage.currency) }}</div></div>
+          </div>
+
+          <!-- Money is one quantity measured over four windows, so the four sit
+               in a row and can be compared without moving the eye. -->
+          <div class="cost-strip">
+            <div class="cost-cell"><div class="k">session</div><div class="v">{{ fmtMoney(usage.sessionCost) }}</div></div>
+            <div class="cost-cell is-today"><div class="k">today</div><div class="v">{{ fmtMoney(usage.costToday) }}</div></div>
+            <div class="cost-cell"><div class="k">7 days</div><div class="v">{{ fmtMoney(usage.cost7d) }}</div></div>
+            <div class="cost-cell"><div class="k">30 days</div><div class="v">{{ fmtMoney(usage.cost30d) }}</div></div>
           </div>
 
           <div class="section-h">call history</div>
@@ -32,11 +46,11 @@
             <span class="bill-dot" :style="row.tint ? 'background:' + row.tint : ''"></span>
             <span class="bill-model">{{ row.model }}</span>
             <span class="bill-tok">{{ fmtTokens(row.tokensIn) }} / {{ fmtTokens(row.tokensOut) }}</span>
-            <span class="bill-cost">{{ fmtCost(row.cost, usage.currency) }}</span>
+            <span class="bill-cost">{{ fmtMoney(row.cost) }}</span>
           </div>
 
           <div class="section-h">pricing · per 1M tokens
-            <span class="sh-note" id="pxCur">usd</span>
+            <span class="sh-note" id="pxCur">{{ pricingData.default_currency.toUpperCase() }}</span>
           </div>
 
           <div class="px-bar">
@@ -82,7 +96,7 @@
 
 <script setup lang="ts">
 import { computed, onMounted, ref } from 'vue'
-import { usage as usageState, llm, fmtTokens, fmtCost } from '../data/panels'
+import { usage as usageState, llm, fmtTokens, fmtMoney, setDisplayCurrency } from '../data/panels'
 import { streamState } from '../data/stream'
 import { formatRate, getConfig, savePricing, refreshLlm } from '../data/wire'
 
@@ -154,7 +168,7 @@ type PricingEntry = {
 
 const pricingData = ref<{ models: Record<string, PricingEntry>; default_currency: string }>({
   models: {},
-  default_currency: 'usd'
+  default_currency: 'cny'
 })
 const pricingPeriod = ref<'base' | 'peak' | 'off'>('base')
 const pricingSaving = ref(false)
@@ -211,7 +225,7 @@ async function loadPricing(): Promise<void> {
   pricingRetries = 0
   pricingData.value = {
     models: payload.models,
-    default_currency: String(payload.default_currency || 'usd')
+    default_currency: String(payload.default_currency || 'cny')
   }
 }
 

@@ -1,9 +1,23 @@
 /* Dock pane state.
 
-   Each pane keeps the prototype's numbers as its defaults so the surface looks
-   unchanged before the gateway answers; the RPC fills the same fields in. */
+   No prototype numbers: every field starts at zero, so an unmeasured window
+   reads as nothing rather than as a plausible-looking bill. The RPCs fill the
+   same fields in. */
 
 import { reactive } from 'vue'
+
+/** The price table is kept in one currency (CNY, see model_pricing.json). The
+    display switch never converts what is stored — it only changes how an amount
+    is read — so a wrong rate can never corrupt a bill. It lives here so a stale
+    figure has exactly one place to fix. */
+export const CNY_PER_USD = 7.2
+
+function storedDisplayCurrency(): 'cny' | 'usd' {
+  try {
+    if (typeof window === 'undefined') return 'cny'
+    return window.localStorage.getItem('pebble.displayCurrency') === 'usd' ? 'usd' : 'cny'
+  } catch { return 'cny' }
+}
 
 export interface BillRow {
   model: string
@@ -33,21 +47,19 @@ export const usage = reactive({
   contextBase: 0,
   contextSkills: 0,
   contextTools: 0,
-  costToday: 1.84,
-  currency: 'usd',
-  tokensIn: 62140,
-  tokensOut: 8206,
+  costToday: 0,
+  /* Rolling windows over the same table, filled by `refreshPanes`. */
+  cost7d: 0,
+  cost30d: 0,
+  currency: 'cny',
+  /* What the reader wants to see, not what the gateway stores. */
+  displayCurrency: storedDisplayCurrency(),
+  tokensIn: 0,
+  tokensOut: 0,
   cacheHit: 0,
-  calls: 7,
-  sessionCost: 0.42,
-  priced: true,
-  tier: 'standard',
-  history: [
-    { model: 'claude-sonnet-4.5', tokensIn: 18400, tokensOut: 2100, cost: 0.284, tint: '' },
-    { model: 'claude-sonnet-4.5', tokensIn: 12900, tokensOut: 1800, cost: 0.197, tint: '' },
-    { model: 'gpt-5.1', tokensIn: 21600, tokensOut: 3400, cost: 0.412, tint: 'var(--gold)' },
-    { model: 'deepseek-v3.2', tokensIn: 9200, tokensOut: 900, cost: 0.021, tint: 'var(--teal)' }
-  ] as BillRow[],
+  calls: 0,
+  sessionCost: 0,
+  history: [] as BillRow[],
   /* Per-model totals straight from `usage.stats.models`, used by the context
      pane's agent snapshot instead of the prototype's fixed counters. */
   models: [] as Array<{ model: string; calls: number; cost: number; tokensIn: number; tokensOut: number }>
@@ -285,8 +297,17 @@ export interface QuickNote {
   text: string
 }
 
+/** A private note. The id is what the editor and the delete button address, so
+    an entry keeps its identity while others around it are added or removed. */
+export interface NotebookEntry {
+  id: string
+  time: string
+  text: string
+}
+
 export const notes = reactive({
   quick: [] as QuickNote[],
+  notebook: [] as NotebookEntry[],
   usernote: '',
   usernoteLoaded: false
 })
@@ -337,7 +358,25 @@ export function fmtTokens(n: number): string {
   return String(n)
 }
 
-export function fmtCost(n: number, currency = 'usd'): string {
+export function fmtCost(n: number, currency = 'cny'): string {
   const sign = currency.toLowerCase() === 'cny' ? '\u00a5' : '$'
   return sign + n.toFixed(n < 0.01 ? 3 : 2)
+}
+
+/** Money as the reader wants to read it. `bookCurrency` is what the gateway
+    recorded, which is CNY for every row today; the switch converts for display
+    only, so the stored table and the stored costs never move. */
+export function fmtMoney(n: number, bookCurrency = usage.currency): string {
+  const target = usage.displayCurrency
+  const from = (bookCurrency || 'cny').toLowerCase()
+  if (from === target) return fmtCost(n, target)
+  const converted =
+    from === 'cny' && target === 'usd' ? n / CNY_PER_USD
+      : from === 'usd' && target === 'cny' ? n * CNY_PER_USD : n
+  return fmtCost(converted, target)
+}
+
+export function setDisplayCurrency(next: 'cny' | 'usd'): void {
+  usage.displayCurrency = next
+  try { window.localStorage.setItem('pebble.displayCurrency', next) } catch { /* private mode */ }
 }

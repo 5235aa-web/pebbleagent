@@ -154,6 +154,17 @@ def handle(ctx, method):
         srv._save_quick_notes(notes)
         return {"id": rid, "result": {"success": True, "notes": notes}}
 
+    if method == "notebook.read":
+        return {"id": rid, "result": {"entries": srv._load_notebook()}}
+
+    if method == "notebook.write":
+        entries = params.get("entries", [])
+        if not isinstance(entries, list):
+            entries = []
+        srv._save_notebook(entries)
+        # 回读一次，前端拿到的是清理过的表（空条目已丢弃、缺 id 已补）
+        return {"id": rid, "result": {"success": True, "entries": srv._load_notebook()}}
+
     # ==================== 文件变更面板 (File Changes) ====================
 
     return None

@@ -171,7 +171,7 @@ watch(
 import { permissions, plan, sessions, sessionState, projects, setCatalog, catalog, bucketFor, type Session, type SessionGroup } from './store'
 import { usage, files, mcp, ledger, context, llm, notes, pairing, search, image, type BillRow, type ClarifyQuestion, type ClarifyAnswer } from './panels'
 import type { StreamItem } from './stream'
-import { renderUserBubble, nowClock, clockOf, escapeHtml, type AttachmentView, type ToolCallView, type ToolState } from './render'
+import { renderUserBubble, nowClock, nowStamp, clockOf, escapeHtml, type AttachmentView, type ToolCallView, type ToolState } from './render'
 import { markPreviewChanged, mergePreviewComments, clearComments } from './preview'
 import { fileSize as byteLabel, type WireAttachment } from './fileDrop'
 import { nextTick, reactive, watch } from 'vue'
@@ -1544,7 +1544,10 @@ function syncUsage(p: Record<string, unknown>): void {
       usage.contextPct = Math.max(0, Math.min(100, Math.round((tin / limit) * 100)))
     }
   }
-  if (typeof p.period === 'string') usage.currency = p.period.toLowerCase() === 'cny' ? 'cny' : 'usd'
+  /* `period` is the billing window (peak / offpeak), never a currency. Comparing
+     it against 'cny' failed for every time-of-day model and flipped the whole
+     pane to `$`, so it is no longer read here: `usage.stats` is the only
+     authority on the currency the table is kept in. */
 
   const call = p.this_call as Record<string, unknown> | undefined
   if (!call) return
@@ -1630,9 +1633,10 @@ export function updateMemory(id: string, patch: { statement?: string; confidence
 
 /* ---------------- notes ---------------- */
 
-/** The scratchpad is session-only by design (the gateway stores one list), and
-    the user note is the standing instruction prepended to every turn. Both are
-    read together because the notes pane shows the two blocks side by side. */
+/** The scratchpad is session-only by design (the gateway stores one list), the
+    user note is the standing instruction prepended to every turn, and the
+    notebook is the reader's own journal — global, never sent anywhere. All
+    three are read together because the notes pane shows them stacked. */
 export async function refreshNotes(): Promise<void> {
   if (!gateway.connected) return
   try {
@@ -1651,6 +1655,19 @@ export async function refreshNotes(): Promise<void> {
       notes.usernoteLoaded = true
     }
   } catch { /* keep the prototype note */ }
+
+  try {
+    const res = await gateway.request<{ entries?: unknown }>('notebook.read', {})
+    const list = Array.isArray(res?.entries) ? res.entries : []
+    notes.notebook = list.map((e, i) => {
+      const row = (e ?? {}) as Record<string, unknown>
+      return {
+        id: String(row.id ?? '') || 'entry-' + i,
+        time: String(row.time ?? ''),
+        text: String(row.text ?? '')
+      }
+    })
+  } catch { /* keep the prototype journal */ }
 }
 
 function pushQuickNotes(): void {
@@ -1671,6 +1688,46 @@ export function removeQuickNote(index: number): void {
   if (!gateway.connected) return
   notes.quick = notes.quick.filter((_, i) => i !== index)
   pushQuickNotes()
+}
+
+/* The notebook is a journal, not a scratchpad: it is global, it survives the
+   session, and nothing in it ever reaches the composer or the prompt. */
+
+function pushNotebook(): void {
+  void gateway.request('notebook.write', {
+    entries: notes.notebook.map(e => ({ id: e.id, time: e.time, text: e.text }))
+  }).catch(() => { void refreshNotes() })
+}
+
+/** Opens a draft with the current stamp already on it. The row stays local
+    until it has text, so an entry opened and abandoned leaves nothing behind. */
+export function addNotebookEntry(): string {
+  const id = Date.now().toString(36) + Math.random().toString(36).slice(2, 7)
+  notes.notebook = [{ id, time: nowStamp(), text: '' }, ...notes.notebook]
+  return id
+}
+
+/** Writes a draft back; an entry emptied out is dropped instead of stored. */
+export function saveNotebookEntry(id: string, text: string): void {
+  const entry = notes.notebook.find(e => e.id === id)
+  if (!entry) return
+  const body = text.trim()
+  if (!body) {
+    discardNotebookEntry(id)
+    return
+  }
+  entry.text = body
+  if (gateway.connected) pushNotebook()
+}
+
+export function removeNotebookEntry(id: string): void {
+  notes.notebook = notes.notebook.filter(e => e.id !== id)
+  if (gateway.connected) pushNotebook()
+}
+
+/** Drops a draft without writing: the file never held it in the first place. */
+function discardNotebookEntry(id: string): void {
+  notes.notebook = notes.notebook.filter(e => e.id !== id)
 }
 
 /** Appends a quick note to the composer without touching what is already typed.
@@ -2115,8 +2172,29 @@ export async function refreshPanes(): Promise<void> {
 
   try {
     if (!sid) throw new Error('no session attached')
-    const st = await gateway.request<Record<string, unknown>>('usage.stats', { range: 'session', session_id: sid })
-    if (typeof st.total_cost === 'number') usage.costToday = st.total_cost
+    /* Four windows, one request each. `session` is the only one that can fail for
+       lack of a session id, so it is checked first; a range the backend does not
+       know leaves its figure alone instead of zeroing it. */
+    const [sessionStats, todayStats, weekStats, monthStats] = await Promise.allSettled([
+      gateway.request<Record<string, unknown>>('usage.stats', { range: 'session', session_id: sid }),
+      gateway.request<Record<string, unknown>>('usage.stats', { range: 'today' }),
+      gateway.request<Record<string, unknown>>('usage.stats', { range: '7d' }),
+      gateway.request<Record<string, unknown>>('usage.stats', { range: '30d' })
+    ])
+    if (sessionStats.status !== 'fulfilled') throw new Error('session usage unavailable')
+    const st = sessionStats.value
+    const costOf = (r: PromiseSettledResult<Record<string, unknown>>): number | null =>
+      r.status === 'fulfilled' && typeof r.value.total_cost === 'number' ? r.value.total_cost : null
+    /* The session's own total and the whole database's day are different
+       questions; they used to share one field, so the hero read "today" over the
+       session's number. */
+    if (typeof st.total_cost === 'number') usage.sessionCost = st.total_cost
+    const todayCost = costOf(todayStats)
+    if (todayCost !== null) usage.costToday = todayCost
+    const weekCost = costOf(weekStats)
+    if (weekCost !== null) usage.cost7d = weekCost
+    const monthCost = costOf(monthStats)
+    if (monthCost !== null) usage.cost30d = monthCost
     if (typeof st.total_input_tokens === 'number') usage.tokensIn = st.total_input_tokens
     if (typeof st.total_output_tokens === 'number') usage.tokensOut = st.total_output_tokens
     if (typeof st.total_cache_hit_tokens === 'number') usage.cacheHit = st.total_cache_hit_tokens
@@ -2172,7 +2250,7 @@ export async function refreshPanes(): Promise<void> {
         tokensOut: Number(m.total_output_tokens ?? 0)
       }))
     }
-  } catch { /* keep prototype numbers */ }
+  } catch { /* leave the last known figures alone */ }
 
   await refreshFileChanges()
 
@@ -2710,7 +2788,7 @@ export function setConfig(key: string, value: unknown): Promise<boolean> {
 /* The gateway stores the whole table with its per-period blocks, so the caller
    sends the entries back in the shape they arrived in rather than a flattened
    row list; flattening would drop `pricing_peak` and `pricing_tier_high`. */
-export function savePricing(models: Record<string, unknown>, currency = 'usd'): Promise<boolean> {
+export function savePricing(models: Record<string, unknown>, currency = 'cny'): Promise<boolean> {
   if (!gateway.connected) return Promise.resolve(false)
   return gateway.request('pricing.save', { models, default_currency: currency }).then(() => true).catch(() => false)
 }

@@ -25,3 +25,7 @@ log = "0.4"
 tauri = { version = "2.11.3", features = [] }
 tauri-plugin-log = "2"
 tauri-plugin-shell = "2"
+# In-app updates: the updater reads latest.json from GitHub Releases, process
+# supplies the relaunch the installer needs afterwards.
+tauri-plugin-updater = "2"
+tauri-plugin-process = "2"

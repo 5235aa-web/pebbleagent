@@ -904,3 +904,71 @@
   `deepseek-v4-pro` resolves, and no flat-rate model carries a threshold; `python -m py_compile gateway/rpc/model.py`
   and `vue-tsc --noEmit` pass. `frontend/dist` is not rebuilt
 - 2026-11-03
+
+## Notes captions describe the effect, not the storage
+
+- The quick-notes caption changed from `scratchpad · this session only` to `click to insert into your message`: the
+  rows are snippets that append their text to the composer, they are not a throwaway scratchpad
+- The user-note caption gained `· will send to the LLM` after `prepended to every turn`, so the pane says where the
+  standing text ends up
+- `vue-tsc --noEmit` passes. `frontend/dist` is not rebuilt
+
+## Personal notebook, and a readable user-note editor
+
+- The notes pane has a third block, `03 Personal notebook`, backed by `notebook.json` under `_DATA_DIR`: global, private,
+  never sent to the LLM. The RPC surface is `notebook.read` / `notebook.write`; the file is written through a temp file
+  plus `os.replace`, empty-text rows are dropped on both sides, and a corrupt file degrades to an empty list
+- An entry keeps an id, a `YYYY-MM-DD HH:MM` stamp and its text. `add thought` opens a draft in place, any entry can be
+  reopened for editing or deleted, and a draft that is never saved leaves nothing in the file
+- The user-note editor stopped inheriting `.lm-ta` (8.5px, sized for a provider row) and uses `.nb-ta` at 12.5px with
+  1.75 leading, so editing the standing note is readable
+- Verified: `notebook.write` → `notebook.read` round trip under an isolated `PEBBLE_HOME` (empty and non-dict rows
+  dropped, missing id backfilled, multi-line text kept, no `.tmp` left behind, corrupt file → `[]`, clear → empty file);
+  `vue-tsc --noEmit` and `ruff check` pass. `frontend/dist` is not rebuilt
+
+## Usage money follows the gateway, not the prototype
+
+- `panels.ts` no longer seeds any usage field: `costToday` 1.84, `sessionCost` 0.42, `tokensIn` 62140, `tokensOut` 8206,
+  `calls` 7 and the four fake `history` rows all start at zero / empty, and the unused `priced` / `tier` copies are gone
+- `refreshPanes` now requests four `usage.stats` ranges in one `Promise.allSettled` call: `session` writes
+  `usage.sessionCost`, `today` / `7d` / `30d` write `costToday` / `cost7d` / `cost30d`. The hero's "today" is the whole
+  database's day (every project and session, single `agent_chat.db`) instead of the session's own total
+- The usage pane draws money as a four-cell strip — session / today / 7 days / 30 days — with today on the accent edge;
+  the old single `session cost` box is gone and the token boxes keep their 2-column grid
+- `IslandWrap` renders money through `fmtCost`, so the symbol follows `usage.currency`; it printed a hardcoded `$` over
+  CNY figures
+- Verified: `usage.stats` for today / 7d / 30d against the live database returns 0.0 / 0.024124 / 30.773367 over
+  358 / 5791 / 11676 calls, session 146 returns 0.0 with currency CNY, and `vue-tsc --noEmit` passes.
+  `frontend/dist` is not rebuilt
+
+## Display currency, and three wrong-dollar signs
+
+- `fmtMoney(n, bookCurrency)` is now the only money formatter in the UI: `agent_chat_costs.currency` is CNY for every
+  row and the price table is CNY, so the CNY/USD switch divides or multiplies by `CNY_PER_USD` (7.2) for display and
+  leaves the stored figures alone. It defaults to CNY and persists in `localStorage` under `pebble.displayCurrency`
+- The switch sits beside the hero amount in the usage pane and rewrites the hero, the four cost cells and the call
+  history at once; `IslandWrap` reads the same formatter. The pricing editor stays on the table's own currency, because
+  an input that changes meaning with a toggle is how a price ends up off by the exchange rate
+- `syncUsage` compared `period` (`peak` / `offpeak`) against `'cny'` to decide the currency, so any time-of-day model
+  flipped the whole pane to `$`. The line is gone; `usage.stats` is the only currency authority
+- The pricing header printed a hardcoded `usd` over a CNY table and `savePricing` defaulted to `'usd'`; both now read
+  the real `default_currency` (CNY)
+- Verified with a node run over `panels.ts`: 0 / 0.024124 / 30.773367 render as `¥0.000` / `¥0.02` / `¥30.77` and as
+  `$0.000` / `$0.003` / `$4.27`, and a USD-booked amount converts back (`$1.00` → `¥7.20`); `vue-tsc --noEmit` passes.
+  `frontend/dist` is not rebuilt
+
+## In-app updates from GitHub Releases (Windows)
+
+- The updater is wired end to end for Windows: `tauri.conf.json` carries an `updater` block (feed
+  `releases/latest/download/latest.json`, minisign pubkey) plus `bundle.createUpdaterArtifacts`, the bundle targets NSIS
+  only, `lib.rs` registers `tauri-plugin-updater` and `tauri-plugin-process`, and `capabilities/default.json` grants
+  `updater:default` / `process:allow-restart`
+- `UpdateButton.vue` sits left of the command palette and exists only inside the packaged shell: silent check on mount,
+  accent dot once a version is advertised, pulsing glyph with a percentage tip while downloading, then relaunch
+- `npm run release` runs `scripts/release.mjs`, which signs with `TAURI_SIGNING_PRIVATE_KEY` (falling back to the
+  gitignored `frontend/.tauri-keys/pebble.key`), builds, then hands off to `scripts/publish.mjs` — that creates the
+  `v{version}` release, uploads the installer, and writes `latest.json` last so no client reads a feed naming an asset
+  that is not uploaded yet
+- Not verified: `@tauri-apps/api`, `@tauri-apps/plugin-updater` and `@tauri-apps/plugin-process` are declared in
+  `package.json` but not installed, so `vue-tsc` reports exactly two "cannot find module" errors and nothing else; the
+  Rust build and a real update cycle were not run. `frontend/dist` is not rebuilt

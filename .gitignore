@@ -46,6 +46,11 @@ frontend/src-tauri/.cargo/
 frontend/src-tauri/gen/
 frontend/src-tauri/binaries/
 
+# Updater signing keys: the private half signs installers and must never be
+# committed (the repository is public). Only the public key in tauri.conf.json
+# belongs in git.
+frontend/.tauri-keys/
+
 # ---------- Design prototypes (never shipped) ----------
 # design-preview/: local HTML mockups; referenced only by comments and
 # prototype demo data, never loaded at runtime.

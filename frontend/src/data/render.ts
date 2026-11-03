@@ -276,6 +276,14 @@ export function nowClock(): string {
   return h + ':' + m
 }
 
+/** A notebook entry outlives the session, so its stamp carries the day too:
+    `YYYY-MM-DD HH:MM`. Minutes are the finest grain the reader needs. */
+export function nowStamp(): string {
+  const d = new Date()
+  const p = (n: number) => String(n).padStart(2, '0')
+  return `${d.getFullYear()}-${p(d.getMonth() + 1)}-${p(d.getDate())} ${p(d.getHours())}:${p(d.getMinutes())}`
+}
+
 /* History carries `created_at` as an epoch float (`messages.created_at` is REAL
    in the gateway store), while live rows carry a clock string. Slicing the
    float as if it were `YYYY-MM-DD HH:MM:SS` returns the fractional digits, so

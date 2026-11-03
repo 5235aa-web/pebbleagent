@@ -34,7 +34,7 @@
 <script setup lang="ts">
 import { computed, onBeforeUnmount, onMounted, ref } from 'vue'
 import { streamState } from '../data/stream'
-import { usage, context, llm } from '../data/panels'
+import { usage, context, llm, fmtMoney } from '../data/panels'
 import { plan, activeSession } from '../data/store'
 import { runTiming, formatRate } from '../data/wire'
 
@@ -172,9 +172,11 @@ const contextLabel = computed(() => {
   if (!used) return ctxPct.value + '% of window'
   return ctxLimit.value ? num(used) + ' / ' + num(ctxLimit.value) : num(used) + ' tokens'
 })
-const costLabel = computed(() => '$' + (usage.costToday ?? 0).toFixed(2))
+/* Money follows the reader's display currency; the gateway's stored figures stay
+   in the price table's own currency. */
+const costLabel = computed(() => fmtMoney(usage.costToday ?? 0))
 const costDetail = computed(
-  () => '$' + (usage.sessionCost ?? 0).toFixed(3) + ' session · ' + usage.calls + ' calls'
+  () => fmtMoney(usage.sessionCost ?? 0) + ' session · ' + usage.calls + ' calls'
 )
 /* No constant rates: `formatRate` owns the measurement (backend token counts
    over generation time only), so this readout and the usage pane can never

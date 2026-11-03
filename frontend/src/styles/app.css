@@ -600,3 +600,31 @@ input.attach-input[type="file"] {
   max-width: 100%;
   height: auto;
 }
+/* ---- update button ----
+
+   Sits beside the command palette. Quiet by default; when the release feed
+   advertises a newer build it turns accent and grows a dot, and the download
+   phase pulses the glyph so a long install never looks frozen. */
+
+.up-btn { position: relative; }
+.up-btn.is-live { color: var(--accent); }
+/* A real element, not ::after: `.tip::after` is the tooltip bubble and a second
+   rule on the same pseudo-element would replace it. */
+.up-dot {
+  position: absolute;
+  top: 4px;
+  right: 4px;
+  width: 4px;
+  height: 4px;
+  border-radius: 50%;
+  background: var(--accent);
+  box-shadow: 0 0 0 2px var(--accent-soft-2);
+  pointer-events: none;
+}
+.up-btn.is-busy svg { animation: up-pulse 1.15s var(--ease) infinite; }
+.up-btn:disabled { cursor: default; }
+
+@keyframes up-pulse {
+  0%, 100% { opacity: 1; }
+  50% { opacity: .32; }
+}

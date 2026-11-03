@@ -1,5 +1,6 @@
 <template>
     <div class="bar-actions">
+      <UpdateButton />
       <button class="icon-btn tip" data-tip="Command palette  ⌘K" data-cmd>
         <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.7"><circle cx="11" cy="11" r="7.5"/><line x1="21" y1="21" x2="16.5" y2="16.5"/></svg>
       </button>
@@ -44,4 +45,5 @@
 </template>
 
 <script setup lang="ts">
+import UpdateButton from './UpdateButton.vue'
 </script>

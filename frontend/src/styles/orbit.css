@@ -3493,7 +3493,7 @@ a { color: inherit; text-decoration: none; }
 }
 .nb-title small {
   font-family: var(--font-mono);
-  font-size: 8px;
+  font-size: 9px;
   font-weight: 400;
   color: var(--faint);
 }
@@ -3571,6 +3571,165 @@ a { color: inherit; text-decoration: none; }
   letter-spacing: .08em;
 }
 .section-h .hint { margin-left: auto; text-transform: none; letter-spacing: .02em; font-size: 8.5px; opacity: .75; }
+
+/* ---- user-note editor ----
+
+   The user note inherited `.lm-ta`, an 8.5px inline field sized for a provider
+   row, which made a six-row editor unreadable. It gets its own measure at
+   reading size, matching what the agent note already does in `app.css`. */
+
+.standing-card .nb-ta {
+  display: block;
+  width: 100%;
+  margin-top: 2px;
+  min-height: 128px;
+  padding: 10px 12px;
+  border-radius: 8px;
+  border: 1px solid var(--line-strong);
+  background: var(--surface-2);
+  font-family: var(--font-sans);
+  font-size: 12.5px;
+  line-height: 1.75;
+  color: var(--ink);
+  resize: vertical;
+}
+.standing-card .nb-ta:focus { outline: none; border-color: var(--accent); box-shadow: 0 0 0 3px var(--accent-soft-2); }
+.standing-card .nb-ta::placeholder { color: var(--faint); }
+
+/* ---- personal notebook ----
+
+   The third block is deliberately not a copy of the two above it. Quick notes
+   are clickable rows, the user note is one standing card, so the notebook is a
+   journal: entries hang off a hairline spine whose node lights while that entry
+   is open, the stamp reads like a log line, and the body is set in reading type
+   rather than the 8.5px labels the other blocks carry. */
+
+.pnb-add {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  height: 21px;
+  padding: 0 9px;
+  border-radius: 999px;
+  border: 1px solid var(--line);
+  background: var(--surface);
+  font-size: 8.5px;
+  font-weight: 700;
+  letter-spacing: .03em;
+  color: var(--ink-2);
+  transition: border-color .18s var(--ease), color .18s var(--ease), background .18s var(--ease);
+}
+.pnb-add:hover { border-color: var(--accent); color: var(--accent); background: var(--accent-soft-2); }
+.pnb-add svg { display: block; }
+
+.pnb-rail { position: relative; padding-left: 16px; }
+.pnb-rail::before {
+  content: '';
+  position: absolute;
+  left: 3px;
+  top: 9px;
+  bottom: 5px;
+  width: 1px;
+  background: linear-gradient(to bottom, var(--line-strong), var(--line) 55%, transparent);
+}
+.pnb-card { position: relative; padding: 1px 0 13px; }
+.pnb-card + .pnb-card { border-top: 1px solid var(--line); padding-top: 12px; }
+.pnb-card::before {
+  content: '';
+  position: absolute;
+  left: -15.5px;
+  top: 7px;
+  width: 6px;
+  height: 6px;
+  border-radius: 50%;
+  background: var(--line-strong);
+  transition: background .2s var(--ease), box-shadow .2s var(--ease);
+}
+.pnb-card:hover::before,
+.pnb-card.is-editing::before {
+  background: var(--accent);
+  box-shadow: 0 0 0 3px var(--accent-soft-2);
+}
+
+.pnb-meta { display: flex; align-items: center; gap: 8px; min-height: 18px; margin-bottom: 3px; }
+.pnb-time { font-family: var(--font-mono); font-size: 8.5px; letter-spacing: .07em; color: var(--faint); }
+.pnb-tools { display: flex; gap: 2px; margin-left: auto; opacity: 0; transition: opacity .18s var(--ease); }
+.pnb-card:hover .pnb-tools,
+.pnb-card.is-editing .pnb-tools { opacity: 1; }
+.pnb-ic {
+  display: grid;
+  place-items: center;
+  width: 18px;
+  height: 18px;
+  border-radius: 5px;
+  color: var(--faint);
+  transition: background .18s var(--ease), color .18s var(--ease);
+}
+.pnb-ic:hover { background: var(--surface-3); color: var(--ink); }
+.pnb-ic.pnb-del:hover { color: var(--error); }
+
+.pnb-text {
+  margin: 0;
+  font-size: 12.5px;
+  line-height: 1.72;
+  color: var(--ink);
+  white-space: pre-wrap;
+  overflow-wrap: anywhere;
+}
+
+.pnb-ta {
+  display: block;
+  width: 100%;
+  min-height: 76px;
+  padding: 9px 11px;
+  border-radius: 8px;
+  border: 1px solid var(--line-strong);
+  background: var(--surface-2);
+  font-family: var(--font-sans);
+  font-size: 12.5px;
+  line-height: 1.72;
+  color: var(--ink);
+  resize: vertical;
+}
+.pnb-ta:focus { outline: none; border-color: var(--accent); box-shadow: 0 0 0 3px var(--accent-soft-2); }
+.pnb-ta::placeholder { color: var(--faint); }
+
+.pnb-actions { display: flex; justify-content: flex-end; gap: 6px; margin-top: 6px; }
+.pnb-act {
+  height: 24px;
+  padding: 0 12px;
+  border-radius: 6px;
+  border: 1px solid var(--line);
+  font-size: 9.5px;
+  font-weight: 700;
+  color: var(--ink-2);
+  transition: border-color .18s var(--ease), color .18s var(--ease), background .18s var(--ease);
+}
+.pnb-act:hover { border-color: var(--line-strong); color: var(--ink); }
+.pnb-act.primary { border-color: transparent; background: var(--accent); color: var(--accent-ink); }
+.pnb-act.primary:hover { filter: brightness(1.06); color: var(--accent-ink); }
+
+.pnb-empty {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 6px;
+  padding: 22px 16px;
+  border: 1px dashed var(--line-strong);
+  border-radius: 12px;
+  background:
+    radial-gradient(circle at 50% 0%, var(--accent-soft-2), transparent 72%),
+    var(--surface-2);
+  text-align: center;
+}
+.pnb-empty-mark {
+  font-family: var(--font-mono);
+  font-size: 8px;
+  letter-spacing: .18em;
+  text-transform: uppercase;
+  color: var(--faint);
+}
+.pnb-empty p { margin: 0; max-width: 214px; font-size: 10px; line-height: 1.6; color: var(--faint); }
 
 /* preview pane */
 .preview-shell {
@@ -3771,6 +3930,34 @@ a { color: inherit; text-decoration: none; }
 .px-save { height: 23px; padding: 0 12px; border-radius: 6px; background: var(--accent); color: var(--accent-ink); font-size: 9px; font-weight: 700; }
 
 .usage-info { min-width: 0; flex: 1 1 auto; }
+
+/* ---- display currency ----
+
+   The stored table is CNY; this only changes how the numbers are read, so the
+   switch sits beside the amount it rewrites and nowhere else. */
+
+.usage-top { display: flex; align-items: flex-start; justify-content: space-between; gap: 8px; }
+.cur-switch {
+  display: flex;
+  flex: 0 0 auto;
+  padding: 2px;
+  border-radius: 6px;
+  background: var(--surface-2);
+  gap: 1px;
+}
+.cur-switch button {
+  height: 17px;
+  padding: 0 6px;
+  border-radius: 4px;
+  font-family: var(--font-mono);
+  font-size: 7.5px;
+  letter-spacing: .04em;
+  color: var(--muted);
+  transition: background .18s var(--ease), color .18s var(--ease);
+}
+.cur-switch button:hover { color: var(--ink-2); }
+.cur-switch button.on { background: var(--surface); color: var(--accent); box-shadow: var(--shadow-1); }
+
 .usage-big {
   font-family: var(--font-serif);
   font-size: 24px;
@@ -3806,6 +3993,47 @@ a { color: inherit; text-decoration: none; }
 .stat-box .k { font-family: var(--font-mono); font-size: 8px; letter-spacing: .10em; text-transform: uppercase; color: var(--faint); }
 .stat-box .v { font-family: var(--font-mono); font-size: 13px; color: var(--ink); margin-top: 2px; }
 .stat-box .v small { font-size: 8.5px; color: var(--faint); }
+
+/* ---- money across four windows ----
+
+   Session, today, 7 days and 30 days are the same quantity at different spans,
+   so they share one row and can be compared without moving the eye. The cells
+   reuse the stat-box skin at a tighter measure, because four of them now occupy
+   the width one used to. */
+
+.cost-strip {
+  display: grid;
+  grid-template-columns: repeat(4, minmax(0, 1fr));
+  gap: 6px;
+  margin-bottom: 10px;
+}
+.cost-cell {
+  padding: 7px 8px;
+  border-radius: 8px;
+  border: 1px solid var(--line);
+  background: var(--surface);
+  min-width: 0;
+}
+.cost-cell .k {
+  font-family: var(--font-mono);
+  font-size: 8px;
+  letter-spacing: .10em;
+  text-transform: uppercase;
+  color: var(--faint);
+}
+.cost-cell .v {
+  margin-top: 2px;
+  font-family: var(--font-mono);
+  font-size: 12px;
+  color: var(--ink);
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+/* Today is the figure the hero above already leads with, so it carries the
+   accent edge and reads as the pivot of the row. */
+.cost-cell.is-today { border-color: var(--accent-soft); background: var(--accent-soft-2); }
+.cost-cell.is-today .v { color: var(--accent); }
 
 .bill-row {
   display: flex;

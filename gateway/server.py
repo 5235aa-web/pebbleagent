@@ -681,6 +681,60 @@ def _save_quick_notes(notes: list) -> None:
         json.dump({"notes": notes, "updated_at": datetime.now().isoformat()}, f, ensure_ascii=False)
 
 
+# ==================== 个人笔记本 (notebook) ====================
+# 用户自己的记事本：只给本人看，不进入任何提示词，不随项目路径变化。
+# 与 usernote / quick_notes 同放在 _DATA_DIR（~/.pebble/），但写入先落到临时
+# 文件再 os.replace，掉电或崩溃不会留下半截 JSON。
+_NOTEBOOK_PATH = _DATA_DIR / "notebook.json"
+
+
+def _load_notebook() -> list:
+    """读取全部条目：非字典条目丢弃，空文本不入表，缺字段补空串。"""
+    try:
+        if _NOTEBOOK_PATH.exists():
+            with open(_NOTEBOOK_PATH, "r", encoding="utf-8") as f:
+                data = json.load(f)
+            entries = data.get("entries", []) if isinstance(data, dict) else data
+            if isinstance(entries, list):
+                out = []
+                for item in entries:
+                    if not isinstance(item, dict):
+                        continue
+                    text = item.get("text")
+                    if not isinstance(text, str) or not text.strip():
+                        continue
+                    out.append({
+                        "id": str(item.get("id") or "") or os.urandom(4).hex(),
+                        "time": str(item.get("time") or ""),
+                        "text": text,
+                    })
+                return out
+    except Exception as e:
+        logger.warning(f"[Server] load notebook failed: {e}")
+    return []
+
+
+def _save_notebook(entries: list) -> None:
+    """整表覆盖写入；空文本条目不入库，与前端“空条目即丢弃”一致。"""
+    clean = []
+    for item in entries if isinstance(entries, list) else []:
+        if not isinstance(item, dict):
+            continue
+        text = item.get("text")
+        if not isinstance(text, str) or not text.strip():
+            continue
+        clean.append({
+            "id": str(item.get("id") or "") or os.urandom(4).hex(),
+            "time": str(item.get("time") or ""),
+            "text": text,
+        })
+    _DATA_DIR.mkdir(parents=True, exist_ok=True)
+    tmp = str(_NOTEBOOK_PATH) + ".tmp"
+    with open(tmp, "w", encoding="utf-8") as f:
+        json.dump({"entries": clean, "updated_at": datetime.now().isoformat()}, f, ensure_ascii=False, indent=2)
+    os.replace(tmp, _NOTEBOOK_PATH)
+
+
 # ── 辅助：快照路径精确匹配 ──
 # 快照记录的 relative_path 相对项目根，absolute_path 为绝对路径。
 # 匹配只做归一化后的完整路径相等，不做子串或文件名比较，避免 config 与

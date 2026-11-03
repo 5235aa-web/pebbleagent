@@ -103,6 +103,15 @@ pub fn run() {
         )?;
       }
 
+      // Without these two the shell cannot check for or apply an update: the
+      // updater fetches latest.json and verifies the installer signature, the
+      // process plugin is what restarts the app once the installer finishes.
+      #[cfg(desktop)]
+      {
+        app.handle().plugin(tauri_plugin_updater::Builder::new().build())?;
+        app.handle().plugin(tauri_plugin_process::init())?;
+      }
+
       let exe_name = "pebble-backend-x86_64-pc-windows-msvc.exe";
       let sidecar = app.path().resource_dir()
         .unwrap_or_default()
