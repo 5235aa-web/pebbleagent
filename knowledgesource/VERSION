@@ -1016,3 +1016,9 @@
   config removes the second place a version could go stale
 - Verified: the same path resolution prints `v1.0.2` against the current config, and `vue-tsc --noEmit` passes with
   the new global declared. No rebuild of `frontend/dist`
+
+## README sends Windows users to the installer first
+
+- `Build the desktop app` now opens with a one-line note pointing at the latest GitHub release, because the
+  installer already carries the Python backend and most Windows readers only wanted the app. The build steps stay
+  for people who actually intend to compile the shell

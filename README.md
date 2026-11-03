@@ -113,6 +113,11 @@ npx tauri dev
 
 ### Build the desktop app
 
+> **Just want to run it?** Windows users who want the app rather than the build
+> should grab the latest installer from
+> [Releases](https://github.com/5235aa-web/pebbleagent/releases/latest). It
+> already bundles the Python backend, so none of the steps below are needed.
+
 > This section is Windows-only. The sidecar management in
 > `frontend/src-tauri/src/lib.rs` is built on Win32 APIs, so the shell does not
 > compile on macOS. Web mode above needs none of it.
