@@ -24,7 +24,7 @@
 - **Cross-session experience ledger.** Corrections, constraints, and preferences you express during work become evidence-backed entries in a local SQLite ledger. Later turns recall the relevant ones by full-text relevance plus tool and path context, and superseded entries are retired automatically. Capture and recall run on rules, not extra model calls.
 - **Snapshot & rollback.** Every write is snapshotted before it happens; diffs are tracked per file, and you can roll back a single file or an entire change set — with an undo for the rollback itself.
 - **Permission & audit system.** Three permission modes (manual, auto, read-only), rule sets with `tool:pattern` matching, a path whitelist, fail-closed checks, and a tamper-evident audit log (chained checksums) for every sensitive operation.
-- **Skills and MCP servers.** 120 bundled skills load on demand; MCP servers over stdio, SSE, HTTP, or WebSocket are installed with sha256 verification and approved per project. Both are extensible from the installed app, with no source build required: drop a `SKILL.md` into `~/.pebble/skills/<name>/` to add a skill, where a user skill with the same name overrides the bundled one, or add an entry under `mcpServers` in `~/.pebble/.mcp.json` to register an MCP server, which waits in the MCP panel until you approve it before anything is launched.
+- **Skills and MCP servers.** 120 bundled skills load on demand; MCP servers over stdio, SSE, HTTP, or WebSocket are installed with sha256 verification and approved per project. Both are extensible from the installed app with no source build required, and you do not have to touch a file yourself: ask the agent to add a skill or an MCP server and it writes the `SKILL.md` under `~/.pebble/skills/<name>/` or the `mcpServers` entry in `~/.pebble/.mcp.json` for you. A user skill with the same name overrides the bundled one, and a new MCP entry waits in the MCP panel until you approve it before anything is launched.
 - **Real-time cost tracking.** Per-model pricing with peak/off-peak tiers (including Chinese statutory holidays) and cache-hit accounting, updated live per conversation.
 - **HTML preview with feedback bridge.** Generated HTML pages render in a sandboxed preview; click any element to leave a comment, and the agent iterates on the page from your annotations.
 - **Streaming agent chat with full execution visibility.** Reasoning, tool calls, file changes, and results unfold as a step-by-step timeline instead of a black box.
@@ -150,8 +150,8 @@ npx tauri build
 All runtime data lives in `%USERPROFILE%\.pebble\` (override with the `PEBBLE_HOME` environment variable).
 
 - **LLM providers** — providers, API keys, models, and reasoning effort are configured in `llm_providers.json` or from the in-app settings.
-- **Skills** — bundled skills ship inside the app; a `SKILL.md` under `~/.pebble/skills/<name>/` adds one, and a user skill with the same name overrides the bundled copy.
-- **MCP servers** — the MCP panel installs and manages servers; tokens and executable paths are stored in `~/.pebble/.mcp.json`. An entry added to that file by hand or by the agent shows up in the panel and waits for approval before it is launched.
+- **Skills** — bundled skills ship inside the app. Ask the agent to add one and it writes `~/.pebble/skills/<name>/SKILL.md`; a user skill with the same name overrides the bundled copy.
+- **MCP servers** — the MCP panel installs and manages servers; tokens and executable paths are stored in `~/.pebble/.mcp.json`. Ask the agent to add a server and it writes the entry, which then appears in the panel and waits for your approval before it is launched.
 - **Permissions** — modes and `tool:pattern` rules live in `permission_rules.json`; the path whitelist in `path_whitelist.json`.
 - **Pricing** — the per-model price table (with peak/off-peak tiers) is in `model_pricing.json`; holiday data in `cn_holidays.json`.
 
