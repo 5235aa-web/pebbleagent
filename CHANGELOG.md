@@ -23,6 +23,11 @@ feed with empty notes tells the user nothing.
 - Clear asks for confirmation, and Save/Clear report success or refusal instead of leaving the button silent.
 - An agent that disappears from the list is no longer left selected, and Save/Clear stay disabled until an agent is chosen.
 - New entry reports a refused save, and the footer shows what is on screen versus what is stored instead of a hardcoded "synced".
+- Usage pane: saving the pricing table reports the gateway's own verdict. A rejected table used to read "saved" while the file on disk was untouched; the reason now stays on screen until the next attempt.
+- A period with no rates yet starts every cell at zero, so editing a single price on a freshly opened peak or offpeak tab can actually be saved.
+- Today / 7 days / 30 days keep updating when the current session cannot be read, instead of freezing on their last numbers.
+- Model names are editable in the table and a duplicate is refused; removing a stored model asks first; unsaved edits are marked and Save is disabled until something changes.
+- A pricing table that finishes loading while the editor holds unsaved work asks whether to use the stored table or keep the edits.
 
 ## 1.1.0
 
