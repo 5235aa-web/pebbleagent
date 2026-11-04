@@ -84,6 +84,8 @@
 
 ## Changes
 
+- 2026-11-04 `_validate_project_dir` returns the path in the form the user wrote it (expanded and normalised) instead of the realpath form. On Windows realpath also resolves the 8.3 short name, so a project added under a directory that has one (`C:\Users\RUNNER~1\...`) was stored in a spelling every other path comparison disagreed with. The realpath still runs for the is-directory and drive-root checks, so symlinks and junctions are validated against their target.
+
 - 2026-11-04 `tests/run_all.py` captures each child's output, reprints it, and repeats the last 25 lines of every failing test next to the summary, because a CI log is read from the bottom and the failing assertion was never visible there. It also caps a child at 600s and reconfigures its own stdout to UTF-8: reprinting a decoded payload on a locale-encoded console killed the runner itself.
 
 - 2026-11-04 Usage pane follow-up: the model name is editable in place (Enter or blur commits, a duplicate key is refused, and a newly added model can be renamed before saving), and a pricing table that finishes loading while the editor holds unsaved work now asks whether to use the stored table or keep the edits instead of replacing them silently.

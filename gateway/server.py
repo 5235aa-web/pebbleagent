@@ -429,13 +429,19 @@ def _validate_project_dir(path: str) -> tuple:
     """
     if not path:
         return False, "path required", ""
-    resolved = os.path.realpath(os.path.expandvars(os.path.expanduser(path)))
+    expanded = os.path.expandvars(os.path.expanduser(path))
+    resolved = os.path.realpath(expanded)
     if not os.path.isdir(resolved):
         return False, f"not a directory: {path}", ""
     _drive, tail = os.path.splitdrive(resolved)
     if not tail or tail in ("\\", "/"):
         return False, "drive root is not a valid project path", ""
-    return True, "", resolved
+    # The checks above run against the realpath, which is what makes a symlink or
+    # junction safe to validate. What gets stored is the path as the user wrote
+    # it: on Windows realpath also resolves the 8.3 short name
+    # (`C:\Users\RUNNER~1\...`), and a registry entry in that form disagreed with
+    # every path the rest of the app derives with abspath.
+    return True, "", _norm_project_path(expanded)
 
 
 def _preserve_corrupt_projects(reason: str) -> str:
