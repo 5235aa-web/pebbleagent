@@ -1,6 +1,6 @@
 # PebbleAgent — Version Notes
 
-> Last updated: 2026-10-24
+> Last updated: 2026-11-04
 
 ## Platform
 
@@ -15,7 +15,7 @@
 - Context assembly: system prompt + project path + user note + recalled experience entries + agent note + skills; token accounting via `context_compressor.estimate_tokens` (tiktoken with CN/EN ratio fallback)
 - Stream-end detection: finish_reason recording, suspicious-end auto-retry (once per turn), graceful completion
 - Experience ledger: rule-based turn observation (correction / constraint / preference / pitfall), FTS5 recall with tool, path, kind, confidence, recency and capped hit weighting, dedupe + supersede lifecycle within the same scope (global or the current project_id), per-agent notes (user and project scopes merged into the prompt); statement capped at 160 characters and rationale at 300 on write, single entry capped at 240 characters on render; SQLite at `{PEBBLE_HOME:-~/.pebble}/experience.db`; agent-facing `experience_write` (kind / scope / keywords) and `experience_update` (id / statement / kind / rationale / confidence; scope fixed) tools
-- Compaction summary: stable five-section handoff format (任务 / 现状 / 决定 / 待办 / 线索), single-pass prompt with no tool calls, format validation with one strict retry and a wrapped fallback; manual compaction keeps the newest 2 messages (at least 1) in both sessions.db and agent_chat.db
+- Compaction summary: five-section handoff with fixed English headings (Task / Status / Decisions / Todo / Clues) and bodies in the conversation language (CJK-ratio detection in code); 700000-token input guard, 250000-token output ceiling; tool rows graded by family (reads 200 chars, edits 400, commands and failures whole) with tool names rebuilt from `tool_calls`; retention keeps the last complete turn (capped at 20 rows) in both sessions.db and agent_chat.db; a summary carrying no real content is rejected — model → strict retry → wrapped → rule-based fallback, and a failure returns `success=False` without writing anything; folded messages are backed up to the project history directory
 - Agent prompts: comment hygiene (no dates, no change / incident / refactor notes) and CKB document positioning (present-tense facts, no change narratives)
 - Agent prompt governance: `code_agent_prompt.md` carries the CKB mechanism, the tool restriction order (last-resort `powershell` / `execute_code` gated on three sufficiency conditions), language policy (reply in the user's language), the `[MUST]` severity suffix on 13 headings (no `(must)` / `(mandatory rule)` / `(important!)` / `(violation = failure)` variants), CKB build exemptions (user override / read-only question / damaged knowledge base), the MCP-unavailable CKB fallback, the compile-based LSP fallback, and retry backoff with a 60s budget; `tests/test_code_agent_prompt_contract.py` holds prompt tool names, the YAML allowlist, the severity wording, and the language policy in sync
 - Turn building blocks: `agent_core/chat/usage.py` (pricing, per-call cost, session accumulation), `chat/prompt.py` (system prompt composition), `chat/stream_client.py` (streamed request, retries, context-window handling, chunk accumulation), `chat/tool_cycle.py` (question injection, tool execution, result write-back), `chat/turn_executor.py` (turn preparation: agent, conversation, user message, history, prompt, client, cancel signal)

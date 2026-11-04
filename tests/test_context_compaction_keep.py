@@ -71,14 +71,14 @@ def main() -> int:
     # --- Scenario 1: exactly 2 messages -> compress 1, keep 1 ---
     run_case("2 messages", make_msgs(2), True, 1)
 
-    # --- Scenario 2: 5 messages -> compress 3, keep 2 ---
-    run_case("5 messages", make_msgs(5), True, 2)
+    # --- Scenario 2: 6 messages -> keep the last complete turn (user + assistant) ---
+    run_case("6 messages", make_msgs(6), True, 2)
 
-    # --- Scenario 3: 11 messages -> compress 9, keep 2 ---
-    run_case("11 messages", make_msgs(11), True, 2)
+    # --- Scenario 3: 12 messages -> keep the last complete turn (2) ---
+    run_case("12 messages", make_msgs(12), True, 2)
 
-    # --- Scenario 4: 15 messages -> compress 13, keep 2 ---
-    run_case("15 messages", make_msgs(15), True, 2)
+    # --- Scenario 4: 16 messages -> keep the last complete turn (2) ---
+    run_case("16 messages", make_msgs(16), True, 2)
 
     # --- Scenario 5: 1 message -> fail ---
     run_case("1 message", make_msgs(1), False, None, "< 2")
@@ -92,7 +92,7 @@ def main() -> int:
         {"role": "assistant", "content": [{"type": "tool_use", "id": "t1", "name": "foo", "input": {}}]},
         {"role": "user", "content": [{"type": "tool_result", "tool_use_id": "t1", "content": "ok"}]},
     ]
-    run_case("tool-pair 2 msgs", msgs7, False, None, "没有消息需要压缩")
+    run_case("tool-pair 2 msgs", msgs7, False, None, "No messages to compact")
 
     # --- Scenario 8: [user, assistant(tool_use), user(tool_result)] (3 msgs) -> compress 1, keep 2 ---
     msgs8 = [
@@ -101,6 +101,25 @@ def main() -> int:
         {"role": "user", "content": [{"type": "tool_result", "tool_use_id": "t1", "content": "ok"}]},
     ]
     run_case("tool-pair 3 msgs", msgs8, True, 2)
+
+    # --- Scenario 9: tool-heavy turn -> the whole tail survives, not two tool echoes ---
+    # The shape that made compaction look broken: one request, a dozen tool rows,
+    # then the answer. Keeping "the newest two" kept two tool echoes.
+    msgs9 = [
+        {"role": "user", "content": "old request"},
+        {"role": "assistant", "content": "old answer"},
+        {"role": "user", "content": "check the update sheet"},
+    ]
+    for i in range(6):
+        msgs9.append({
+            "role": "assistant", "content": "",
+            "tool_calls": [{"id": "c%d" % i, "type": "function",
+                            "function": {"name": "read_file", "arguments": "{}"}}],
+        })
+        msgs9.append({"role": "tool", "content": "result %d" % i,
+                      "tool_call_id": "c%d" % i, "name": "read_file"})
+    msgs9.append({"role": "assistant", "content": "done"})
+    run_case("tool-heavy turn", msgs9, True, 14)
 
     print("\n=== RESULT: PASS=%d FAIL=%d ===" % (passed, failed))
     return 1 if failed else 0

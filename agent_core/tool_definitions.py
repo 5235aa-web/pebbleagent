@@ -781,13 +781,13 @@ def get_tools_definition() -> List[Dict[str, Any]]:
             "type": "function",
             "function": {
                 "name": "web_search",
-                "description": "搜索互联网获取实时信息。按关键词返回标题、摘要和URL，适用于还不知道具体网址的场景。禁止使用代码执行来模拟HTTP请求或爬取网页。",
+                "description": "搜索互联网获取实时信息，返回标题、摘要和 URL。**必须使用英文关键词**：中文查询会被搜索引擎落到本地化源，结果质量明显更差，技术问题尤其要用英文术语（用 python asyncio timeout，不要用 python 异步超时）。请求按 DuckDuckGo → Bing 国际版 依次尝试，前一个拿不到结果才降级；全部失败时考虑换更常见的英文关键词重试。禁止使用代码执行来模拟 HTTP 请求或爬取网页。",
                 "parameters": {
                     "type": "object",
                     "properties": {
                         "query": {
                             "type": "string",
-                            "description": "搜索查询（尽量具体）"
+                            "description": "搜索查询，必须使用英文关键词，尽量具体"
                         }
                     },
                     "required": ["query"]

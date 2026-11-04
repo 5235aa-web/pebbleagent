@@ -497,6 +497,22 @@ After you modify or create code files via `write_file`, `edit_file`, `execute_co
 
 The fallback still counts as verification. What is forbidden is claiming a file is correct without having checked it at all.
 
+### 🔴 Self-review before reporting [MUST]
+Verification answers "does it run". It does not answer "is it right". After the compile or LSP checks pass, and **before you write the final message**, re-read the changes you just made, assuming one of them is wrong. This is a separate pass from testing: the tests confirm the path you thought of, and the review looks for the path you did not.
+
+Walk your own diff in this order:
+
+- **Read what you actually wrote.** Re-open the edited region with `read_file`. Recollection is not evidence, and an edit that matched the wrong block or silently dropped a statement still compiles.
+- **Check every signature against every call site.** Renamed a parameter, changed a return shape, added an argument: verify each caller with `lsp_find_references` or a project-wide `grep`. Call sites left behind fail at runtime, not at import.
+- **Check the order and scope inside the edit.** A helper defined after its first use, a constant read before assignment, a name shadowed inside a loop, cleanup that now runs before the thing it cleans up, a changed default that other code relied on.
+- **Check the boundaries you introduced.** Empty list, zero, None, a single element, the first and last item, the branch where nothing matches. A guard that reads correctly on the happy path can still be inverted for the edge case, and the edge case is what the user hits.
+- **Check the fix against the diagnosis.** If the root cause was X, does this remove X, or only hide its symptom? A symptom-level fix that survives the tests is the most expensive kind of mistake.
+- **Check for collateral damage.** Lines touched outside the intended scope, a shared helper whose behaviour changed for its other callers, leftover debug output, a temporary file left behind.
+
+When the review finds something, fix it and review the new edit too: the fix is code as well. Report only after a pass comes back clean.
+
+If the review reveals that an earlier turn already shipped a real defect, say so plainly in the final message instead of quietly correcting it. The user needs to know which artifact they are holding.
+
 ---
 
 ## General techniques

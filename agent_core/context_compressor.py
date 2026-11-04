@@ -266,45 +266,61 @@ def estimate_messages_tokens(messages: List[Message]) -> int:
 
 # 压缩摘要：只输出文本，按固定标题交接
 
-COMPACT_PREAMBLE = """本次回复只输出文本，不要调用任何工具。
-对话中已经包含全部所需信息；工具调用会被拒绝，并占用本次唯一的输出机会。
+COMPACT_PREAMBLE = """Reply with text only. Do not call any tool: tool calls are refused and
+would consume the single output opportunity this request has.
+
+This is a reformatting job, not engineering work. The conversation below already
+holds everything you need. Read it, extract the facts, write the handoff, stop.
+Do not analyse the code, do not propose improvements, do not write an essay, and
+do not keep deliberating once you know what happened: a long deliberation spends
+the output budget and leaves nothing for the answer itself.
 """
 
-COMPACT_METHOD = """整理要求：
-1. 从头到尾按时间顺序梳理整段对话，覆盖每一个话题，不要只写最近的部分。
-2. 保留文件路径、命令、错误原文、函数名与标识符等可核对的信息。
-3. 不复制代码片段，只说明涉及哪个文件、改动属于什么性质。
-4. 不描述摘要过程，不提及上下文被压缩。
-5. 严格使用下面的标题，保持顺序，不增删章节。
+COMPACT_METHOD = """Rules:
+1. Walk the conversation in chronological order and cover every topic, not just the latest part.
+2. Keep verifiable details: file paths, commands, error text, function names, identifiers.
+3. Do not copy code blocks. Say which file was touched and what kind of change it was.
+4. Do not describe the summarizing process and do not mention that the context was compacted.
+5. Use the five headings below exactly, in this order, without adding or removing sections.
+6. The headings stay in English. The section bodies are written in {language}.
+7. If something is genuinely unknown, write "unknown" once instead of guessing or restating the question.
 """
 
-COMPACT_TEMPLATE = """## 任务
-- 一句话说明当前在做什么。
+COMPACT_TEMPLATE = """## Task
+- One sentence on what is being worked on.
 
-## 现状
-- 已完成：...
-- 进行中：...
-- 阻塞：...
+## Status
+- Done: ...
+- In progress: ...
+- Blocked: ...
 
-## 决定
-- 关键取舍与理由。
+## Decisions
+- Key trade-offs and the reason behind them.
 
-## 待办
-- 按顺序列出下一步。
+## Todo
+- Next steps, in order.
 
-## 线索
-- 关键文件、命令、错误原文、需要注意的约束。
+## Clues
+- Key files, commands, error text, constraints worth remembering.
 """
 
-COMPACT_TASK_FULL = "把整段对话整理成一份交接摘要，供后续会话直接继续工作。"
-COMPACT_TASK_FROM = "只整理最近一段对话；较早的内容会被原样保留，不需要复述。"
-COMPACT_TASK_UP_TO = "整理当前对话；摘要会放在后续会话的开头，之后的消息不在你的视野内。"
+COMPACT_TASK_FULL = "Turn the whole conversation into a handoff summary the next session can resume from directly."
+COMPACT_TASK_FROM = "Summarize only the recent stretch of the conversation; earlier content is kept as-is and needs no recap."
+COMPACT_TASK_UP_TO = "Summarize the conversation so far; the summary will sit at the head of a later session that cannot see these messages."
 
 
-def _build_compact_prompt(task: str, custom_instructions: Optional[str] = None) -> str:
-    prompt = f"{COMPACT_PREAMBLE}\n{task}\n\n{COMPACT_METHOD}\n\n{COMPACT_TEMPLATE}"
+def _build_compact_prompt(
+    task: str,
+    custom_instructions: Optional[str] = None,
+    language: str = "English"
+) -> str:
+    prompt = (
+        f"{COMPACT_PREAMBLE}\n{task}\n\n"
+        f"{COMPACT_METHOD.format(language=language)}\n\n"
+        f"{COMPACT_TEMPLATE}"
+    )
     if custom_instructions and custom_instructions.strip():
-        prompt += f"\n补充要求：\n{custom_instructions}"
+        prompt += f"\nAdditional requirements:\n{custom_instructions}"
     return prompt
 
 
@@ -313,18 +329,22 @@ PARTIAL_COMPACT_FROM_PROMPT = _build_compact_prompt(COMPACT_TASK_FROM)
 PARTIAL_COMPACT_UP_TO_PROMPT = _build_compact_prompt(COMPACT_TASK_UP_TO)
 
 
-def get_compact_prompt(custom_instructions: Optional[str] = None) -> str:
-    """获取完整压缩提示词"""
-    return _build_compact_prompt(COMPACT_TASK_FULL, custom_instructions)
+def get_compact_prompt(
+    custom_instructions: Optional[str] = None,
+    language: str = "English"
+) -> str:
+    """Full compaction prompt, with section bodies in `language`."""
+    return _build_compact_prompt(COMPACT_TASK_FULL, custom_instructions, language)
 
 
 def get_partial_compact_prompt(
     custom_instructions: Optional[str] = None,
-    direction: CompactDirection = CompactDirection.FROM
+    direction: CompactDirection = CompactDirection.FROM,
+    language: str = "English"
 ) -> str:
-    """获取部分压缩提示词"""
+    """Partial compaction prompt, with section bodies in `language`."""
     task = COMPACT_TASK_UP_TO if direction == CompactDirection.UP_TO else COMPACT_TASK_FROM
-    return _build_compact_prompt(task, custom_instructions)
+    return _build_compact_prompt(task, custom_instructions, language)
 
 
 def format_compact_summary(summary: str) -> str:
@@ -932,6 +952,38 @@ def is_prompt_too_long_error(error: Any) -> Tuple[bool, Optional[int], Optional[
 # 核心压缩函数
 # ============================================================================
 
+# How much of the final turn survives a compaction. The unit is a whole turn,
+# not a message count: one request plus its assistants and tool calls stays
+# together, capped so a turn that ran fifty tools cannot swallow the context.
+MAX_KEPT_TURN_MESSAGES = 20
+
+
+def _trailing_turn(dialog_messages: List[Message]) -> List[Message]:
+    """Return the last complete turn: newest user message through the end.
+
+    What survives compaction should be one intact unit of work. Slicing by a raw
+    message count breaks that unit in tool-heavy sessions, where ninety percent of
+    the rows are tool results and "keep the newest two" keeps two shell echoes.
+    """
+    if not dialog_messages:
+        return []
+    start = 0
+    for i in range(len(dialog_messages) - 1, -1, -1):
+        if dialog_messages[i].role == "user":
+            start = i
+            break
+    kept = dialog_messages[start:]
+    # At least one message has to be summarized, or compaction does nothing.
+    # Dropping the first message keeps the work that followed it, instead of
+    # collapsing a single-turn conversation down to its last tool echo.
+    if len(kept) >= len(dialog_messages):
+        kept = dialog_messages[1:]
+    if len(kept) > MAX_KEPT_TURN_MESSAGES:
+        kept = kept[-MAX_KEPT_TURN_MESSAGES:]
+    return kept
+
+
+
 def compact_conversation(
     messages: List[Message],
     llm_client: Any = None,
@@ -1005,7 +1057,7 @@ def compact_conversation(
     if len(dialog_messages) < 2:
         return CompactionResult(
             success=False,
-            error=f"对话消息数量不足 ({len(dialog_messages)} < 2)",
+            error=f"Not enough messages to compact ({len(dialog_messages)} < 2).",
             pre_compact_token_count=pre_compact_token_count,
             trigger=trigger
         )
@@ -1025,16 +1077,17 @@ def compact_conversation(
         if not messages_to_summarize:
             return CompactionResult(
                 success=False,
-                error="没有消息需要压缩",
+                error="No messages to compact.",
                 pre_compact_token_count=pre_compact_token_count,
                 trigger=trigger
             )
     else:
         # 标准压缩：保留最近消息（动态保留数：最多保留 recent_messages 条；
-        # 消息不足时至少保留 1 条、保证至少压缩 1 条）
-        effective_keep = min(recent_messages, len(dialog_messages) - 1)
-        messages_to_summarize = dialog_messages[:-effective_keep]
-        messages_to_keep = dialog_messages[-effective_keep:]
+        # 标准压缩：保留最后一轮完整往返（用户的最后一条消息，以及它触发的
+        # 全部助手回复和工具调用）。工具密集的一轮里按条数保留 N 条，留下的
+        # 只是几条工具回显，等于把一整段完整的工作折叠掉。
+        messages_to_keep = _trailing_turn(dialog_messages)
+        messages_to_summarize = dialog_messages[:len(dialog_messages) - len(messages_to_keep)]
     
     # 7. Tool pair 完整性保护
     if pivot_index is None:
@@ -1052,7 +1105,7 @@ def compact_conversation(
         if not messages_to_summarize:
             return CompactionResult(
                 success=False,
-                error="没有消息需要压缩（tool 配对完整性保护不允许拆分）",
+                error="No messages to compact: tool-call pairing does not allow splitting here.",
                 pre_compact_token_count=pre_compact_token_count,
                 trigger=trigger
             )
@@ -1074,7 +1127,7 @@ def compact_conversation(
     if not summary:
         return CompactionResult(
             success=False,
-            error="生成摘要失败",
+            error="Summary generation failed; the session was left untouched.",
             pre_compact_token_count=pre_compact_token_count,
             trigger=trigger
         )
@@ -1181,20 +1234,44 @@ def compact_conversation(
 
 
 # 必需的摘要段落标题（用于格式校验）
+# Required section headings. Kept in English so the structure stays language
+# independent: only the section bodies follow the conversation's language.
 _REQUIRED_SECTIONS = [
-    '## 任务',
-    '## 现状',
-    '## 决定',
-    '## 待办',
-    '## 线索',
+    '## Task',
+    '## Status',
+    '## Decisions',
+    '## Todo',
+    '## Clues',
 ]
+
+# A body made of headings and placeholders is not a summary. Below this much
+# real text the output is treated as a failed generation, never persisted. The
+# floor is low on purpose: a single-line Chinese handoff is still a handoff, and
+# a heading-only shell measures zero here.
+_MIN_SUMMARY_CHARS = 30
+_PLACEHOLDER_RE = re.compile(r'\(\s*none\s*\)|^\s*[-*+]\s*\.\.\.\s*$', re.IGNORECASE | re.MULTILINE)
+_EMPTY_LABEL_RE = re.compile(
+    r'^\s*[-*+]?\s*(?:Done|In progress|Blocked|已完成|进行中|阻塞)\s*[:：]\s*$',
+    re.IGNORECASE | re.MULTILINE
+)
+
+
+def _summary_text_volume(summary: str) -> int:
+    """Count real content characters, ignoring headings, bullets and placeholders."""
+    text = re.sub(r'^\s{0,3}#{1,6}\s+.*$', '', summary or '', flags=re.MULTILINE)
+    text = _PLACEHOLDER_RE.sub('', text)
+    text = text.replace('...', '').replace('…', '')
+    text = _EMPTY_LABEL_RE.sub('', text)
+    text = re.sub(r'^\s*[-*+]\s*', '', text, flags=re.MULTILINE)
+    return len(re.sub(r'\s+', '', text))
 
 
 def _validate_summary_format(summary: str) -> tuple:
     """
-    校验 LLM 输出的摘要是否包含必需的段落标题。
-    返回 (是否通过, 缺失的标题列表)。
-    至少需要 3/5 个标题匹配才视为通过。
+    Check the output carries the required headings and enough real content.
+    Returns (ok, missing_headings, content_chars).
+    At least 3/5 headings plus `_MIN_SUMMARY_CHARS` of body text are required:
+    a heading-only shell passes the first test but fails the second.
     """
     content = re.sub(r'<analysis>[\s\S]*?</analysis>', '', summary or '')
     content = re.sub(r'</?summary>', '', content)
@@ -1202,12 +1279,13 @@ def _validate_summary_format(summary: str) -> tuple:
     found = []
     missing = []
     for section in _REQUIRED_SECTIONS:
-        if section in content:
+        if re.search(re.escape(section), content, re.IGNORECASE):
             found.append(section)
         else:
             missing.append(section)
 
-    return len(found) >= 3, missing
+    volume = _summary_text_volume(content)
+    return (len(found) >= 3 and volume >= _MIN_SUMMARY_CHARS), missing, volume
 
 
 def _retry_summary_with_strict_prompt(
@@ -1215,9 +1293,10 @@ def _retry_summary_with_strict_prompt(
     llm_model: str,
     conversation_content: str,
     direction=None,
-    custom_instructions=None
+    custom_instructions=None,
+    language: str = "English"
 ) -> Optional[str]:
-    """用更严格的提示词重试摘要生成"""
+    """Second attempt with an explicit, non-negotiable heading contract."""
     if direction == CompactDirection.FROM:
         task = COMPACT_TASK_FROM
     elif direction == CompactDirection.UP_TO:
@@ -1226,11 +1305,15 @@ def _retry_summary_with_strict_prompt(
         task = COMPACT_TASK_FULL
 
     strict_prefix = (
-        "上一次输出缺少必需标题。本次必须严格使用下列五个标题，标题文字不得改动：\n"
-        "## 任务 / ## 现状 / ## 决定 / ## 待办 / ## 线索\n"
-        "每个标题都必须出现，内容为空时写 (none)。\n"
+        "The previous answer was rejected: it either missed required headings or "
+        "carried no real content. Answer again, following the contract.\n"
+        "Use exactly these five headings, spelled and ordered as shown, kept in English:\n"
+        "## Task / ## Status / ## Decisions / ## Todo / ## Clues\n"
+        "Every heading must appear. Write each body in "
+        f"{language}. Use (none) only for a section that is truly empty, never for "
+        "the whole document. No preamble, no closing line, no tool calls.\n"
     )
-    prompt = f"{strict_prefix}\n{_build_compact_prompt(task, custom_instructions)}"
+    prompt = f"{strict_prefix}\n{_build_compact_prompt(task, custom_instructions, language)}"
 
     try:
         response = llm_client.chat.completions.create(
@@ -1238,14 +1321,14 @@ def _retry_summary_with_strict_prompt(
             messages=[
                 {
                     "role": "user",
-                    "content": f"{prompt}\n\n对话历史：\n{conversation_content}"
+                    "content": f"{prompt}\n\nConversation:\n{conversation_content}"
                 }
             ],
-            max_tokens=8000,
+            max_tokens=SUMMARY_MAX_OUTPUT_TOKENS,
             temperature=0.1
         )
         summary = response.choices[0].message.content
-        logger.info(f"[ContextCompressor] Retry summary: {len(summary)} chars")
+        logger.info(f"[ContextCompressor] Retry summary: {len(summary or '')} chars")
         return summary
     except Exception as e:
         logger.warning(f"[ContextCompressor] Retry failed: {e}")
@@ -1253,57 +1336,135 @@ def _retry_summary_with_strict_prompt(
 
 
 def _force_wrap_summary(raw: str) -> str:
-    """把自由格式输出收敛到固定标题结构"""
+    """Last resort: keep what the model wrote, filed under the first heading.
+
+    This preserves text instead of discarding it, but the result may still be a
+    shell. Callers must check `_summary_text_volume` and refuse to persist one.
+    """
     content = re.sub(r'<analysis>[\s\S]*?</analysis>', '', raw or '')
     content = re.sub(r'</?summary>', '', content).strip()
-    snippet = content[:800] if content else "(none)"
-    return f"""## 任务
-- {snippet}
+    # Drop headings the model did emit, so the body is not duplicated.
+    content = re.sub(r'^\s{0,3}#{1,6}\s+.*$', '', content, flags=re.MULTILINE).strip()
+    snippet = content[:4000] if content else ""
+    return f"""## Task
+- {snippet or "(none)"}
 
-## 现状
-- 已完成：(none)
-- 进行中：(none)
-- 阻塞：(none)
+## Status
+- Done: (none)
+- In progress: (none)
+- Blocked: (none)
 
-## 决定
+## Decisions
 - (none)
 
-## 待办
+## Todo
 - (none)
 
-## 线索
+## Clues
 - (none)"""
 
 
-# 摘要输入预算（tokens）——防止长对话全量拼接导致 LLM 只关注尾部 / 请求超限
-DEFAULT_SUMMARY_INPUT_BUDGET = 40000
+# Summary input budget (tokens). The conversation is fed whole; this only caps a
+# pathological transcript. Sized for a long-window model so a normal session
+# never loses its oldest turns to this limit.
+DEFAULT_SUMMARY_INPUT_BUDGET = 700000
+
+# Output ceiling for the summary call itself. A five-section handoff needs a few
+# thousand tokens; the headroom exists so a thinking model cannot run out of
+# budget before it writes the body.
+SUMMARY_MAX_OUTPUT_TOKENS = 250000
 
 
-def _summarize_message_content(msg: Message, char_budget: int) -> str:
-    """按字符预算提取单条消息的文本内容（长消息保留开头 + 结尾）"""
-    if isinstance(msg.content, str):
-        text = msg.content
-    elif isinstance(msg.content, list):
-        parts = []
-        for block in msg.content:
-            block_dict = block if isinstance(block, dict) else getattr(block, '__dict__', {})
-            if block_dict.get("type") == "text":
-                parts.append(block_dict.get("text", "") or "")
-            elif block_dict.get("type") == "tool_use":
-                parts.append(
-                    "[工具调用: %s]\n%s" % (
-                        block_dict.get("name", "unknown"),
-                        json.dumps(block_dict.get("input", {}), ensure_ascii=False)[:300]
-                    )
-                )
-            elif block_dict.get("type") == "tool_result":
-                parts.append("[工具结果]\n%s" % ((block_dict.get("content", "") or "")[:300]))
-        text = "\n".join(parts)
-    else:
-        text = str(msg.content)
+# Tool families, decided by name when the transcript is rendered for the summary.
+# Reads are re-derivable (the file is still on disk), edits only need their
+# shape, and commands carry evidence that exists nowhere else.
+_READ_TOOLS = {
+    'read_file', 'ls', 'list_directory', 'glob', 'grep', 'search_files',
+    'search_in_file', 'find_files', 'get_file_info', 'todo_read',
+    'get_env_var', 'get_system_info', 'list_processes',
+    'lsp_document_symbol', 'lsp_hover', 'lsp_workspace_symbol',
+    'lsp_go_to_definition', 'lsp_find_references', 'lsp_go_to_implementation',
+    'lsp_incoming_calls', 'lsp_outgoing_calls', 'lsp_prepare_call_hierarchy',
+}
+_EDIT_TOOLS = {
+    'write_file', 'edit_file', 'delete_file', 'move_file', 'copy_file',
+    'create_directory', 'todo_write',
+}
+# Command tools keep their full output: shell results, test runs and stack
+# traces are the only copy of what happened.
+_COMMAND_TOOLS = {'execute_shell', 'powershell', 'execute_code', 'bash', 'batch'}
+
+_TOOL_READ_CHARS = 200
+_TOOL_EDIT_CHARS = 400
+# Below this size an output is short enough that a failure marker is the whole
+# payload rather than incidental text inside a file that was read successfully.
+_TOOL_FAILURE_SNIFF_CHARS = 500
+
+_FAILURE_MARKERS = re.compile(
+    r'(^\s*error\b|traceback \(most recent call last\)|\bexit code [1-9]|'
+    r'\bfailed\b|\bpermission denied\b|\brefused\b|\bcannot\b)',
+    re.IGNORECASE | re.MULTILINE
+)
+
+
+def _looks_failed(text: str) -> bool:
+    """Best-effort failure detection on plain tool output.
+
+    Tool results carry no structured status, so the text is the only signal. It
+    errs towards "failed": a false positive costs a few tokens, a false negative
+    loses the error text that nothing else preserves.
+    """
+    if not text:
+        return False
+    head = text[:1200]
+    if _FAILURE_MARKERS.search(head):
+        return True
+    stripped = head.lstrip()
+    return stripped.startswith('Error') or stripped.startswith('Traceback')
+
+
+def _truncate(text: str, limit: int) -> str:
+    """Head slice with an explicit marker, so the model knows it is partial."""
+    if not text:
+        return ""
+    if len(text) <= limit:
+        return text
+    return text[:limit] + f" [... {len(text) - limit} chars omitted ...]"
+
+
+def _summarize_message_content(
+    msg: Message,
+    char_budget: int,
+    tool_name: Optional[str] = None
+) -> str:
+    """Render one message as plain text for the summary prompt.
+
+    Human messages keep a head+tail slice so both the ask and its outcome
+    survive. Tool messages are graded by family: reads shrink to a stub, edits
+    keep only the shape of the change, commands and every failure are kept whole.
+    """
+    if msg.role == "tool":
+        body = _message_plain_text(msg)
+        name = tool_name or "tool"
+        # A read's body is file content, so the word "error" inside a source file
+        # says nothing about the read itself. Failure sniffing is therefore
+        # limited to commands and edits, plus any short response where an error
+        # would be the whole payload.
+        structured = name not in _READ_TOOLS
+        if _looks_failed(body) and (structured or len(body) <= _TOOL_FAILURE_SNIFF_CHARS):
+            return f"[{name}] FAILED\n{body}"
+        if name in _READ_TOOLS:
+            return f"[{name}] {_truncate(body, _TOOL_READ_CHARS)}"
+        if name in _EDIT_TOOLS:
+            return f"[{name}] {_truncate(body, _TOOL_EDIT_CHARS)}"
+        return f"[{name}]\n{body}"
+
+    text = _message_plain_text(msg)
+    if not text:
+        return ""
     if len(text) <= char_budget:
         return text
-    marker = "\n[... 已省略 %d 字符 ...]\n" % (len(text) - char_budget)
+    marker = "\n[... %d chars omitted ...]\n" % (len(text) - char_budget)
     usable = char_budget - len(marker)
     if usable < 50:
         usable = max(char_budget // 2, 10)
@@ -1312,33 +1473,132 @@ def _summarize_message_content(msg: Message, char_budget: int) -> str:
     return text[:head_len] + marker + text[-tail_len:]
 
 
+def _message_plain_text(msg: Message) -> str:
+    """Best-effort plain text of a message, whatever shape its content has."""
+    if isinstance(msg.content, str):
+        return msg.content
+    if isinstance(msg.content, list):
+        parts = []
+        for block in msg.content:
+            b = block if isinstance(block, dict) else getattr(block, '__dict__', {})
+            if b.get("type") == "text":
+                parts.append(b.get("text") or "")
+        return "\n".join(parts)
+    return "" if msg.content is None else str(msg.content)
+
+
+def _tool_name_index(messages: List[Message]) -> Dict[str, str]:
+    """Map tool_call_id -> tool name, rebuilt from the assistant turns.
+
+    A tool message only carries the call id; the name lives on the assistant
+    message that requested the call. Rebuilding the index here keeps the Message
+    class untouched and still lets the renderer tell a read from a shell run.
+    """
+    index: Dict[str, str] = {}
+    for msg in messages:
+        for call in (msg.tool_calls or []):
+            if not isinstance(call, dict):
+                continue
+            call_id = call.get("id")
+            if not call_id:
+                continue
+            fn = call.get("function")
+            name = fn.get("name") if isinstance(fn, dict) else None
+            if not name:
+                name = call.get("name")
+            if name:
+                index[call_id] = name
+    return index
+
+
+def _detect_body_language(messages: List[Message]) -> str:
+    """Decide the summary body language from what the user actually wrote.
+
+    Fixed here instead of delegated to the model: a model told to "answer in the
+    user's language" drifts between languages mid-document, and the reader of the
+    card is the person whose messages set the tone. Sampling walks the newest
+    messages backwards, because the tail is what the next session resumes from.
+    """
+    sample: List[str] = []
+    sampled = 0
+    for msg in reversed(messages):
+        if msg.role != "user":
+            continue
+        text = _message_plain_text(msg).strip()
+        if not text:
+            continue
+        sample.append(text[:2000])
+        sampled += len(sample[-1])
+        if sampled >= 6000:
+            break
+    joined = "".join(sample)
+    cjk = len(re.findall(r'[\u3400-\u4dbf\u4e00-\u9fff]', joined))
+    latin = len(re.findall(r'[A-Za-z]', joined))
+    total = cjk + latin
+    if total == 0:
+        return "English"
+    # A fifth of the letters being CJK is already Chinese in practice; below
+    # that, an English sentence carrying a Chinese term stays English.
+    return "Chinese" if cjk / total >= 0.2 else "English"
+
+
+def _ensure_usable_summary(candidate: str, rule_fallback: Optional[str] = None) -> Optional[str]:
+    """Return a summary worth persisting, or None.
+
+    Headings alone are not a summary. Persisting a shell replaces real history
+    with nothing, which is worse than reporting the failure: the transcript stays
+    intact and the user can compact again.
+    """
+    ok, missing, volume = _validate_summary_format(candidate)
+    if ok:
+        return candidate
+    logger.warning(
+        f"[ContextCompressor] Summary rejected: missing={missing}, content_chars={volume}"
+    )
+    if rule_fallback:
+        ok2, missing2, volume2 = _validate_summary_format(rule_fallback)
+        if ok2:
+            logger.warning("[ContextCompressor] Falling back to the rule-based summary")
+            return rule_fallback
+        logger.warning(
+            f"[ContextCompressor] Rule-based summary rejected too: "
+            f"missing={missing2}, content_chars={volume2}"
+        )
+    return None
+
+
 def generate_structured_summary(
     messages: List[Message],
     llm_client: Any = None,
     llm_model: str = None,
     custom_instructions: Optional[str] = None,
     direction: Optional[CompactDirection] = None,
-    input_budget: Optional[int] = None
+    input_budget: Optional[int] = None,
+    language: Optional[str] = None
 ) -> Optional[str]:
     """
-    生成结构化摘要
+    Build the five-section handoff summary.
 
-    使用固定标题的交接摘要提示词生成高质量摘要。
+    The input budget is a pathology guard, not a tax on normal sessions: the
+    transcript is fed whole, and only a transcript larger than the budget loses
+    its oldest turns. Bodies are written in `language` (detected from the user's
+    messages when not given); headings stay English so the structure is stable.
 
-    输入预算控制（input_budget，默认 DEFAULT_SUMMARY_INPUT_BUDGET）：
-    - 最新优先裁剪：从最新消息向前累计 token，超出预算的最早消息丢弃并注明
-    - 自适应截断：位置越新额度越高，用户消息额度高于助手，长消息保留开头+结尾
-    这保证任意规模的对话都不会拼接出超长 prompt（历史 bug：长对话全量拼接
-    导致 LLM 只关注尾部、摘要遗漏早期主题）。
+    Returns None when nothing usable could be produced. Callers must treat that
+    as a failure and leave the transcript untouched.
     """
     if not messages:
         return None
 
-    # 如果没有 LLM 客户端，使用简单摘要
-    if not llm_client:
-        return simple_structured_summary(messages, input_budget=input_budget)
+    body_language = language or _detect_body_language(messages)
 
-    # ---- 1. 输入预算控制：最新优先裁剪 ----
+    # No client: rule-based summary, still in the detected language.
+    if not llm_client:
+        return _ensure_usable_summary(
+            simple_structured_summary(messages, input_budget=input_budget, language=body_language)
+        )
+
+    # ---- 1. 输入预算控制：只在超预算时丢弃最旧的消息 ----
     budget = input_budget if input_budget else DEFAULT_SUMMARY_INPUT_BUDGET
     kept: List[Message] = []
     dropped = 0
@@ -1350,40 +1610,44 @@ def generate_structured_summary(
         else:
             budget_tokens += tok
             kept.insert(0, msg)
-    # 至少保留最后一条消息，避免空输入
     if not kept:
         kept = [messages[-1]]
         dropped = max(0, len(messages) - 1)
 
-    # ---- 2. 自适应截断：位置越新额度越高，用户消息优先 ----
+    # ---- 2. 逐条渲染：工具消息按类型分级，人类消息按位置给额度 ----
+    name_by_call_id = _tool_name_index(messages)
     content_parts = []
     n = len(kept)
     for i, msg in enumerate(kept):
-        role = "用户" if msg.role == "user" else "助手" if msg.role == "assistant" else msg.role
         pos_ratio = (i + 1) / n  # 0..1，越大越新
         if msg.role == "user":
-            char_budget = int(600 + pos_ratio * 1400)  # 600..2000
+            char_budget = int(600 + pos_ratio * 1400)   # 600..2000
+            label = "User"
         elif msg.role == "assistant":
-            char_budget = int(300 + pos_ratio * 700)   # 300..1000
+            char_budget = int(300 + pos_ratio * 700)    # 300..1000
+            label = "Assistant"
         else:
-            char_budget = 400
-        content_parts.append(f"{role}: {_summarize_message_content(msg, char_budget)}")
+            char_budget = _TOOL_READ_CHARS
+            label = "Tool"
+        tool_name = name_by_call_id.get(msg.tool_call_id or "") if msg.role == "tool" else None
+        content_parts.append(
+            f"{label}: {_summarize_message_content(msg, char_budget, tool_name)}"
+        )
 
     conversation_content = "\n\n".join(content_parts)
     if dropped > 0:
         conversation_content = (
-            f"[注：为控制摘要输入规模，最旧的 {dropped} 条消息未纳入本次摘要，"
-            f"但其主题仍应在摘要中覆盖]\n\n{conversation_content}"
+            f"[Note: the oldest {dropped} messages were left out to keep the request "
+            f"within budget; their topics should still be covered.]\n\n{conversation_content}"
         )
 
     # ---- 3. 获取提示词 ----
     if direction:
-        prompt = get_partial_compact_prompt(custom_instructions, direction)
+        prompt = get_partial_compact_prompt(custom_instructions, direction, body_language)
     else:
-        prompt = get_compact_prompt(custom_instructions)
+        prompt = get_compact_prompt(custom_instructions, body_language)
 
-    # 构建完整请求
-    full_prompt = f"{prompt}\n\n对话历史：\n{conversation_content}"
+    full_prompt = f"{prompt}\n\nConversation:\n{conversation_content}"
 
     try:
         response = llm_client.chat.completions.create(
@@ -1394,70 +1658,125 @@ def generate_structured_summary(
                     "content": full_prompt
                 }
             ],
-            max_tokens=8000,  # 输出预算充足，避免摘要被截断（历史 bug：3000 tokens 截断导致无 </summary>）
+            max_tokens=SUMMARY_MAX_OUTPUT_TOKENS,
             temperature=0.3
         )
 
-        summary = response.choices[0].message.content
+        summary = response.choices[0].message.content or ""
         logger.info(f"[ContextCompressor] Generated structured summary: {len(summary)} chars")
 
-        # 验证摘要格式是否包含必需的标题
-        valid, missing = _validate_summary_format(summary)
-        if not valid:
-            logger.warning(f"[ContextCompressor] Summary format invalid, missing sections: {missing}. Retrying with stricter prompt...")
-            retry_summary = _retry_summary_with_strict_prompt(
-                llm_client=llm_client,
-                llm_model=llm_model,
-                conversation_content=conversation_content,
-                direction=direction,
-                custom_instructions=custom_instructions
-            )
-            if retry_summary:
-                valid2, missing2 = _validate_summary_format(retry_summary)
-                if valid2:
-                    return retry_summary
-                logger.warning(f"[ContextCompressor] Retry also failed format validation, missing: {missing2}")
-            # 格式校验失败，用强制包裹确保前端可解析
-            logger.warning("[ContextCompressor] Falling back to wrapped format")
-            return _force_wrap_summary(summary)
+        ok, missing, volume = _validate_summary_format(summary)
+        if ok:
+            return summary
 
-        return summary
+        logger.warning(
+            f"[ContextCompressor] Summary rejected: missing={missing}, "
+            f"content_chars={volume}. Retrying with a stricter prompt..."
+        )
+        retry_summary = _retry_summary_with_strict_prompt(
+            llm_client=llm_client,
+            llm_model=llm_model,
+            conversation_content=conversation_content,
+            direction=direction,
+            custom_instructions=custom_instructions,
+            language=body_language
+        )
+        # Keep whichever attempt actually said something: the first answer may be
+        # empty while the retry carried real content.
+        candidate = retry_summary or summary
+        ok2, missing2, volume2 = _validate_summary_format(candidate)
+        if ok2:
+            return candidate
+        logger.warning(
+            f"[ContextCompressor] Retry rejected too: missing={missing2}, "
+            f"content_chars={volume2}"
+        )
+
+        wrapped = _force_wrap_summary(candidate)
+        usable = _ensure_usable_summary(
+            wrapped,
+            rule_fallback=simple_structured_summary(
+                messages, input_budget=input_budget, language=body_language
+            )
+        )
+        if not usable:
+            logger.error(
+                "[ContextCompressor] No usable summary from the model or the "
+                "rule-based fallback; compaction will be reported as failed"
+            )
+        return usable
 
     except Exception as e:
         logger.warning(f"[ContextCompressor] Failed to generate summary: {e}")
-        return simple_structured_summary(messages, input_budget=input_budget)
+        # The rule-based path is pure string work, but it runs inside an error
+        # handler: letting it raise would escape the caller's "no usable summary"
+        # branch and turn a soft failure into a crash.
+        try:
+            fallback = simple_structured_summary(
+                messages, input_budget=input_budget, language=body_language
+            )
+        except Exception as nested:
+            logger.error(f"[ContextCompressor] Rule-based summary crashed: {nested}")
+            return None
+        return _ensure_usable_summary(fallback)
+
+# Rule-based summary copy. The headings stay English everywhere; only these
+# phrases follow the conversation language.
+_RULE_COPY = {
+    "English": {
+        "used_tools": "used tools",
+        "none": "(none)",
+        "done": "Done:",
+        "in_progress": "In progress:",
+        "blocked": "Blocked:",
+        "todo": "Continue from where the previous session stopped",
+        "note": "rule-based summary, no LLM involved",
+        "users": "user turns in this stretch: {n}; ",
+        "oldest": "{n} oldest user messages left out for budget; see the full transcript",
+        "files": "Files",
+    },
+    "Chinese": {
+        "used_tools": "使用了工具",
+        "none": "(none)",
+        "done": "已完成：",
+        "in_progress": "进行中：",
+        "blocked": "阻塞：",
+        "todo": "继续上次停下的地方",
+        "note": "本摘要由规则生成，未调用 LLM",
+        "users": "段内共 {n} 条用户消息；",
+        "oldest": "最旧的 {n} 条用户消息因预算未纳入，详见完整会话记录",
+        "files": "涉及文件",
+    },
+}
 
 
-def simple_structured_summary(messages: List[Message], input_budget: Optional[int] = None) -> str:
-    """
-    简单结构化摘要（无 LLM 时使用）
+def simple_structured_summary(
+    messages: List[Message],
+    input_budget: Optional[int] = None,
+    language: str = "English"
+) -> str:
+    """Rule-based five-section summary, used when the model gives nothing usable.
 
-    输出与 LLM 摘要同构的 ## 格式（前端 CompactSummaryCard 可直接解析），
-    覆盖全部用户消息（按 input_budget 预算截断，最新优先），并自动提取
-    工具名与文件路径——修复历史缺陷：原实现只取最近 3-5 条用户消息且
-    无 ## 标题，导致 fallback 摘要内容严重残缺、前端显示 (none)。
+    Same `##` shape as the LLM summary so the card renders it unchanged. The task
+    line comes from the newest user messages, newest first: a compaction exists
+    to let the next session resume the current work, so the most recent request
+    is the one that must survive.
     """
     if not messages:
         return ""
 
+    copy = _RULE_COPY.get(language, _RULE_COPY["English"])
     budget = input_budget if input_budget else DEFAULT_SUMMARY_INPUT_BUDGET
 
-    # 提取全部用户消息（最新优先预算裁剪）
-    user_texts = []
+    user_texts: List[str] = []
     for msg in messages:
         if msg.role != "user":
             continue
-        content = msg.content
-        if isinstance(content, str):
-            user_texts.append(content)
-        elif isinstance(content, list):
-            parts = []
-            for block in content:
-                if isinstance(block, dict) and block.get("type") == "text":
-                    parts.append(block.get("text", "") or "")
-            user_texts.append("\n".join(parts))
+        text = _message_plain_text(msg)
+        if text.strip():
+            user_texts.append(text)
 
-    kept_users = []
+    kept_users: List[str] = []
     used = 0
     for t in reversed(user_texts):
         c = min(len(t), 300)
@@ -1471,29 +1790,25 @@ def simple_structured_summary(messages: List[Message], input_budget: Optional[in
         s = text.strip().replace('\n', ' ')
         return s if len(s) <= limit else s[:limit] + "..."
 
-    # 提取工具名
-    tool_names = []
+    tool_names: List[str] = []
     for msg in messages:
-        if msg.role == "assistant" and isinstance(msg.content, list):
-            for block in msg.content:
-                if isinstance(block, dict) and block.get("type") == "tool_use":
-                    name = block.get("name", "")
-                    if name and name not in tool_names:
-                        tool_names.append(name)
+        if msg.role != "assistant":
+            continue
+        for call in (msg.tool_calls or []):
+            if not isinstance(call, dict):
+                continue
+            fn = call.get("function")
+            name = fn.get("name") if isinstance(fn, dict) else call.get("name")
+            if name and name not in tool_names:
+                tool_names.append(name)
 
-    # 提取文件路径（Windows 盘符路径 + 项目内相对路径）
-    file_paths = []
+    file_paths: List[str] = []
     path_re = re.compile(
         r'([A-Za-z]:[\\/][^\s"\'<>|?*]+'
         r'|(?:src|ui-gui-vue3|gateway|agent_core|tools|extensions|skills|agents|knowledgesource)[\\/][^\s"\'<>|?*]+)'
     )
     for msg in messages:
-        if isinstance(msg.content, str):
-            text = msg.content
-        elif isinstance(msg.content, list):
-            text = " ".join((b.get("text", "") or "") if isinstance(b, dict) else "" for b in msg.content)
-        else:
-            text = str(msg.content)
+        text = _message_plain_text(msg)
         for m in path_re.finditer(text):
             fp = m.group(1).replace('\\', '/')
             if fp not in file_paths:
@@ -1501,36 +1816,36 @@ def simple_structured_summary(messages: List[Message], input_budget: Optional[in
         if len(file_paths) >= 10:
             break
 
-    goal = _snippet(kept_users[0], 150) if kept_users else "(none)"
+    # Newest first: the last request is what the next session has to resume.
+    goal_lines = [f"- {_snippet(t, 150)}" for t in list(reversed(kept_users))[:3]]
+    if not goal_lines:
+        goal_lines = [f"- {copy['none']}"]
 
-    parts = ["## 任务"]
-    parts.append(f"- {goal}")
+    parts = ["## Task"]
+    parts.extend(goal_lines)
     parts.append("")
-    parts.append("## 现状")
+    parts.append("## Status")
     if tool_names:
-        parts.append("- 已完成：使用了工具 " + ", ".join(tool_names[:15]))
+        parts.append(f"- {copy['done']} {copy['used_tools']} {', '.join(tool_names[:15])}")
     else:
-        parts.append("- 已完成：(none)")
-    parts.append("- 进行中：(none)")
-    parts.append("- 阻塞：(none)")
+        parts.append(f"- {copy['done']} {copy['none']}")
+    parts.append(f"- {copy['in_progress']} {copy['none']}")
+    parts.append(f"- {copy['blocked']} {copy['none']}")
     parts.append("")
-    parts.append("## 决定")
-    parts.append("- (none)")
+    parts.append("## Decisions")
+    parts.append(f"- {copy['none']}")
     parts.append("")
-    parts.append("## 待办")
-    parts.append("- 继续之前的任务")
+    parts.append("## Todo")
+    parts.append(f"- {copy['todo']}")
     parts.append("")
-    parts.append("## 线索")
-    parts.append(f"- 对话共 {len(user_texts)} 条用户消息；本摘要由规则生成（无 LLM 支持）")
-    for i, t in enumerate(kept_users[:5]):
-        parts.append(f"- 用户消息: {_snippet(t, 100)}")
+    parts.append("## Clues")
+    parts.append("- " + copy['users'].format(n=len(user_texts)) + copy['note'])
     if dropped_users > 0:
-        parts.append(f"- 最旧的 {dropped_users} 条用户消息因预算未纳入，详见完整会话记录")
+        parts.append("- " + copy['oldest'].format(n=dropped_users))
     if file_paths:
-        parts.append("- 文件: " + ", ".join(file_paths[:10]))
+        parts.append(f"- {copy['files']}: " + ", ".join(file_paths[:10]))
     parts.append("")
     return "\n".join(parts)
-
 
 def create_post_compact_file_attachments(
     file_states: Dict[str, FileState],
@@ -1699,7 +2014,9 @@ def manual_compress(
     max_tokens: int = 50000,
     recent_messages: int = 20,
     llm_client = None,
-    llm_model: str = None
+    llm_model: str = None,
+    session_id: Optional[str] = None,
+    project_path: Optional[str] = None,
 ) -> Dict[str, Any]:
     """
     手动压缩上下文（兼容旧 API）
@@ -1716,7 +2033,9 @@ def manual_compress(
         llm_model=llm_model,
         max_tokens=max_tokens,
         recent_messages=recent_messages,
-        trigger=CompactTrigger.MANUAL
+        trigger=CompactTrigger.MANUAL,
+        session_id=session_id,
+        project_path=project_path,
     )
     
     # 转换结果

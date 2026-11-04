@@ -227,6 +227,55 @@ def _parse_bing_search_results(html: str) -> list:
     return results
 
 
+def _parse_ddg_search_results(html: str) -> list:
+    """Parse DuckDuckGo's html endpoint, the static equivalent of a SERP.
+
+    Every hit is wrapped as //duckduckgo.com/l/?uddg=<encoded target>, so the
+    real URL has to be unwrapped before it is usable.
+    """
+    import html as html_lib
+    from urllib.parse import unquote, urlparse, parse_qs
+
+    def resolve(href: str) -> str:
+        if "uddg=" in href:
+            target = parse_qs(urlparse(href).query).get("uddg", [""])[0]
+            if target:
+                return unquote(target)
+        return href if href.startswith("http") else ""
+
+    titles = re.findall(
+        r'<a[^>]+class="[^"]*result__a[^"]*"[^>]+href="([^"]+)"[^>]*>(.*?)</a>',
+        html, re.S
+    )
+    snippets = re.findall(
+        r'class="[^"]*result__snippet[^"]*"[^>]*>(.*?)</a>',
+        html, re.S
+    )
+    results = []
+    seen = set()
+    for i, (href, raw_title) in enumerate(titles):
+        url = resolve(href)
+        title = re.sub(r'\s+', ' ', re.sub(r'<[^>]+>', '', raw_title)).strip()
+        if not url or not title:
+            continue
+        norm = url.rstrip('/').lower()
+        if norm in seen:
+            continue
+        seen.add(norm)
+        snippet = ""
+        if i < len(snippets):
+            snippet = re.sub(r'\s+', ' ', re.sub(r'<[^>]+>', '', snippets[i])).strip()
+        # DDG escapes quotes and apostrophes in both fields; leaving them raw
+        # puts &#x27; in the middle of a summary a model is meant to read.
+        results.append({
+            "title": html_lib.unescape(title),
+            "url": url,
+            "snippet": html_lib.unescape(snippet),
+        })
+    return results
+
+
+
 class WebToolsMixin:
 
     async def _tool_fetch_url(self, url: str, mode: str = "auto", timeout: int = 30) -> str:
@@ -296,7 +345,7 @@ class WebToolsMixin:
 
     async def _tool_web_search(self, query: str) -> str:
         """
-        搜索网络（通过 httpx 抓取 Bing 搜索页并解析结构化结果）
+        搜索网络（DuckDuckGo html 版 → Bing 国际版 链式兜底，解析结构化结果）
         
         受 little_guard 的速率限制保护。
         """
@@ -310,71 +359,65 @@ class WebToolsMixin:
             return f"Error: {msg}"
         
         try:
-            # 通过 httpx 抓取 Bing 搜索页
             from urllib.parse import quote
-            search_url = f"https://cn.bing.com/search?q={quote(query)}&count=8"
+            # Engine chain. DuckDuckGo's html endpoint is the static, English-first
+            # source; Bing is the fallback, its market pinned to en-US so it does
+            # not fall back to the local edition, whose results are markedly weaker
+            # for technical queries. Google is deliberately absent: its static
+            # endpoint answers a JavaScript redirect shell, never results.
+            engines = (
+                ("duckduckgo", "https://html.duckduckgo.com/html/?q={q}", _parse_ddg_search_results),
+                ("bing", "https://www.bing.com/search?q={q}&count=8&setmkt=en-US&setlang=en&cc=US", _parse_bing_search_results),
+            )
+            text, url, parsed_results, engine_used = "", "", [], ""
             async with httpx.AsyncClient(timeout=15.0, follow_redirects=True) as client:
-                resp = await client.get(
-                    search_url,
-                    headers={"User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36"}
+                for name, template, parser in engines:
+                    try:
+                        resp = await client.get(
+                            template.format(q=quote(query)),
+                            headers={
+                                "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0 Safari/537.36",
+                                "Accept-Language": "en-US,en;q=0.9",
+                            },
+                        )
+                    except Exception as exc:
+                        logger.warning(f"[WebSearch] {name} request failed: {exc}")
+                        continue
+                    if resp.status_code != 200:
+                        logger.warning(f"[WebSearch] {name} returned HTTP {resp.status_code}")
+                        continue
+                    results = parser(resp.text)
+                    if not results:
+                        logger.info(f"[WebSearch] {name} yielded no parsable results; next engine")
+                        continue
+                    text, url, parsed_results, engine_used = resp.text, str(resp.url), results, name
+                    break
+
+            if not parsed_results:
+                return (
+                    f"## Search Results: {query}\n"
+                    "No search engine returned parsable results. Retry with different English keywords."
                 )
-            # 解析 Bing 搜索结果 HTML，提取结构化结果
-            parsed_results = _parse_bing_search_results(resp.text)
-            result = {
-                "content": {
-                    "text": resp.text,
-                    "url": str(resp.url),
-                    "title": "",
-                    "links": [
-                        {"href": r["url"], "text": r["title"]}
-                        for r in parsed_results
-                    ],
-                    "_parsed_results": parsed_results,
-                }
-            }
-            
-            content = result.get("content")
-            if not content:
-                return f"Web search for: {query}\nNo results returned from search."
-            
-            # 提取搜索结果文本
-            text = content.get("text", "")
-            links = content.get("links", [])
-            url = content.get("url", "")
-            
-            # 优先使用已解析的结构化结果（httpx 路径有 _parsed_results；否则从 links 提取）
-            parsed_results = content.get("_parsed_results", [])
-            if not parsed_results and links:
-                for link in links:
-                    href = link.get("href", "")
-                    if href and not any(ignore in href for ignore in ["bing.com", "microsoft.com", "#", "javascript:"]):
-                        parsed_results.append({
-                            "title": link.get("text", "").strip(),
-                            "url": href,
-                            "snippet": "",
-                        })
-            
+            logger.info(f"[WebSearch] '{query}' served by {engine_used} ({len(parsed_results)} results)")
+
             # 格式化输出
             output_parts = [f"## Search Results: {query}", f"Search page: {url}\n"]
-            
-            if parsed_results:
-                output_parts.append(f"Found {len(parsed_results)} results:")
-                for i, r in enumerate(parsed_results[:15], 1):
-                    title = r.get("title", "").strip()
-                    snippet = r.get("snippet", "").strip()
-                    result_url = r.get("url", "")
-                    output_parts.append("")
-                    output_parts.append(f"{i}. **{title}**")
-                    if snippet:
-                        output_parts.append(f"   {snippet}")
-                    output_parts.append(f"   {result_url}")
+            output_parts.append(f"Found {len(parsed_results)} results:")
+            for i, r in enumerate(parsed_results[:15], 1):
+                title = r.get("title", "").strip()
+                snippet = r.get("snippet", "").strip()
+                result_url = r.get("url", "")
                 output_parts.append("")
+                output_parts.append(f"{i}. **{title}**")
+                if snippet:
+                    output_parts.append(f"   {snippet}")
+                output_parts.append(f"   {result_url}")
+            output_parts.append("")
             
             # 附上原始文本（限长，无结构化结果时的备用）
             if text and not parsed_results:
                 truncated, _ = truncate_output(text)
                 output_parts.append(f"### Page Content (raw):\n{truncated}")
-            
             return "\n".join(output_parts)
             
         except asyncio.CancelledError:

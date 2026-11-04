@@ -7,6 +7,18 @@ which is what the in-app update sheet shows before installing. Add the section
 before running `npm run release`; the release stops if it is missing, because a
 feed with empty notes tells the user nothing.
 
+## 1.1.2
+
+- Compaction no longer folds an empty summary. When the model answers with an empty body, the retry's answer is kept instead of being discarded, and a summary that carries headings but no real content is rejected rather than stored as a successful compaction.
+- Compaction gained a fallback chain: model, one strict retry, a reformat of whatever came back, then a rule-based summary built from the newest user turns. If none of them carries usable text the operation reports failure and writes nothing, so the session stays intact and can be retried.
+- Headings are fixed English (`Task / Status / Decisions / Todo / Clues`) while the section bodies follow the conversation's language, decided in code from the user messages rather than left to the model.
+- Tool results now reach the summary at all. The gateway forwarded only the call arguments and dropped the returned output, so tool-heavy sessions summarised into nothing; arguments and results are both forwarded now, along with the names needed to tell a read from a shell run.
+- Tool rows are graded by family: reads are cut to 200 characters, edits to 400, while commands and every failed call keep their full output, because a stack trace exists nowhere else.
+- Compaction keeps one whole turn instead of the newest N messages: from the last user message through every reply and tool call it produced, capped at twenty rows. On a tool-heavy turn the old rule kept two shell echoes.
+- Summary budgets are much larger: input 700K tokens, output 250K. A three-hundred-thousand-token session that used to be trimmed to thirty now goes in whole.
+- Folded messages are backed up to the project's history file. The session id and project path were previously dropped, so no backup was ever written.
+- `web_search` uses DuckDuckGo's html results and falls back to Bing pinned to the US market, replacing the localized Bing endpoint. Google is not in the chain: its static endpoint answers a JavaScript redirect shell rather than results. The tool now asks for English keywords, since localized sources return markedly weaker results for technical queries.
+
 ## 1.1.1
 
 - Session switcher: the five seeded prototype conversations are gone. The list starts empty and the gateway's `session.list` answer replaces it, so a fresh project no longer shows clickable sessions that do not exist.

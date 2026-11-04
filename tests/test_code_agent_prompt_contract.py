@@ -221,7 +221,9 @@ def main() -> int:
     check("no ambiguous severity markers", not ambiguous, f"got {ambiguous}")
 
     must_headings = re.findall(r"^#{2,4} .*\[MUST\]\s*$", prompt, re.MULTILINE)
-    check("[MUST] heading count is 13", len(must_headings) == 13, f"got {len(must_headings)}")
+    # 14 since self-review joined the severity budget: a modification is not
+    # finished until the diff has been read back for its own mistakes.
+    check("[MUST] heading count is 14", len(must_headings) == 14, f"got {len(must_headings)}")
     check("truthfulness is [MUST]", any("Truthfulness" in m for m in must_headings))
     check("output-execution is [MUST]",
           any("Output-execution consistency" in m for m in must_headings))

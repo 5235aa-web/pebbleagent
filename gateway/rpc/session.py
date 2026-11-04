@@ -1,5 +1,7 @@
 """Session, project-scoped file, and snapshot RPCs."""
 
+import json
+
 import logging
 import os
 import time
@@ -252,7 +254,7 @@ def handle(ctx, method):
         if not raw_messages:
             return {"id": rid, "result": {"success": False, "reason": "no messages"}}
         try:
-            from agent_core.context_compressor import manual_compress
+            from agent_core.context_compressor import manual_compress, DEFAULT_SUMMARY_INPUT_BUDGET
             client, model = srv._get_llm_client(sid)
 
             # 转换消息格式：get_messages 返回的格式 → manual_compress 期望的格式
@@ -261,26 +263,45 @@ def handle(ctx, method):
                 role = m.get("role", "user")
                 content = m.get("text") or m.get("content") or ""
                 if role == "tool":
+                    # `context` 是调用参数，`text` 是工具返回。摘要需要的是返回：
+                    # 只有参数只能说明"问了什么"，说不出"看到了什么"。
+                    args = m.get("context") or ""
+                    tool_output = m.get("text") or ""
+                    body = f"{args}\n->\n{tool_output}" if tool_output else args
                     messages.append({
-                    "role": "tool",
-                    "content": m.get("context") or "",
-                    "tool_call_id": m.get("tool_call_id", ""),
-                    "name": m.get("name", "tool"),
+                        "role": "tool",
+                        "content": body,
+                        "tool_call_id": m.get("tool_call_id", ""),
+                        "name": m.get("name", "tool"),
                     })
                 elif role == "assistant":
                     msg = {"role": "assistant", "content": content}
                     if m.get("reasoning"):
                         msg["reasoning_content"] = m["reasoning"]
+                    # tool_calls 带工具名与 id，压缩时靠它把 tool 消息还原成
+                    # "哪个工具干的"，缺了就只能看到一堆无主的参数。
+                    raw_calls = m.get("tool_calls")
+                    if isinstance(raw_calls, str):
+                        try:
+                            raw_calls = json.loads(raw_calls)
+                        except (ValueError, TypeError):
+                            raw_calls = None
+                    if raw_calls:
+                        msg["tool_calls"] = raw_calls
                     messages.append(msg)
                 else:
                     messages.append({"role": role, "content": content})
 
             result = manual_compress(
-            messages=messages,
-            max_tokens=30000,
-            recent_messages=2,
-            llm_client=client,
-            llm_model=model,
+                messages=messages,
+                max_tokens=DEFAULT_SUMMARY_INPUT_BUDGET,
+                llm_client=client,
+                llm_model=model,
+                # The transcript is the only copy of what the fold removed, so it
+                # needs both the session id and the project root to land next to
+                # the session instead of in whatever cwd the gateway started in.
+                session_id=sid,
+                project_path=srv._session_project_paths.get(sid) or None,
             )
 
             if result.get("success") and result.get("compressed_messages"):
