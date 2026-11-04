@@ -71,7 +71,13 @@
             >
               <header class="px-head">
                 <span class="px-dot" :style="{ background: row.tint }"></span>
-                <span class="px-model">{{ row.name }}</span>
+                <input
+                  class="px-model px-name"
+                  :value="row.name"
+                  spellcheck="false"
+                  @change="renameModel(row.name, $event)"
+                  @keydown.enter.prevent="onNameEnter($event)"
+                />
                 <span class="px-prov">{{ row.vendor }}</span>
                 <button class="px-del" data-tip="Delete" @click="dropModel(row.name)">&#215;</button>
               </header>
@@ -88,8 +94,8 @@
           </div>
 
           <div class="px-foot">
-            <span class="px-hint">{{ pricingHint }}</span>
-            <button class="px-save" id="pxSave" :disabled="pricingSaving" @click="saveTable">{{ pricingSaving ? 'Saving…' : 'Save' }}</button>
+            <span class="px-hint">{{ pricingNote }}</span>
+            <button class="px-save" id="pxSave" :disabled="pricingSaving || !pricingDirty" @click="saveTable">{{ pricingSaving ? 'Saving…' : 'Save' }}</button>
           </div>
         </div>
 </template>
@@ -99,6 +105,7 @@ import { computed, onMounted, ref } from 'vue'
 import { usage as usageState, llm, fmtTokens, fmtMoney, setDisplayCurrency } from '../data/panels'
 import { streamState } from '../data/stream'
 import { formatRate, getConfig, savePricing, refreshLlm } from '../data/wire'
+import { askConfirm } from '../data/confirm'
 
 const usage = usageState
 
@@ -177,7 +184,19 @@ const pricingData = ref<{ models: Record<string, PricingEntry>; default_currency
 })
 const pricingPeriod = ref<'base' | 'peak' | 'off'>('base')
 const pricingSaving = ref(false)
-const pricingHint = ref('edits apply to the active period')
+const pricingHint = ref('')
+/* Models added during this session: removing one of those undoes a click, so it
+   needs no confirmation, while removing a stored model does. */
+const newModels = new Set<string>()
+/* What the gateway last handed over. Comparing against it is what makes "unsaved
+   edits" truthful instead of a guess. */
+const pricingBaseline = ref(JSON.stringify({ models: {}, default_currency: 'cny' }))
+const pricingDirty = computed(() => JSON.stringify(pricingData.value) !== pricingBaseline.value)
+const pricingNote = computed(() => {
+  if (pricingSaving.value) return 'saving…'
+  if (pricingHint.value) return pricingHint.value
+  return pricingDirty.value ? 'unsaved edits · save to apply' : 'edits apply to the active period'
+})
 const TINTS = ['var(--accent)', 'var(--teal)', 'var(--gold)']
 
 const pricingRows = computed(() =>
@@ -228,18 +247,42 @@ async function loadPricing(): Promise<void> {
     return
   }
   pricingRetries = 0
+  /* The table can arrive after the user started editing it: the first read is
+     retried while the socket comes up, and "+ model" works on the empty shape.
+     Replacing the editor would throw that work away, so the user picks a side. */
+  if (pricingDirty.value) {
+    const useStored = await askConfirm({
+      title: 'Pricing table loaded',
+      body: 'The stored table finished loading. Your unsaved edits will be replaced if you take it.',
+      confirmLabel: 'Use stored table',
+      cancelLabel: 'Keep my edits',
+      danger: true
+    })
+    if (!useStored) return
+  }
   pricingData.value = {
     models: payload.models,
     default_currency: String(payload.default_currency || 'cny')
   }
+  pricingBaseline.value = JSON.stringify(pricingData.value)
+  newModels.clear()
 }
+
+/* A block must carry all three rates or `pricing.save` rejects the whole table,
+   so a period created on first touch starts at zero instead of empty. Editing
+   one cell of a new peak block used to be unsaveable. */
+const EMPTY_BLOCK = (): RateBlock => ({
+  input_per_million: 0,
+  cache_hit_per_million: 0,
+  output_per_million: 0
+})
 
 /** The block the active period edits, created on first touch so a model that
     only has a base rate can gain a peak one. */
 function blockOf(entry: PricingEntry): RateBlock {
-  if (pricingPeriod.value === 'base') return (entry.pricing ||= {})
-  if (pricingPeriod.value === 'peak') return (entry.pricing_peak ||= {})
-  return (entry.pricing_offpeak ||= {})
+  if (pricingPeriod.value === 'base') return (entry.pricing ||= EMPTY_BLOCK())
+  if (pricingPeriod.value === 'peak') return (entry.pricing_peak ||= EMPTY_BLOCK())
+  return (entry.pricing_offpeak ||= EMPTY_BLOCK())
 }
 
 function setRate(name: string, key: 'input' | 'cache_hit' | 'output', ev: Event): void {
@@ -249,35 +292,90 @@ function setRate(name: string, key: 'input' | 'cache_hit' | 'output', ev: Event)
   blockOf(entry)[(key + '_per_million') as keyof RateBlock] = Number.isFinite(value) ? value : 0
 }
 
+/** Enter commits the name the same way leaving the field does. */
+function onNameEnter(ev: KeyboardEvent): void {
+  ;(ev.target as HTMLInputElement).blur()
+}
+
+/** Renames a model in the table being edited. The table is a map keyed by model
+    name, so a duplicate would silently merge two rate sets: a name that already
+    exists is refused and the field snaps back. */
+function renameModel(from: string, ev: Event): void {
+  const input = ev.target as HTMLInputElement
+  const next = input.value.trim()
+  if (!next || next === from) {
+    input.value = from
+    return
+  }
+  const models = pricingData.value.models
+  if (models[next]) {
+    input.value = from
+    pricingHint.value = `"${next}" already exists`
+    return
+  }
+  models[next] = models[from]
+  delete models[from]
+  if (newModels.has(from)) {
+    newModels.delete(from)
+    newModels.add(next)
+  }
+  pricingHint.value = `renamed to ${next} · save to apply`
+}
+
 function addModel(): void {
   let n = 1
   while (pricingData.value.models['new-model-' + n]) n++
-  pricingData.value.models['new-model-' + n] = { pricing: { input_per_million: 0, cache_hit_per_million: 0, output_per_million: 0 } }
+  const name = 'new-model-' + n
+  pricingData.value.models[name] = {
+    pricing: { input_per_million: 0, cache_hit_per_million: 0, output_per_million: 0 }
+  }
+  newModels.add(name)
+  pricingHint.value = `added ${name} · set its rates, then save`
 }
 
-function dropModel(name: string): void {
+/** Removing a stored model edits the table that gets written on Save, so it asks
+    first. A model added in this session is one click to take back, no prompt. */
+async function dropModel(name: string): Promise<void> {
+  if (!newModels.has(name)) {
+    const ok = await askConfirm({
+      title: 'Remove model from the table?',
+      body: `"${name}" and its rates for every period are removed when you save.`,
+      confirmLabel: 'Remove',
+      cancelLabel: 'Keep',
+      danger: true
+    })
+    if (!ok) return
+  }
   delete pricingData.value.models[name]
+  newModels.delete(name)
+  pricingHint.value = ''
 }
 
 async function saveTable(): Promise<void> {
   if (pricingSaving.value) return
   pricingSaving.value = true
   pricingHint.value = 'saving…'
-  const ok = await savePricing(
+  const res = await savePricing(
     pricingData.value.models as unknown as Record<string, unknown>,
     pricingData.value.default_currency
   )
   pricingSaving.value = false
-  pricingHint.value = ok ? 'saved · applies to the next call' : 'save failed'
-  if (ok) {
-    /* The unpriced/flat-rate tag reads `llm.pricing`, which only refreshes with
-       the model options, so a save has to pull it again or the label keeps
-       describing the previous table. */
-    void loadPricing()
-    void refreshLlm()
+  if (!res.ok) {
+    /* Keep the reason on screen. A rejected table used to read as saved, and a
+       note that cleared itself after three seconds would hide it again. */
+    pricingHint.value = 'save failed · ' + res.error
+    return
   }
+  pricingBaseline.value = JSON.stringify(pricingData.value)
+  newModels.clear()
+  pricingHint.value = 'saved · applies to the next call'
+  /* The unpriced/flat-rate tag reads `llm.pricing`, which only refreshes with the
+     model options, so a save has to pull it again or the label keeps describing
+     the previous table. The table itself is not re-read: the editor already holds
+     exactly what the gateway accepted. */
+  void refreshLlm()
   window.setTimeout(() => {
-    pricingHint.value = 'edits apply to the active period'
+    if (pricingHint.value === 'saved · applies to the next call') pricingHint.value = ''
   }, 3200)
 }
 

@@ -2450,30 +2450,36 @@ export async function refreshPanes(): Promise<void> {
   const sid = streamState.sessionId || (sessionState.activeId.length >= 20 ? sessionState.activeId : '')
 
   try {
-    if (!sid) throw new Error('no session attached')
-    /* Four windows, one request each. `session` is the only one that can fail for
-       lack of a session id, so it is checked first; a range the backend does not
-       know leaves its figure alone instead of zeroing it. */
+    /* Four windows, one request each. The session one needs a real uuid, so it is
+       rejected (not thrown) when there is none: the three global windows do not
+       depend on a session and must survive its absence. */
     const [sessionStats, todayStats, weekStats, monthStats] = await Promise.allSettled([
-      gateway.request<Record<string, unknown>>('usage.stats', { range: 'session', session_id: sid }),
+      sid
+        ? gateway.request<Record<string, unknown>>('usage.stats', { range: 'session', session_id: sid })
+        : Promise.reject(new Error('no session attached')),
       gateway.request<Record<string, unknown>>('usage.stats', { range: 'today' }),
       gateway.request<Record<string, unknown>>('usage.stats', { range: '7d' }),
       gateway.request<Record<string, unknown>>('usage.stats', { range: '30d' })
     ])
-    if (sessionStats.status !== 'fulfilled') throw new Error('session usage unavailable')
-    const st = sessionStats.value
     const costOf = (r: PromiseSettledResult<Record<string, unknown>>): number | null =>
       r.status === 'fulfilled' && typeof r.value.total_cost === 'number' ? r.value.total_cost : null
-    /* The session's own total and the whole database's day are different
-       questions; they used to share one field, so the hero read "today" over the
-       session's number. */
-    if (typeof st.total_cost === 'number') usage.sessionCost = st.total_cost
+    /* The whole database's day / week / month are answered before the session is
+       judged valid. A missing or unreadable session used to freeze these three on
+       their last values, which read as "nothing spent" over a ledger that kept
+       growing. */
     const todayCost = costOf(todayStats)
     if (todayCost !== null) usage.costToday = todayCost
     const weekCost = costOf(weekStats)
     if (weekCost !== null) usage.cost7d = weekCost
     const monthCost = costOf(monthStats)
     if (monthCost !== null) usage.cost30d = monthCost
+
+    if (sessionStats.status !== 'fulfilled') throw new Error('session usage unavailable')
+    const st = sessionStats.value
+    /* The session's own total and the whole database's day are different
+       questions; they used to share one field, so the hero read "today" over the
+       session's number. */
+    if (typeof st.total_cost === 'number') usage.sessionCost = st.total_cost
     if (typeof st.total_input_tokens === 'number') usage.tokensIn = st.total_input_tokens
     if (typeof st.total_output_tokens === 'number') usage.tokensOut = st.total_output_tokens
     if (typeof st.total_cache_hit_tokens === 'number') usage.cacheHit = st.total_cache_hit_tokens
@@ -3175,9 +3181,25 @@ export function setConfig(key: string, value: unknown): Promise<boolean> {
 /* The gateway stores the whole table with its per-period blocks, so the caller
    sends the entries back in the shape they arrived in rather than a flattened
    row list; flattening would drop `pricing_peak` and `pricing_tier_high`. */
-export function savePricing(models: Record<string, unknown>, currency = 'cny'): Promise<boolean> {
-  if (!gateway.connected) return Promise.resolve(false)
-  return gateway.request('pricing.save', { models, default_currency: currency }).then(() => true).catch(() => false)
+/** Writes the pricing table. `pricing.save` answers `{ok: false, error}` for a
+    rejected table instead of a JSON-RPC error, so returning "did the request
+    throw" reported every validation failure as a success: the panel said
+    "saved" while the file on disk was untouched. */
+export async function savePricing(
+  models: Record<string, unknown>,
+  currency = 'cny'
+): Promise<{ ok: boolean; error: string }> {
+  if (!gateway.connected) return { ok: false, error: 'the gateway is offline' }
+  try {
+    const res = await gateway.request<{ ok?: boolean; error?: string; count?: number }>('pricing.save', {
+      models,
+      default_currency: currency
+    })
+    if (res?.ok === false) return { ok: false, error: String(res.error ?? 'the table was refused') }
+    return { ok: true, error: '' }
+  } catch (e) {
+    return { ok: false, error: e instanceof Error ? e.message : 'the table was refused' }
+  }
 }
 
 /* ---------------- permissions ---------------- */

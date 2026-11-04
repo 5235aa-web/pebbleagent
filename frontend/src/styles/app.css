@@ -539,10 +539,79 @@ input.attach-input[type="file"] {
   border-color: var(--accent);
 }
 
+/* One control, drawn like the ledger's own meter: the fill keeps the
+   teal-to-accent ramp the read-only bar used, and the thumb is themed. Rendering
+   both the bar and a native slider put two lines under one number. The element is
+   taller than the rail so the drag target is usable; the two background layers
+   draw only the 4px track. */
 .lg-range {
-  width: 100%;
-  margin-top: 6px;
-  accent-color: var(--accent);
+  flex: 1 1 auto;
+  min-width: 0;
+  -webkit-appearance: none;
+  appearance: none;
+  height: 18px;
+  margin: 0;
+  padding: 0;
+  cursor: pointer;
+  background-color: transparent;
+  background-image:
+    linear-gradient(90deg, var(--teal), var(--accent)),
+    linear-gradient(var(--surface-3), var(--surface-3));
+  background-size: var(--c, 0%) 4px, 100% 4px;
+  background-position: 0 center, 0 center;
+  background-repeat: no-repeat;
+}
+
+.lg-range::-webkit-slider-runnable-track {
+  height: 18px;
+  border-radius: 3px;
+  background: transparent;
+}
+
+.lg-range::-webkit-slider-thumb {
+  -webkit-appearance: none;
+  appearance: none;
+  width: 11px;
+  height: 11px;
+  margin-top: 3.5px;
+  border-radius: 50%;
+  border: 2px solid var(--surface);
+  background: var(--accent);
+  box-shadow: 0 1px 3px rgba(15, 10, 6, .3);
+}
+
+.lg-range:focus-visible {
+  outline: 2px solid var(--accent);
+  outline-offset: 1px;
+  border-radius: 3px;
+}
+
+/* The ledger search filters the ledger list only, so agent-notes mode hides it.
+   With the search field gone the segmented control would slide left, so it takes
+   the free space instead and stays where it sits in the other mode. */
+.lg-segctl {
+  margin-left: auto;
+}
+
+/* The model name is edited in place: the table is keyed by it, and a generated
+   new-model-N is useless until it can be renamed. The field only shows a frame on
+   hover and focus so the header stays quiet. */
+.px-name {
+  border: 1px solid transparent;
+  border-radius: 4px;
+  padding: 1px 4px;
+  margin: -2px 0 -2px -5px;
+  background: transparent;
+  outline: none;
+}
+
+.px-name:hover {
+  border-color: var(--line);
+}
+
+.px-name:focus {
+  border-color: var(--accent);
+  background: var(--surface-2);
 }
 
 .lg-save:disabled,

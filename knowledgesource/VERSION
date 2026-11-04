@@ -84,6 +84,12 @@
 
 ## Changes
 
+- 2026-11-04 `tests/run_all.py` captures each child's output, reprints it, and repeats the last 25 lines of every failing test next to the summary, because a CI log is read from the bottom and the failing assertion was never visible there. It also caps a child at 600s and reconfigures its own stdout to UTF-8: reprinting a decoded payload on a locale-encoded console killed the runner itself.
+
+- 2026-11-04 Usage pane follow-up: the model name is editable in place (Enter or blur commits, a duplicate key is refused, and a newly added model can be renamed before saving), and a pricing table that finishes loading while the editor holds unsaved work now asks whether to use the stored table or keep the edits instead of replacing them silently.
+
+- 2026-11-04 Usage pane: `savePricing` returns the gateway's own verdict (a rejected table answers `{ok:false}` and used to be reported as saved), the three global cost windows are written before the session is judged valid, price-table removals ask for confirmation once the model was stored, and the editor carries an unsaved-edits marker computed against the last loaded table.
+
 - 2026-11-04 Experience ledger and agent notes: the seeded demo entries and the hardcoded total are gone, `ledger.state` drives loading / failed / empty, the detail pane edits a draft with a Save that reports its result and a Delete that confirms first, agent notes keep their draft when a read fails, ask before discarding unsaved text, ignore out-of-order replies, and Clear / New entry report what happened.
 
 - 2026-11-04 Follow-up on the session switcher after review: an offline delete is refused instead of reported as success, the empty panel distinguishes loading / failed / empty through `sessionState.listState`, switching projects clears the search term (the input element follows the store through a watcher), and a reconnect re-reads `session.list` instead of trusting the list loaded at startup.

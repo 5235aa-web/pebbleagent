@@ -248,6 +248,14 @@ Notes that cost time to find:
   "could not read", and a request sequence number stops an out-of-order reply from writing
   one agent's text under another's name. Switching agent, scope or tab asks before
   discarding unsaved text, and Clear asks through `askConfirm`.
+- The usage pane's Save cannot trust the absence of an exception: `pricing.save` reports
+  a rejected table as `{ok: false, error}`, so `savePricing` returns that verdict and the pane
+  keeps the reason on screen until the next attempt. A period block created on first touch
+  starts with all three rates at zero, because a partial block makes the backend reject the
+  whole table. The three global cost windows are written before the session is judged valid, so
+  an unreadable session cannot freeze today / 7d / 30d. Removals ask through `askConfirm`
+  unless the model was added in this session, and `pricingDirty` (a comparison against the last
+  loaded table) drives the unsaved marker and the Save button.
 - The permission-mode control's `MODES` table is `manual` / `auto` / `readonly`; the mode is
   read back from `permission.mode.get` on load and again on `pebble:gateway-ready`.
 - `message.usage` carries `this_call`; each one appends a row to `usage.history` and bumps

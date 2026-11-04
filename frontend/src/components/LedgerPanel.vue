@@ -15,7 +15,7 @@
     </div>
 
     <div class="lg-tools">
-      <div class="lg-search">
+      <div class="lg-search" v-if="mode === 'ledger'">
         <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="11" cy="11" r="7"/><line x1="20" y1="20" x2="16" y2="16"/></svg>
         <input placeholder="Search experiences..." v-model="ledgerQuery" />
       </div>
@@ -57,8 +57,18 @@
         </div>
         <div class="lg-field">
           <label>Confidence</label>
-          <div class="lg-conf"><span class="lg-conf-bar"><i :style="{ '--c': ledgerConf + '%' }"></i></span><b>{{ ledgerConf }}%</b></div>
-          <input class="lg-range" type="range" min="0" max="100" step="1" v-model.number="ledgerConf" />
+          <div class="lg-conf">
+            <input
+              class="lg-range"
+              type="range"
+              min="0"
+              max="100"
+              step="1"
+              v-model.number="ledgerConf"
+              :style="{ '--c': ledgerConf + '%' }"
+            />
+            <b>{{ ledgerConf }}%</b>
+          </div>
         </div>
         <div class="lg-field" v-if="selected.rationale">
           <label>Rationale</label>
