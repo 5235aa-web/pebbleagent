@@ -7,6 +7,11 @@ which is what the in-app update sheet shows before installing. Add the section
 before running `npm run release`; the release stops if it is missing, because a
 feed with empty notes tells the user nothing.
 
+## 1.1.3
+
+- The bundled skill set drops from 120 to 50. Kept are the skills the agent's own instructions depend on and the ones most users actually reach for: the CKB workflow, the design and OfficeCLI document chain, and the HyperFrames video pipeline. The rest were written for the author's own workflows and no longer ship.
+- Anything missing installs on demand: ask the agent to add the skill you want and it writes `~/.pebble/skills/<name>/SKILL.md`, which loads like a bundled one and shadows a bundled skill of the same name.
+
 ## 1.1.2
 
 - Compaction no longer folds an empty summary. When the model answers with an empty body, the retry's answer is kept instead of being discarded, and a summary that carries headings but no real content is rejected rather than stored as a successful compaction.

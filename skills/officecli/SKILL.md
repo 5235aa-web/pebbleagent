@@ -177,8 +177,6 @@ Use `load_skill <name>` to load domain-specific skill files:
 | `officecli-financial-model` | 3-statement, DCF, LBO financial models |
 | `officecli-data-dashboard` | Excel KPI dashboards with charts |
 | `officecli-word-form` | Fillable Word forms with content controls |
-| `morph-ppt` | PowerPoint Morph transition decks |
-| `morph-ppt-3d` | 3D Morph with GLB models |
 
 ## Common Pitfalls
 

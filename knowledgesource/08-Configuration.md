@@ -74,7 +74,7 @@ Shell = Tauri 2 (Rust), crate `pebble-orbit-shell` (lib name `app_lib`), product
 
 > Retention: these assets are used passively only when diagnosing and cost nothing at rest; they are kept wholesale. Companion long-term logs: backend "Stream events dropped" (Chapter 4 ws_server.py) and frontend [WS] lifecycle (Chapter 10, frontend/src/data/gateway.ts).
 
-### Built-in Skills (120 skill directories total)
+### Built-in Skills (50 skill directories total)
 
 | Skill | Path | Function |
 |-------|------|------|
@@ -90,7 +90,5 @@ Shell = Tauri 2 (Rust), crate `pebble-orbit-shell` (lib name `app_lib`), product
 | html-diagram | skills/html-diagram/ | HTML diagram/architecture chart generation |
 | frontend-design | skills/frontend-design/ | General frontend design specs |
 | huashu-design | skills/huashu-design/ | Picture-book design (incl. TTS/PDF/PPTX scripts) |
-| dream-loop | skills/dream-loop/ | Closed-loop 3D visual construction (target image → Blender build → critic iteration; from achimala/dream-loop, incl. references/scripts) |
-| blender-character-workflow | skills/blender-character-workflow/ | Blender character creation/repair workflow (nine-view references, face/hair shaping, production delivery; from icesixgod/awesome-astra-blender-characters) |
 
-**Extended skills (100)**: deck-* (20 presentation templates), officecli-* (8 Office document workflows: docx / pptx / xlsx / pitch-deck / academic-paper / financial-model / word-form / data-dashboard), frame-* (7 motion frames), social-* (6 social cards), web-proto-* (3), imagegen-* (2), plus theme-factory / taste-skill / soft-skill / minimalist-skill / brutalist-skill / stitch-skill / redesign-skill / image-to-code-skill / output-skill etc., loaded dynamically via `list_skills` / `load_skill`.
+**Remaining skills (the bundle is 50)**: the eleven design sub-skills that `design/SKILL.md` names in its selection table (canvas-design, html-diagram, frontend-design, huashu-design, taste-skill, minimalist-skill, soft-skill, brutalist-skill, redesign-skill, web-artifacts-builder, theme-factory), the OfficeCLI family (docx / pptx / xlsx / word-form / academic-paper / financial-model / data-dashboard / pitch-deck), the HyperFrames video family (hyperframes-core / -animation / -creative / -cli / -keyframes, video-hyperframes, motion-frames, vfx-text-cursor, sprite-animation, brag, and seven frame-* templates), and six frontend extensions (web-dev, gpt-tasteskill, stitch-skill, imagegen-frontend-web, imagegen-frontend-mobile, image-to-code-skill). Nothing in the code references any of them by name: they are discovered dynamically via `list_skills` / `load_skill`, and a user skill under `{PEBBLE_HOME}/skills` shadows a built-in of the same name.

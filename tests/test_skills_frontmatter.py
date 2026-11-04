@@ -72,7 +72,7 @@ check("invalid yaml does not raise",
       isinstance(sl._extract_description(bad_yaml), str))
 
 names = sl.get_skill_names()
-check("skills discovered", len(names) > 50)
+check("skills discovered", len(names) >= 50)
 check("all skill dirs are ascii", all(n.isascii() for n in names))
 
 listed = {s["name"]: s["description"] for s in sl.list_skills()}

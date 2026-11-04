@@ -1235,3 +1235,47 @@
   this one broke
 - `<Teleport to="body">` moves the overlay out of the bar; `v-if="supported"` moved onto the Teleport so nothing
   renders when the shell has no updater
+
+
+## Built-in skills trimmed to what the prompt and the design chain need
+
+- `skills/` ships 51 entries instead of 120. Kept: the seven the code agent prompt loads by name (`ckb`, `tdd`,
+  `read-the-damn-docs`, `quick-recap`, `design`, `diagnose`, `zoom-out`), the eleven design sub-skills its
+  selection table names, the nine `officecli*` document skills, the seventeen-entry HyperFrames video family, and
+  six frontend extensions (`web-dev`, `gpt-tasteskill`, `stitch-skill`, `imagegen-frontend-web`,
+  `imagegen-frontend-mobile`, `image-to-code-skill`)
+- Removed 69: deck styles, card and social layouts, document and report templates, page/landing templates, app
+  prototypes, plus `morph-ppt`, `morph-ppt-3d`, `brandkit` and `blender-character-workflow`. Anything removed is
+  installable again under `{PEBBLE_HOME}/skills`, which shadows a built-in of the same name
+- `skills/officecli/SKILL.md` drops the `morph-ppt` and `morph-ppt-3d` rows from its specialized-skill table
+- `output-skill` stays although the prompt never names it: its frontmatter name is `full-output-enforcement` and
+  it constrains output completeness rather than styling
+- Verified: `test_skills_frontmatter.py` PASS=9, `test_code_agent_prompt_contract.py` 45 passed, and no
+  `load_skill("...")` in the 51 remaining skills points at a removed directory
+
+## output-skill removed too
+
+- The bundle is 50 skill directories. `output-skill` had no code reference at all: nothing loaded it by name, no
+  test asserted its presence, and `list_skills` only ever discovered it through the directory scan
+- `tests/test_skills_frontmatter.py` asserted `len(names) > 50`, which this removal broke; the bound is now
+  `>= 50`
+- `knowledgesource/08-Configuration.md` records the 50-skill set and no longer names `output-skill`
+
+## Skill removal verified end to end
+
+- `tests/run_all.py` passes: `ALL PASSED: 38 tests`
+- A static sweep of 286 project files (excluding `skills/`, `knowledgesource/` and build output) for
+  `load_skill("…")` and `skills/…` references finds no name that no longer exists. The remaining hits are GitHub
+  URL fragments inside `history/*.md` that only look like skill paths
+- `THIRD_PARTY_NOTICES.md` no longer attributes `skills/dream-loop` and `skills/blender-character-workflow`: both
+  directories are gone, so the licence rows describing them would claim a component that does not ship
+
+## Skill count follows the trimmed bundle
+
+- `README.md` now says 50 bundled skills in the feature list and in Credits, and the credit breakdown reads one
+  MIT skill instead of three: `dream-loop` and `blender-character-workflow` were the other two and neither ships
+  any more
+- `CHANGELOG.md` gains `1.1.3`, describing the trim (what stayed: CKB, the design and OfficeCLI chain, the
+  HyperFrames pipeline) and that a missing skill installs on demand under `~/.pebble/skills/<name>/`
+- `frontend/src-tauri/tauri.conf.json` still reads `1.1.2`, so `publish.mjs` would look for a `1.1.2` section;
+  the new notes reach the update sheet only after that version becomes `1.1.3`

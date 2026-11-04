@@ -24,7 +24,7 @@
 - **Cross-session experience ledger.** Corrections, constraints, and preferences you express during work become evidence-backed entries in a local SQLite ledger. Later turns recall the relevant ones by full-text relevance plus tool and path context, and superseded entries are retired automatically. Capture and recall run on rules, not extra model calls.
 - **Snapshot & rollback.** Every write is snapshotted before it happens; diffs are tracked per file, and you can roll back a single file or an entire change set — with an undo for the rollback itself.
 - **Permission & audit system.** Three permission modes (manual, auto, read-only), rule sets with `tool:pattern` matching, a path whitelist, fail-closed checks, and a tamper-evident audit log (chained checksums) for every sensitive operation.
-- **Skills and MCP servers.** 120 bundled skills load on demand; MCP servers over stdio, SSE, HTTP, or WebSocket are installed with sha256 verification and approved per project. Both are extensible from the installed app with no source build required, and you do not have to touch a file yourself: ask the agent to add a skill or an MCP server and it writes the `SKILL.md` under `~/.pebble/skills/<name>/` or the `mcpServers` entry in `~/.pebble/.mcp.json` for you. A user skill with the same name overrides the bundled one, and a new MCP entry waits in the MCP panel until you approve it before anything is launched.
+- **Skills and MCP servers.** 50 bundled skills load on demand; MCP servers over stdio, SSE, HTTP, or WebSocket are installed with sha256 verification and approved per project. Both are extensible from the installed app with no source build required, and you do not have to touch a file yourself: ask the agent to add a skill or an MCP server and it writes the `SKILL.md` under `~/.pebble/skills/<name>/` or the `mcpServers` entry in `~/.pebble/.mcp.json` for you. A user skill with the same name overrides the bundled one, and a new MCP entry waits in the MCP panel until you approve it before anything is launched.
 - **Real-time cost tracking.** Per-model pricing with peak/off-peak tiers (including Chinese statutory holidays) and cache-hit accounting, updated live per conversation.
 - **HTML preview with feedback bridge.** Generated HTML pages render in a sandboxed preview; click any element to leave a comment, and the agent iterates on the page from your annotations.
 - **Streaming agent chat with full execution visibility.** Reasoning, tool calls, file changes, and results unfold as a step-by-step timeline instead of a black box.
@@ -180,8 +180,8 @@ Three billing/holiday regression scripts (`peb_check_*.py`) sit at the repo root
 
 ## Credits
 
-PebbleAgent bundles 120 skills. Third-party skills and materials
-(10 Apache-2.0 skills, 3 MIT skills, 1 reference set) are listed in
+PebbleAgent bundles 50 skills. Third-party skills and materials
+(10 Apache-2.0 skills, 1 MIT skill, 1 reference set) are listed in
 [THIRD_PARTY_NOTICES.md](THIRD_PARTY_NOTICES.md).
 
 Video rendering (the `brag` skill) is powered by
