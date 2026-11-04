@@ -141,7 +141,7 @@ def main() -> int:
     server_src = read_gateway_source()
     check("source: model.options output field", '"thinking_enabled": p.get("thinking_enabled") is not False' in server_src)
     check("source: prompt_submit read field", 'thinking_enabled = prov.get("thinking_enabled") is not False' in server_src)
-    check("source: save persists field", '_bool(provider_data.get("thinking_enabled"), True)' in server_src)
+    check("source: save persists field", '_bool(raw.get("thinking_enabled"), True)' in server_src)
     check("source: params.set updates field", '_bool(params.get("thinking_enabled"))' in server_src)
     check("source: call site passes thinking_enabled", 'thinking_enabled=thinking_enabled,' in server_src)
     check("source: old derivation removed", 'thinking_enabled=reasoning_effort is not None' not in server_src)

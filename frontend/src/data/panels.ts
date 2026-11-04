@@ -12,6 +12,20 @@ import { reactive } from 'vue'
     figure has exactly one place to fix. */
 export const CNY_PER_USD = 7.2
 
+/** True for the OpenCode family (`opencode`, `OpenCode Go`, `opencode-go`).
+    The request-shaping block below the divider is specific to that gateway,
+    so every other provider card hides it instead of showing dead controls. */
+export function isOpenCodeProvider(name: string): boolean {
+  const normalized = String(name || '').toLowerCase().replace(/[\s_-]+/g, '')
+  return normalized === 'opencode' || normalized === 'opencodego'
+}
+
+/** A provider can serve chat only with a base URL and at least one model.
+    The API key is a separate warning: local endpoints often accept any key. */
+export function isProviderReady(provider: { baseUrl?: string; models?: string[] } | null | undefined): boolean {
+  return Boolean(provider && String(provider.baseUrl || '').trim() && (provider.models || []).length)
+}
+
 function storedDisplayCurrency(): 'cny' | 'usd' {
   try {
     if (typeof window === 'undefined') return 'cny'
@@ -327,8 +341,21 @@ export interface LlmProvider {
   models: string[]
   authenticated: boolean
   current: boolean
+  ready: boolean
   apiKey: string
   baseUrl: string
+  temperature: number
+  topP: number
+  reasoningEffort: string
+  thinkingEnabled: boolean
+  extraHeaders: string
+  sessionHeader: string
+  reasoningMode: string
+  maxEffort: string
+  /** Local-only: a field changed after the last successful save. Refresh keeps
+      the object instead of replacing it, so a reconnect cannot discard a
+      half-typed key or base url. */
+  dirty: boolean
 }
 
 export const llm = reactive({

@@ -20,7 +20,7 @@ import websockets
 
 sys.path.insert(0, os.path.join(os.path.dirname(__file__), ".."))
 
-from gateway.server import handle_request, handle_prompt_submit, set_ws_loop
+from gateway.server import handle_request, handle_prompt_submit, restore_current_agent, set_ws_loop
 from gateway.permission_service import get_permission_service
 from gateway import lan_access
 
@@ -414,14 +414,27 @@ async def handle_ws(ws):
                 _prompt_tasks[sid] = t
                 continue
 
-            # All other methods
-            if method in ("mcp.install_server", "session.compress",
-                          "session.file_revert", "session.file_revert_all"):
-                # 长阻塞操作（下载安装 / 上下文压缩调 LLM / 文件回退复制与校验）
-                # → 线程池执行，避免阻塞 WS 事件循环
-                result = await asyncio.to_thread(handle_request, method, params, rid or "")
-            else:
-                result = handle_request(method, params, rid or "")
+            # All other methods. A failure belongs to this one request: sending
+            # a JSON-RPC error keeps the socket alive. Letting the exception
+            # escape `async for` closed the connection, so one malformed
+            # provider entry could put the entire UI into a reconnect loop.
+            try:
+                if method in ("mcp.install_server", "session.compress",
+                              "session.file_revert", "session.file_revert_all"):
+                    # 长阻塞操作（下载安装 / 上下文压缩调 LLM / 文件回退复制与校验）
+                    # → 线程池执行，避免阻塞 WS 事件循环
+                    result = await asyncio.to_thread(handle_request, method, params, rid or "")
+                else:
+                    result = handle_request(method, params, rid or "")
+            except Exception as e:
+                logger.exception(f"[WS] {method} failed")
+                if rid:
+                    await ws.send(json.dumps({
+                        "jsonrpc": "2.0",
+                        "id": rid,
+                        "error": {"code": -32603, "message": str(e) or type(e).__name__},
+                    }, ensure_ascii=False))
+                continue
             if result is not None:
                 await ws.send(json.dumps(result, ensure_ascii=False))
             elif rid:
@@ -530,6 +543,7 @@ async def main(host: str = "127.0.0.1", port: int = 19876):
 
     _gateway_token = _load_or_create_gateway_token()
     logger.info(f"[WS] Gateway token loaded from {os.path.join(_DATA_HOME, 'gateway.token')} (delete the file to rotate)")
+    restore_current_agent()
 
     logger.info(f"[WS] Starting WebSocket gateway on ws://{host}:{port}")
 

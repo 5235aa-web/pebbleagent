@@ -3,7 +3,9 @@ import concurrent.futures
 import json
 import logging
 import os
+import shutil
 import sys
+import tempfile
 import threading
 import time
 import uuid
@@ -290,7 +292,7 @@ sys.path.insert(0, os.path.join(os.path.dirname(__file__), ".."))
 # Also reached by gateway/rpc handlers as srv.<name>.
 from agent_core.agent_chat_service_v2 import AgentChatServiceV2, current_pricing_period, get_cn_holidays_payload  # noqa: F401
 from agent_core.agent_loader import list_available_agents_from_yaml  # noqa: F401
-from agent_core.llm_client import build_default_headers
+from agent_core.llm_client import build_default_headers, normalize_base_url
 
 _PROJECT_ROOT = Path(__file__).resolve().parent.parent
 _DATA_HOME = os.environ.get("PEBBLE_HOME") or os.path.join(Path.home(), ".pebble")
@@ -342,8 +344,7 @@ def _get_llm_client(session_id: str = "") -> tuple:
     model = llm_config.get("model", "deepseek-chat")
     api_key = llm_config.get("api_key", "")
     base_url = llm_config.get("base_url", "")
-    if base_url.endswith("/chat/completions"):
-        base_url = base_url.rsplit("/chat/completions", 1)[0]
+    base_url = normalize_base_url(base_url)
     if not api_key or not base_url:
         # 回退到 provider 配置
         try:
@@ -353,9 +354,7 @@ def _get_llm_client(session_id: str = "") -> tuple:
             if providers and 0 <= idx < len(providers):
                 prov = providers[idx]
                 api_key = prov.get("apiKey", api_key)
-                base_url = prov.get("baseUrl", base_url)
-                if base_url.endswith("/chat/completions"):
-                    base_url = base_url.rsplit("/chat/completions", 1)[0]
+                base_url = normalize_base_url(prov.get("baseUrl", base_url))
                 model = (prov.get("models") or [model])[0]
         except Exception as e:
             logger.warning(f"[Server] Failed to load llm_providers.json overrides: {e}")
@@ -368,21 +367,51 @@ def _get_llm_client(session_id: str = "") -> tuple:
     return client, model
 
 
-def _read_providers() -> dict:
-    # 先读用户数据目录，再回退到打包根
-    for p in [_PROVIDERS_PATH, _BUNDLED_PROVIDERS_PATH]:
-        if p.exists():
+def _atomic_write_json(path: Path, data: dict) -> None:
+    """Write a small JSON config without ever exposing a half-written file."""
+    path = Path(path)
+    path.parent.mkdir(parents=True, exist_ok=True)
+    fd, tmp_name = tempfile.mkstemp(prefix=path.name + ".", suffix=".tmp", dir=str(path.parent))
+    tmp = Path(tmp_name)
+    try:
+        # Keep the previous file one generation back. It also preserves a
+        # corrupt file for inspection if the user saves again after a read error.
+        if path.exists():
             try:
-                with open(p, "r", encoding="utf-8") as f:
-                    return json.load(f)
-            except Exception as e:
-                logger.warning(f"[Server] Failed to read llm_providers.json from {p}: {e}")
+                shutil.copy2(path, path.with_name(path.name + ".bak"))
+            except OSError as exc:
+                logger.warning(f"[Server] Could not back up {path}: {exc}")
+        with os.fdopen(fd, "w", encoding="utf-8") as f:
+            json.dump(data, f, ensure_ascii=False, indent=2)
+            f.flush()
+            os.fsync(f.fileno())
+        os.replace(tmp, path)
+    except Exception:
+        try:
+            os.unlink(tmp)
+        except OSError:
+            pass
+        raise
+
+
+def _read_providers() -> dict:
+    # A missing user file may fall back to the bundled copy. An existing file
+    # that fails to parse must not: showing bundled sample keys would hide the
+    # corruption and a later save could overwrite the real file with samples.
+    for p in [_PROVIDERS_PATH, _BUNDLED_PROVIDERS_PATH]:
+        if not p.exists():
+            continue
+        try:
+            with open(p, "r", encoding="utf-8") as f:
+                return json.load(f)
+        except Exception as e:
+            logger.error(f"[Server] Failed to read llm_providers.json from {p}: {e}")
+            return {"providers": [], "activeProviderIndex": 0}
     return {"providers": [], "activeProviderIndex": 0}
 
 
 def _write_providers(data: dict):
-    with open(_PROVIDERS_PATH, "w", encoding="utf-8") as f:
-        json.dump(data, f, ensure_ascii=False, indent=2)
+    _atomic_write_json(_PROVIDERS_PATH, data)
 
 
 def _norm_project_path(path: str) -> str:
@@ -435,18 +464,39 @@ def _write_projects(data: dict):
 
 def _read_agent_model_config() -> dict:
     for p in [_AGENT_MODEL_PATH, _BUNDLED_AGENT_MODEL_PATH]:
-        if p.exists():
-            try:
-                with open(p, "r", encoding="utf-8") as f:
-                    return json.load(f)
-            except Exception as e:
-                logger.warning(f"[Server] Failed to read agent model config {p}: {e}")
+        if not p.exists():
+            continue
+        try:
+            with open(p, "r", encoding="utf-8") as f:
+                return json.load(f)
+        except Exception as e:
+            logger.error(f"[Server] Failed to read agent model config {p}: {e}")
+            return {"version": "1.0", "agents": {}}
     return {"version": "1.0", "agents": {}}
 
 
 def _write_agent_model_config(data: dict):
-    with open(_AGENT_MODEL_PATH, "w", encoding="utf-8") as f:
-        json.dump(data, f, ensure_ascii=False, indent=2)
+    _atomic_write_json(_AGENT_MODEL_PATH, data)
+
+
+def restore_current_agent() -> None:
+    """Restore the agent selected before the last restart."""
+    global _current_agent
+    try:
+        cfg = _read_agent_model_config()
+        name = str(cfg.get("current_agent") or "").strip()
+        if not name:
+            return
+        available = {
+            str(a.get("name") or "").strip()
+            for a in list_available_agents_from_yaml()
+            if str(a.get("name") or "").strip()
+        }
+        if name in available:
+            _current_agent = name
+            logger.info(f"[Server] Restored agent selection: {name}")
+    except Exception as e:
+        logger.warning(f"[Server] Failed to restore agent selection: {e}")
 
 
 def _ensure_service() -> AgentChatServiceV2:

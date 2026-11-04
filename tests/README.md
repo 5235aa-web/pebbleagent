@@ -30,6 +30,7 @@ The repository also has three billing/holiday regression scripts at the project 
 | `test_render_html.mjs` | `escapeHtml`, `highlight`, `renderCodeBlock`, `renderMarkdown`, `renderPlain`, `renderAttachments`, `renderUserBubble` markup; HTML escaping; caret handling; `dateOf` / `clockOf` epoch and timestamp parsing |
 | `test_blocks_split.mjs` | `splitBlocks` fence routing (code / mermaid / svg / still-streaming), `LiveBuilder` paragraph commits, fence held until it closes, in-place tail mutation, reset |
 | `test_stream_state.mjs` | `appendStream` / `replaceStream` / `clearStream` keep the array identity, and every rebuild settles `streaming` |
+| `test_provider_ui.mjs` | `isOpenCodeProvider` / `isProviderReady`: the request-shaping block shows only for OpenCode and readiness requires a base URL plus a model |
 
 These import the shipped TypeScript source directly, with no build step. `run_all.mjs`
 passes `--experimental-transform-types` (the parameter properties in `LiveBuilder` are
@@ -66,6 +67,8 @@ needs the same flags: `node --experimental-transform-types --import ./tests/ts-r
 | Test | Covers |
 | --- | --- |
 | `test_thinking_params.py` | thinking toggle/effort (`build_thinking_params`, `_bool`, server expressions) |
+| `test_provider_headers.py` | per-provider headers/shaping, `model.provider.save` round-trip, blank-model tolerance, provider-by-model resolution, base-URL normalization |
+| `test_provider_lifecycle.py` | draft vs active provider, duplicate-model active priority, delete repair of `agent_model_config`, invalid RPCs return errors, unknown-field preservation, non-OpenCode shaping stripping, atomic writes, corrupt-file handling, persisted agent selection |
 | `test_clarify_dual.py` | `clarify` dual-channel answers + guards |
 | `test_log_persistence.py` | log setup idempotency + suspicious stream-end detection |
 

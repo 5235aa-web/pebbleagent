@@ -34,7 +34,7 @@ from openai import AsyncOpenAI
 
 
 from .agent_loader import get_cached_agent, filter_tools_for_agent, list_available_agents_from_yaml
-from .llm_client import apply_reasoning_mode, build_default_headers, keep_max_effort, shaping_from_provider
+from .llm_client import apply_reasoning_mode, build_default_headers, keep_max_effort, normalize_base_url, provider_ready, shaping_from_provider
 from .context_compressor import (
     # Token 计数（tiktoken + 中英文比例降级）
     estimate_tokens,
@@ -161,12 +161,17 @@ def _read_json_config(filename: str) -> Optional[dict]:
     data_path = _os.path.join(_DATA_HOME, filename)
     bundled_path = _os.path.join(_os.path.dirname(_os.path.dirname(__file__)), filename)
     for p in [data_path, bundled_path]:
-        if _os.path.exists(p):
-            try:
-                with open(p, "r", encoding="utf-8") as f:
-                    return json.load(f)
-            except Exception:
-                continue
+        if not _os.path.exists(p):
+            continue
+        try:
+            with open(p, "r", encoding="utf-8") as f:
+                return json.load(f)
+        except Exception as e:
+            # A corrupt user file must not silently fall back to the bundled
+            # sample providers; that is how a panel ends up showing defaults
+            # and a later save overwrites the real config.
+            logger.error(f"[AgentChatServiceV2] Failed to read {p}: {e}")
+            return None
     return None
 
 
@@ -636,22 +641,27 @@ class AgentChatServiceV2:
         return config.get("agents", {}).get(agent_name)
 
     def _find_provider_for_model(self, model_name: str) -> Optional[Dict[str, Any]]:
-        """根据模型名查找 provider 配置"""
+        """根据模型名查找 provider 配置（活动 provider 优先）"""
         try:
             config = _read_json_config("llm_providers.json")
             if not config:
                 return None
-
-            for provider in config.get("providers", []):
-                models = provider.get("models", [])
-                if model_name in models:
-                    base_url = provider.get("baseUrl", "")
-                    if base_url.endswith("/chat/completions"):
-                        base_url = base_url.rsplit("/chat/completions", 1)[0]
+            providers = config.get("providers") or []
+            try:
+                active_idx = int(config.get("activeProviderIndex", 0))
+            except (TypeError, ValueError):
+                active_idx = 0
+            ordered = []
+            if 0 <= active_idx < len(providers):
+                ordered.append(providers[active_idx])
+            ordered.extend(p for i, p in enumerate(providers) if i != active_idx)
+            for provider in ordered:
+                models = provider.get("models") or []
+                if model_name in models and provider_ready(provider):
                     return {
                         "provider": provider.get("provider"),
                         "api_key": provider.get("apiKey"),
-                        "base_url": base_url,
+                        "base_url": normalize_base_url(provider.get("baseUrl", "")),
                         "model": model_name,
                         "temperature": provider.get("temperature"),
                         "top_p": provider.get("topP"),
@@ -717,33 +727,53 @@ class AgentChatServiceV2:
         try:
             config = _read_json_config("llm_providers.json")
             if config:
-                providers = config.get('providers', [])
+                providers = config.get('providers') or []
                 if providers:
+                    try:
+                        active_idx = int(config.get("activeProviderIndex", 0))
+                    except (TypeError, ValueError):
+                        active_idx = 0
+                    if not (0 <= active_idx < len(providers)):
+                        active_idx = 0
+                    active_provider = providers[active_idx]
                     agent_def = get_cached_agent(agent_name)
                     resolved_model = self._resolve_agent_model(agent_name, requested_model, agent_def) if agent_def else requested_model
+                    resolved_model = str(resolved_model or "").strip()
 
-                    # 如果指定了模型，找到包含该模型的 provider
+                    # Prefer the active provider only when it owns the resolved
+                    # model. Otherwise the provider that owns that model wins,
+                    # preserving per-agent bindings (chat_agent -> deepseek)
+                    # while duplicate model ids resolve to the active card.
+                    active_models = [str(m).strip() for m in (active_provider.get('models') or []) if str(m).strip()]
                     selected_provider = None
-                    if resolved_model:
+                    if resolved_model and provider_ready(active_provider) and resolved_model in active_models:
+                        selected_provider = active_provider
+                    elif resolved_model:
                         for provider in providers:
-                            provider_models = provider.get('models', [])
-                            if resolved_model in provider_models:
+                            provider_models = [str(m).strip() for m in (provider.get('models') or []) if str(m).strip()]
+                            if resolved_model in provider_models and provider_ready(provider):
                                 selected_provider = provider
                                 break
-                    
-                    # 如果没找到或没指定模型，使用第一个 provider
-                    if not selected_provider:
-                        selected_provider = providers[0]
-                    
-                    base_url = selected_provider.get('baseUrl', '')
-                    if base_url.endswith('/chat/completions'):
-                        base_url = base_url.rsplit('/chat/completions', 1)[0]
+                    if selected_provider is None:
+                        if provider_ready(active_provider):
+                            selected_provider = active_provider
+                        else:
+                            selected_provider = next((p for p in providers if provider_ready(p)), None)
+                    if selected_provider is None:
+                        selected_provider = active_provider or providers[0]
 
-                    fallback_models = selected_provider.get('models', ['gpt-4'])
-                    final_model = resolved_model or (fallback_models[0] if fallback_models else 'gpt-4')
+                    provider_models = [str(m).strip() for m in (selected_provider.get('models') or []) if str(m).strip()]
+                    if resolved_model in provider_models:
+                        final_model = resolved_model
+                    elif provider_models:
+                        final_model = provider_models[0]
+                    else:
+                        final_model = resolved_model or 'gpt-4'
+
+                    base_url = normalize_base_url(selected_provider.get('baseUrl', '') or os.getenv("OPENAI_BASE_URL", "http://localhost:8080/v1"))
                     return {
-                        'api_key': selected_provider.get('apiKey', os.getenv("OPENAI_API_KEY", "local-dev-key")),
-                        'base_url': base_url or os.getenv("OPENAI_BASE_URL", "http://localhost:8080/v1"),
+                        'api_key': selected_provider.get('apiKey') or os.getenv("OPENAI_API_KEY", "local-dev-key"),
+                        'base_url': base_url,
                         'model': final_model,
                         'provider': selected_provider.get('provider'),
                         'temperature': selected_provider.get('temperature'),

@@ -628,3 +628,22 @@ input.attach-input[type="file"] {
   0%, 100% { opacity: 1; }
   50% { opacity: .32; }
 }
+
+/* ---- LLM provider draft state ----
+
+   The settings card that is being edited is not always the card that serves
+   chat. A dashed edge marks a draft selection without competing with the
+   accent edge that marks the active endpoint. */
+
+.lm-pcard.sel { border-style: dashed; border-color: var(--line-strong); }
+.lm-pnote {
+  margin: 6px 0 10px;
+  padding: 6px 8px;
+  border: 1px dashed var(--line);
+  border-radius: 8px;
+  font-family: var(--font-mono);
+  font-size: 8.5px;
+  line-height: 1.55;
+  color: var(--faint);
+}
+.lm-foot button:disabled { opacity: .4; cursor: default; }

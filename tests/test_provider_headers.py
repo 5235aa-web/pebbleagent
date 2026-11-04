@@ -23,7 +23,7 @@ TMP = tempfile.mkdtemp(prefix="pebble_provider_headers_")
 os.environ["PEBBLE_HOME"] = TMP
 os.environ["PEBBLE_CONFIG_DIR"] = TMP
 
-from agent_core.llm_client import apply_reasoning_mode, build_default_headers  # noqa: E402
+from agent_core.llm_client import apply_reasoning_mode, build_default_headers, normalize_base_url  # noqa: E402
 
 passed = 0
 failed = 0
@@ -236,10 +236,11 @@ def main() -> int:
     check("reasoningMode back to default", cleared.get("reasoningMode") == "thinking",
           f"{cleared.get('reasoningMode')}")
 
-    # ---- a new card: index -1 appends and takes over as the active provider ----
+    # ---- a new blank card is appended as a draft, not as the active endpoint ----
     with open(providers_path, encoding="utf-8") as f:
         before = json.load(f)
     count_before = len(before.get("providers", []))
+    active_before = before.get("activeProviderIndex", 0)
     srv.handle_request("model.provider.save", {
         "index": -1,
         "provider": {
@@ -252,14 +253,34 @@ def main() -> int:
     added = after.get("providers", [])
     check("index -1 appends a provider", len(added) == count_before + 1,
           f"{len(added)} vs {count_before}")
-    check("the new provider becomes active",
-          after.get("activeProviderIndex") == len(added) - 1,
-          f"{after.get('activeProviderIndex')} vs {len(added) - 1}")
+    check("a blank new card does not steal the active endpoint",
+          after.get("activeProviderIndex") == active_before,
+          f"{after.get('activeProviderIndex')} vs {active_before}")
     check("the new provider is given an id", bool(added[-1].get("id")), f"{added[-1].get('id')}")
     check("the new provider keeps the name from the request",
           added[-1].get("provider") == "commandcode", f"{added[-1].get('provider')}")
     check("an empty model list survives the round trip",
           added[-1].get("models") == [], f"{added[-1].get('models')}")
+
+    # ---- a blank active card must not kill model.options ----
+    # The card is active while the user fills it in. Indexing models[0] here
+    # raised IndexError inside the WS handler and closed the socket, which
+    # looked like a permanent "disconnected" state in the UI.
+    blank_opts = srv.handle_request("model.options", {}, "blank") or {}
+    blank_result = blank_opts.get("result") or {}
+    check("model.options survives an active provider with no models",
+          isinstance(blank_result.get("model"), str),
+          f"{blank_result.get('model')!r}")
+    check("model.options still lists every provider",
+          len(blank_result.get("providers") or []) == len(added),
+          f"{len(blank_result.get('providers') or [])} vs {len(added)}")
+
+    # ---- the loader ignores an empty active card instead of blanking the endpoint ----
+    from gateway.config import load_llm_config
+    blank_cfg = load_llm_config("code_agent")
+    check("blank active provider falls back to a configured endpoint",
+          bool(blank_cfg.get("api_key")) and bool(blank_cfg.get("base_url")),
+          f"{blank_cfg.get('api_key')!r} @ {blank_cfg.get('base_url')!r}")
 
     # ---- the agent-side config (main chat path) must carry the shaping fields ----
     with open(providers_path, "w", encoding="utf-8") as f:
@@ -282,6 +303,69 @@ def main() -> int:
           svc_cfg.get("reasoning_mode") == "effort_only", f"{svc_cfg.get('reasoning_mode')}")
     check("agent config carries max effort",
           svc_cfg.get("max_effort") == "keep", f"{svc_cfg.get('max_effort')}")
+
+    # ---- per-agent model bindings survive an unrelated active card ----
+    with open(providers_path, "w", encoding="utf-8") as f:
+        json.dump({"providers": [
+            {"id": "alpha", "provider": "alpha", "apiKey": "ka",
+             "baseUrl": "https://alpha.example/v1/chat/completions",
+             "models": ["model-a", "shared"]},
+            {"id": "beta", "provider": "beta", "apiKey": "kb",
+             "baseUrl": "https://beta.example/v1/responses",
+             "models": ["model-b", "shared"]},
+        ], "activeProviderIndex": 1}, f)
+    with open(os.path.join(TMP, "agent_model_config.json"), "w", encoding="utf-8") as f:
+        json.dump({"agents": {"code_agent": {"model_source": "model-a"}}}, f)
+    active_cfg = load_llm_config("code_agent")
+    check("the model's owner wins over an unrelated active card",
+          active_cfg.get("base_url") == "https://alpha.example/v1",
+          f"{active_cfg.get('base_url')!r}")
+    check("the agent keeps its configured model",
+          active_cfg.get("model") == "model-a", f"{active_cfg.get('model')!r}")
+    check("the model's owner supplies the key",
+          active_cfg.get("api_key") == "ka", f"{active_cfg.get('api_key')!r}")
+
+    # ---- duplicate model id: the ready active card wins ----
+    with open(os.path.join(TMP, "agent_model_config.json"), "w", encoding="utf-8") as f:
+        json.dump({"agents": {"code_agent": {"model_source": "shared"}}}, f)
+    duplicate_cfg = load_llm_config("code_agent")
+    check("duplicate model prefers the active card",
+          duplicate_cfg.get("base_url") == "https://beta.example/v1",
+          f"{duplicate_cfg.get('base_url')!r}")
+    check("duplicate model keeps its id", duplicate_cfg.get("model") == "shared",
+          f"{duplicate_cfg.get('model')!r}")
+    check("duplicate model uses the active key", duplicate_cfg.get("api_key") == "kb",
+          f"{duplicate_cfg.get('api_key')!r}")
+
+    # ---- a draft active card yields to the provider that owns the model ----
+    with open(providers_path, "w", encoding="utf-8") as f:
+        json.dump({"providers": [
+            {"id": "alpha", "provider": "alpha", "apiKey": "ka",
+             "baseUrl": "https://alpha.example/v1", "models": ["model-a"]},
+            {"id": "beta", "provider": "beta", "apiKey": "", "baseUrl": "",
+             "models": []},
+        ], "activeProviderIndex": 1}, f)
+    with open(os.path.join(TMP, "agent_model_config.json"), "w", encoding="utf-8") as f:
+        json.dump({"agents": {"code_agent": {"model_source": "model-a"}}}, f)
+    draft_cfg = load_llm_config("code_agent")
+    check("draft active card yields to the model owner",
+          draft_cfg.get("base_url") == "https://alpha.example/v1",
+          f"{draft_cfg.get('base_url')!r}")
+    check("draft active card keeps the owner's model",
+          draft_cfg.get("model") == "model-a", f"{draft_cfg.get('model')!r}")
+    check("draft active card uses the owner's key",
+          draft_cfg.get("api_key") == "ka", f"{draft_cfg.get('api_key')!r}")
+
+    # ---- base URLs may arrive as a full chat or Responses endpoint ----
+    check("full chat URL normalised to its root",
+          normalize_base_url("https://alpha.example/v1/chat/completions") == "https://alpha.example/v1",
+          normalize_base_url("https://alpha.example/v1/chat/completions"))
+    check("Responses URL normalised to its root",
+          normalize_base_url("https://openrouter.ai/api/v1/responses") == "https://openrouter.ai/api/v1",
+          normalize_base_url("https://openrouter.ai/api/v1/responses"))
+    check("trailing slash removed",
+          normalize_base_url("https://api.deepseek.com/v1/") == "https://api.deepseek.com/v1",
+          normalize_base_url("https://api.deepseek.com/v1/"))
 
     print()
     if failed:

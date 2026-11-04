@@ -169,7 +169,7 @@ watch(
   }
 )
 import { permissions, plan, sessions, sessionState, projects, setCatalog, catalog, bucketFor, type Session, type SessionGroup } from './store'
-import { usage, files, mcp, ledger, context, llm, notes, pairing, search, image, type BillRow, type ClarifyQuestion, type ClarifyAnswer } from './panels'
+import { usage, files, mcp, ledger, context, llm, notes, pairing, search, image, isOpenCodeProvider, isProviderReady, type BillRow, type ClarifyQuestion, type ClarifyAnswer, type LlmProvider } from './panels'
 import type { StreamItem } from './stream'
 import { renderUserBubble, nowClock, nowStamp, clockOf, escapeHtml, type AttachmentView, type ToolCallView, type ToolState } from './render'
 import { markPreviewChanged, mergePreviewComments, clearComments } from './preview'
@@ -1513,6 +1513,12 @@ export function interruptSession(): boolean {
     Every field is optional on the wire, so a payload that only carries tokens
     still updates tokens and leaves the cost line alone. */
 function syncUsage(p: Record<string, unknown>): void {
+  /* `message.usage` names the model the backend actually called. The live row
+     paint and the header both read `streamState.model`, so accepting this
+     value keeps the label truthful even when the configured model, the active
+     provider card and the resolved endpoint disagree. */
+  const usedModel = String(p.model ?? '').trim()
+  if (usedModel) streamState.model = usedModel
   const cost = Number(p.session_cost_cny ?? p.session_cost ?? NaN)
   if (Number.isFinite(cost)) usage.sessionCost = cost
   const tin = Number(p.latest_input_tokens ?? NaN)
@@ -1874,6 +1880,58 @@ function textOf(v: unknown): string {
 
     The two calls are independent: a failing `agent.list` leaves the provider
     cards usable, and a failing `model.options` leaves the agent list intact. */
+function providerFromWire(p: Record<string, unknown>, existing?: LlmProvider): LlmProvider {
+  const models = Array.isArray(p.models) ? (p.models as unknown[]).map(String) : []
+  const baseUrl = String(p.baseUrl ?? '')
+  const mapped: LlmProvider = {
+    name: String(p.name ?? 'provider'),
+    slug: String(p.slug ?? ''),
+    models,
+    authenticated: Boolean(p.authenticated),
+    current: Boolean(p.is_current),
+    ready: typeof p.ready === 'boolean' ? Boolean(p.ready) : Boolean(baseUrl.trim() && models.length),
+    apiKey: String(p.apiKey ?? ''),
+    baseUrl,
+    temperature: numOf(p.temperature, 1),
+    topP: numOf(p.topP, 1),
+    reasoningEffort: textOf(p.reasoning_effort) || 'high',
+    thinkingEnabled: p.thinking_enabled !== false,
+    extraHeaders: JSON.stringify(
+      p.extraHeaders && typeof p.extraHeaders === 'object' ? p.extraHeaders : {},
+      null,
+      2
+    ),
+    sessionHeader: textOf(p.sessionHeader),
+    reasoningMode: textOf(p.reasoningMode) || 'thinking',
+    maxEffort: textOf(p.maxEffort) || 'downgrade',
+    dirty: false
+  }
+  /* Keep a card the reader is still editing. Without this a gateway.ready or
+     model.changed refresh replaces the provider object and silently discards a
+     half-typed key or base url. */
+  if (existing?.dirty) {
+    return { ...existing, current: mapped.current, authenticated: mapped.authenticated, ready: mapped.ready }
+  }
+  return mapped
+}
+
+function providerEditSnapshot(p: LlmProvider): string {
+  return JSON.stringify({
+    name: p.name,
+    baseUrl: p.baseUrl,
+    apiKey: p.apiKey,
+    models: p.models,
+    temperature: p.temperature,
+    topP: p.topP,
+    reasoningEffort: p.reasoningEffort,
+    thinkingEnabled: p.thinkingEnabled,
+    extraHeaders: p.extraHeaders,
+    sessionHeader: p.sessionHeader,
+    reasoningMode: p.reasoningMode,
+    maxEffort: p.maxEffort
+  })
+}
+
 export async function refreshLlm(): Promise<void> {
   if (!gateway.connected) return
 
@@ -1894,36 +1952,43 @@ export async function refreshLlm(): Promise<void> {
   try {
     const opts = await gateway.request<Record<string, unknown>>('model.options', {})
     const provs = Array.isArray(opts.providers) ? (opts.providers as Array<Record<string, unknown>>) : []
-    if (provs.length) {
-      llm.providers = provs.map(p => ({
-        name: String(p.name ?? 'provider'),
-        slug: String(p.slug ?? ''),
-        models: Array.isArray(p.models) ? (p.models as unknown[]).map(String) : [],
-        authenticated: Boolean(p.authenticated),
-        current: Boolean(p.is_current),
-        apiKey: String(p.apiKey ?? ''),
-        baseUrl: String(p.baseUrl ?? '')
-      }))
-      const idx = provs.findIndex(p => Boolean(p.is_current))
-      const active = (idx >= 0 ? provs[idx] : provs[0]) ?? {}
-      llm.provider = String(active.name ?? '')
-      llm.temperature = numOf(active.temperature, llm.temperature)
-      llm.topP = numOf(active.topP, llm.topP)
-      llm.reasoningEffort = textOf(active.reasoning_effort) || llm.reasoningEffort
-      llm.thinkingEnabled = active.thinking_enabled !== false
-      llm.reasoningMode = textOf(active.reasoningMode) || llm.reasoningMode
-      llm.maxEffort = textOf(active.maxEffort) || llm.maxEffort
-      llm.sessionHeader = textOf(active.sessionHeader)
-      const headers = active.extraHeaders
-      if (headers && typeof headers === 'object' && Object.keys(headers as object).length) {
-        llm.extraHeaders = JSON.stringify(headers, null, 2)
-      }
+    const bySlug = new Map(llm.providers.filter(p => p.slug).map(p => [p.slug, p]))
+    llm.providers = provs.map(p => providerFromWire(p, bySlug.get(String(p.slug ?? ''))))
+
+    const idx = llm.providers.findIndex(p => p.current)
+    const active = idx >= 0 ? llm.providers[idx] : llm.providers[0]
+    if (active) {
+      llm.provider = active.name
+      llm.temperature = active.temperature
+      llm.topP = active.topP
+      llm.reasoningEffort = active.reasoningEffort
+      llm.thinkingEnabled = active.thinkingEnabled
+      llm.reasoningMode = active.reasoningMode
+      llm.maxEffort = active.maxEffort
+      llm.sessionHeader = active.sessionHeader
+      llm.extraHeaders = active.extraHeaders
+    } else {
+      /* Deleting the last card must clear the pane, not leave a ghost row that
+         can still be saved or deleted. */
+      llm.provider = ''
+      llm.temperature = 1
+      llm.topP = 1
+      llm.reasoningEffort = 'high'
+      llm.thinkingEnabled = true
+      llm.reasoningMode = 'thinking'
+      llm.maxEffort = 'downgrade'
+      llm.sessionHeader = ''
+      llm.extraHeaders = '{}'
+      streamState.model = ''
     }
-    if (typeof opts.model === 'string' && opts.model) llm.model = opts.model
+    /* The backend returns the effective model (active provider's fallback
+       included). With no providers at all there is no model to keep; an empty
+       list must clear the header instead of leaving a stale name. */
+    llm.model = provs.length && typeof opts.model === 'string' ? opts.model : ''
     if (typeof opts.currency === 'string' && opts.currency) llm.currency = opts.currency
     if (opts.pricing && typeof opts.pricing === 'object') llm.pricing = opts.pricing as typeof llm.pricing
     llm.loaded = true
-  } catch { /* keep the prototype numbers */ }
+  } catch { /* keep the last good state, but never mark an unreadable pane loaded */ }
 }
 
 /** Switches the agent. The list updates first; a refusal re-reads the truth
@@ -1936,138 +2001,251 @@ export function switchAgent(name: string): void {
     .catch(() => { void refreshLlm() })
 }
 
-/** Switches the model on the active provider. `model.switch` only accepts a
-    model the active provider lists, so the index is sent for the caller's
-    benefit and the truth is re-read on failure. */
-export function switchModel(model: string): void {
-  if (!gateway.connected || !model) return
-  const idx = llm.providers.findIndex(p => p.models.includes(model))
-  llm.model = model
-  if (model) streamState.model = model
-  void gateway.request('model.switch', { model, provider_index: idx })
-    .catch(() => { void refreshLlm() })
+/** Switches the model on the active provider. The backend only accepts a model
+    the active provider lists; the UI waits for that answer instead of painting
+    a selection the next turn would not use. */
+export function switchModel(model: string): Promise<boolean> {
+  if (!gateway.connected || !model) return Promise.resolve(false)
+  return gateway.request<{ ok?: boolean; error?: string }>('model.switch', { model })
+    .then(res => {
+      if (res?.ok === false) {
+        notify('Switch failed', res.error || 'The gateway refused the model switch.', 'err')
+        void refreshLlm()
+        return false
+      }
+      llm.model = model
+      streamState.model = model
+      return true
+    })
+    .catch(e => {
+      notify('Switch failed', e instanceof Error ? e.message : 'The gateway refused the model switch.', 'err')
+      void refreshLlm()
+      return false
+    })
 }
 
-/** Writes the sampling block of the active provider. `model.params.set` owns
+/** Writes the sampling block of the selected provider. `model.params.set` owns
     these four fields; everything else is saved through provider.save. */
-export function setModelParams(): void {
-  if (!gateway.connected) return
-  void gateway.request('model.params.set', {
-    temperature: llm.temperature,
-    topP: llm.topP,
-    reasoning_effort: llm.reasoningEffort,
-    thinking_enabled: llm.thinkingEnabled
-  }).catch(() => { /* the pane keeps the typed values */ })
+export function setModelParams(index?: number): Promise<boolean> {
+  if (!gateway.connected) return Promise.resolve(false)
+  const hasIndex = typeof index === 'number'
+  const p = hasIndex ? llm.providers[index as number] : undefined
+  if (hasIndex && !p) {
+    notify('Settings not saved', 'That provider card no longer exists.', 'err')
+    return Promise.resolve(false)
+  }
+  const payload: Record<string, unknown> = p
+    ? {
+        index,
+        temperature: p.temperature,
+        topP: p.topP,
+        reasoning_effort: p.reasoningEffort,
+        thinking_enabled: p.thinkingEnabled
+      }
+    : {
+        temperature: llm.temperature,
+        topP: llm.topP,
+        reasoning_effort: llm.reasoningEffort,
+        thinking_enabled: llm.thinkingEnabled
+      }
+  return gateway.request<{ ok?: boolean; error?: string }>('model.params.set', payload)
+    .then(res => {
+      if (res?.ok === false) {
+        notify('Settings not saved', res.error || 'The gateway refused the parameter change.', 'err')
+        return false
+      }
+      return true
+    })
+    .catch(e => {
+      notify('Settings not saved', e instanceof Error ? e.message : 'The gateway refused the parameter change.', 'err')
+      return false
+    })
 }
 
-/** Saves the whole provider card, including the request-shaping fields the
-    settings UI edits by hand. Every exit reports: a save that silently does
-    nothing is indistinguishable from a broken button. */
-export function saveProvider(index: number): void {
+/** Saves the selected provider card. Request shaping is OpenCode-only, so other
+    providers omit it entirely. Returns false (and leaves the local draft in
+    place) on validation or gateway errors. */
+export function saveProvider(index: number): Promise<boolean> {
   if (!gateway.connected) {
     notify('Save skipped', 'Not connected to the gateway, so nothing was written.', 'err')
-    return
+    return Promise.resolve(false)
   }
   const p = llm.providers[index]
   if (!p) {
     notify('Save skipped', 'No provider card is selected.', 'err')
-    return
+    return Promise.resolve(false)
   }
-  let headers: Record<string, unknown> = {}
-  try {
-    const parsed = JSON.parse(llm.extraHeaders || '{}')
-    if (parsed && typeof parsed === 'object') headers = parsed as Record<string, unknown>
-  } catch { /* malformed json is sent empty, same as the hand-edited file */ }
-  void gateway.request('model.provider.save', {
+
+  const name = p.name.trim()
+  if (!name) {
+    notify('Save skipped', 'Provider name cannot be empty.', 'err')
+    return Promise.resolve(false)
+  }
+  const baseUrl = p.baseUrl.trim()
+  if (baseUrl && !/^https?:\/\//i.test(baseUrl)) {
+    notify('Save skipped', 'Base url must start with http:// or https://.', 'err')
+    return Promise.resolve(false)
+  }
+  const models = p.models.map(m => m.trim()).filter(Boolean)
+  if (models.some(m => /\s/.test(m))) {
+    notify('Save skipped', 'Model ids must not contain spaces. Use the provider\'s exact model id.', 'err')
+    return Promise.resolve(false)
+  }
+
+  let shaping: Record<string, unknown> = {}
+  if (isOpenCodeProvider(name)) {
+    let headers: Record<string, unknown> = {}
+    try {
+      const parsed = JSON.parse(p.extraHeaders || '{}')
+      if (!parsed || typeof parsed !== 'object' || Array.isArray(parsed)) {
+        throw new Error('extra headers must be a JSON object')
+      }
+      headers = parsed as Record<string, unknown>
+    } catch (e) {
+      notify(
+        'Invalid extra headers',
+        e instanceof Error ? e.message : 'Fix the JSON before saving; the existing headers were left untouched.',
+        'err'
+      )
+      return Promise.resolve(false)
+    }
+    shaping = {
+      extraHeaders: headers,
+      sessionHeader: p.sessionHeader,
+      reasoningMode: p.reasoningMode,
+      maxEffort: p.maxEffort
+    }
+  }
+
+  const snapshot = providerEditSnapshot(p)
+  return gateway.request<{ ok?: boolean; error?: string }>('model.provider.save', {
     index,
     provider: {
       slug: p.slug,
-      name: p.name,
-      apiKey: p.apiKey,
-      baseUrl: p.baseUrl,
-      models: p.models,
-      temperature: llm.temperature,
-      topP: llm.topP,
-      reasoning_effort: llm.reasoningEffort,
-      thinking_enabled: llm.thinkingEnabled,
-      extraHeaders: headers,
-      sessionHeader: llm.sessionHeader,
-      reasoningMode: llm.reasoningMode,
-      maxEffort: llm.maxEffort
+      name,
+      apiKey: p.apiKey.trim(),
+      baseUrl,
+      models,
+      temperature: p.temperature,
+      topP: p.topP,
+      reasoning_effort: p.reasoningEffort,
+      thinking_enabled: p.thinkingEnabled,
+      ...shaping
     }
-  }).then(() => {
-    notify('Saved', p.name + ' written to the provider config.', 'ok')
-    void refreshLlm()
+  }).then(async res => {
+    const current = llm.providers[index] ?? p
+    if (res?.ok === false) {
+      current.dirty = true
+      notify('Save failed', res.error || 'The gateway refused the write.', 'err')
+      return false
+    }
+    /* Keep dirty while the request is in flight so a reconnect refresh cannot
+       replace a half-typed value. Clear it only when the card still matches the
+       snapshot that was actually written. */
+    if (providerEditSnapshot(current) === snapshot) current.dirty = false
+    const ready = isProviderReady(current)
+    const hasKey = Boolean(current.apiKey.trim())
+    const message = !ready
+      ? current.name + ' saved as a draft. Add a base url and at least one model before it can become active.'
+      : !hasKey
+        ? current.name + ' saved. No API key is set; local endpoints may still work, hosted ones will reject requests.'
+        : current.name + ' written to the provider config.'
+    notify('Saved', message, ready ? (hasKey ? 'ok' : 'warn') : 'warn')
+    await refreshLlm()
+    return true
   }).catch(e => {
+    const current = llm.providers[index] ?? p
+    current.dirty = true
     notify('Save failed', e instanceof Error ? e.message : 'The gateway refused the write.', 'err')
+    return false
   })
 }
 
-export function deleteProvider(index: number): void {
+export function deleteProvider(index: number): Promise<boolean> {
   if (!gateway.connected) {
     notify('Delete skipped', 'Not connected to the gateway, so nothing was removed.', 'err')
-    return
+    return Promise.resolve(false)
   }
-  const name = llm.providers[index]?.name
-  if (!name) {
+  const p = llm.providers[index]
+  if (!p) {
     notify('Delete skipped', 'No provider card is selected.', 'err')
-    return
+    return Promise.resolve(false)
   }
-  void gateway.request('model.provider.delete', { index })
-    .then(() => {
-      notify('Deleted', name + ' removed from the provider config.', 'warn')
-      void refreshLlm()
+  return gateway.request<{ ok?: boolean; error?: string }>('model.provider.delete', { index })
+    .then(async res => {
+      if (res?.ok === false) {
+        notify('Delete failed', res.error || 'The gateway refused the delete.', 'err')
+        return false
+      }
+      notify('Deleted', p.name + ' removed from the provider config.', 'warn')
+      await refreshLlm()
+      return true
     })
     .catch(e => {
       notify('Delete failed', e instanceof Error ? e.message : 'The gateway refused the delete.', 'err')
+      return false
     })
 }
 
-/** Adds a blank provider card. The gateway appends it and points
-    `activeProviderIndex` at the new entry when `index` is -1, so the card lands
-    already selected and is one save away from being usable. */
-export function addProvider(): void {
+/** Appends a draft provider card without making it active. The returned index is
+    the card the caller should select for editing. */
+export function addProvider(): Promise<number | null> {
   if (!gateway.connected) {
     notify('Add skipped', 'Not connected to the gateway, so nothing was written.', 'err')
-    return
+    return Promise.resolve(null)
   }
-  void gateway.request('model.provider.save', {
+  return gateway.request<{ ok?: boolean; index?: number; error?: string }>('model.provider.save', {
     index: -1,
     provider: {
       name: 'New provider',
       apiKey: '',
       baseUrl: '',
       models: [],
-      temperature: llm.temperature,
-      topP: llm.topP,
-      reasoning_effort: llm.reasoningEffort,
-      thinking_enabled: llm.thinkingEnabled,
-      extraHeaders: {},
-      sessionHeader: '',
-      reasoningMode: llm.reasoningMode,
-      maxEffort: llm.maxEffort
+      temperature: 1,
+      topP: 1,
+      reasoning_effort: 'high',
+      thinking_enabled: true
     }
-  }).then(() => {
-    notify('Provider added', 'Fill in its base url and key, add a model, then save.', 'ok')
-    void refreshLlm()
+  }).then(async res => {
+    if (res?.ok === false) {
+      notify('Add failed', res.error || 'The gateway refused the write.', 'err')
+      return null
+    }
+    notify(
+      'Provider added',
+      'This card is a draft. Fill in its base url and key, add a model, then save — it becomes active only when ready.',
+      'ok'
+    )
+    await refreshLlm()
+    return typeof res?.index === 'number' ? res.index : null
   }).catch(e => {
     notify('Add failed', e instanceof Error ? e.message : 'The gateway refused the write.', 'err')
+    return null
   })
 }
 
-/** Switches the active provider. The model travels with it because the backend
-    resolves a request by finding which provider owns the model, and falls back
-    to the first provider in the file when no provider claims it — so moving the
-    index alone would leave the next turn talking to the old endpoint. */
-export function switchProvider(index: number, model: string): void {
+/** Switches the active provider. The backend rejects a draft provider, so a card
+    without a base url/model cannot make the endpoint disagree with the
+    highlighted settings card. */
+export function switchProvider(index: number, model: string): Promise<boolean> {
   if (!gateway.connected) {
     notify('Switch skipped', 'Not connected to the gateway, so nothing changed.', 'err')
-    return
+    return Promise.resolve(false)
   }
-  void gateway.request('model.provider.set', { index, model })
-    .then(() => { void refreshLlm() })
-    .catch(e => {
+  return gateway.request<{ ok?: boolean; error?: string }>('model.provider.set', { index, model })
+    .then(async res => {
+      if (res?.ok === false) {
+        notify('Switch failed', res.error || 'The gateway refused the change.', 'err')
+        await refreshLlm()
+        return false
+      }
+      await refreshLlm()
+      return true
+    })
+    .catch(async e => {
       notify('Switch failed', e instanceof Error ? e.message : 'The gateway refused the change.', 'err')
+      await refreshLlm()
+      return false
     })
 }
 

@@ -12,14 +12,48 @@ from typing import Any, Dict, Optional
 logger = logging.getLogger(__name__)
 
 
+def is_opencode_provider(name: Any) -> bool:
+    """True for the OpenCode family (`opencode`, `OpenCode Go`, `opencode-go`)."""
+    normalized = str(name or "").lower().replace(" ", "").replace("_", "").replace("-", "")
+    return normalized in ("opencode", "opencodego")
+
+
+def provider_ready(provider: Optional[Dict[str, Any]]) -> bool:
+    """A provider can serve chat only with a base URL and at least one model.
+
+    The API key is deliberately not required: local OpenAI-compatible servers
+    often accept any placeholder. The UI shows a separate "no key" warning.
+    """
+    if not isinstance(provider, dict):
+        return False
+    entry = provider
+    models = entry.get("models") or []
+    if isinstance(models, str):
+        models = [models]
+    has_model = isinstance(models, (list, tuple)) and any(str(m).strip() for m in models)
+    return bool(str(entry.get("baseUrl") or "").strip()) and has_model
+
+
 def shaping_from_provider(provider: Optional[Dict[str, Any]]) -> Dict[str, Any]:
     """Extract the optional request-shaping fields from a raw provider entry.
 
     Shared by the gateway config loader (selects the active provider) and the
     agent-side provider resolution (selects the provider that owns the model), so
     both paths hand the same values to the client and the request builder.
+
+    The block is OpenCode-only: a hand-edited `extraHeaders` on another provider
+    must not silently change its request shape while the settings panel hides
+    the controls.
     """
-    entry = provider or {}
+    entry = provider if isinstance(provider, dict) else {}
+    defaults = {
+        "extra_headers": {},
+        "session_header": "",
+        "reasoning_mode": "thinking",
+        "max_effort": "downgrade",
+    }
+    if not is_opencode_provider(entry.get("provider")):
+        return defaults
 
     raw_headers = entry.get("extraHeaders")
     extra_headers = (
@@ -43,6 +77,21 @@ def shaping_from_provider(provider: Optional[Dict[str, Any]]) -> Dict[str, Any]:
         "reasoning_mode": reasoning_mode,
         "max_effort": max_effort,
     }
+
+
+def normalize_base_url(raw: str) -> str:
+    """Return the API root an OpenAI-compatible client expects.
+
+    Users paste the full chat URL or the Responses endpoint often enough that
+    appending `/chat/completions` to it produced paths such as
+    `.../api/v1/responses/chat/completions` and a 404. Both suffixes are
+    stripped here so every caller builds the request from the same root.
+    """
+    url = (raw or "").strip().rstrip("/")
+    for suffix in ("/chat/completions", "/responses"):
+        if url.endswith(suffix):
+            return url[: -len(suffix)].rstrip("/")
+    return url
 
 
 def build_default_headers(

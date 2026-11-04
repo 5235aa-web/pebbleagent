@@ -29,12 +29,15 @@
 ### Path 2: Config Save/Load
 
 ```
-Save: ModelConfigPanel.vue → config.saveProviders
-  → WebSocket "model.provider.save" → server.py → _write_providers(llm_providers.json)
+Save: LlmPane.vue → wire.ts saveProvider/addModel
+  → WebSocket "model.provider.save" → gateway/rpc/model.py
+  → validate + merge → _atomic_write_json(llm_providers.json)
+  → if active/dirty model no longer valid: rewrite agent_model_config.json
 
-Load: gateway.ts setupConnection → configStore.loadProvidersFromBackend
-  → WebSocket "model.options" → server.py → _read_providers
-  Note: called on startup
+Load: gateway.ready → wire.ts refreshLlm
+  → WebSocket "model.options" → gateway/rpc/model.py → _read_providers
+  → active wins when it owns the model; otherwise the model owner wins (per-agent bindings)
+  Note: called on startup and after every model/provider change
 ```
 
 ### Path 3: WebSocket Event Types (16)

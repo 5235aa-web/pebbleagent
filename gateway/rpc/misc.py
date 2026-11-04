@@ -103,6 +103,28 @@ def handle(ctx, method):
             return {"id": rid, "result": {"ok": False, "error": f"Unknown agent: {name}", "available": available}}
         srv._current_agent = name
         logger.info(f"[Server] Agent switched to: {name}")
+        try:
+            cfg = srv._read_agent_model_config()
+            cfg["current_agent"] = name
+            srv._write_agent_model_config(cfg)
+        except Exception as e:
+            logger.warning(f"[Server] Failed to persist agent selection: {e}")
+        # Align the provider card with the new agent's model owner. Without this
+        # the file's activeProviderIndex can keep pointing at the previous
+        # agent's card even though model.options already reports the effective
+        # owner.
+        try:
+            from gateway.rpc import model as model_rpc
+            data = srv._read_providers()
+            providers = data.get("providers") or []
+            if providers:
+                active_idx = model_rpc._active_index(data, providers)
+                repaired = model_rpc._repair_agent_model(srv, providers, active_idx)
+                if repaired != active_idx:
+                    data["activeProviderIndex"] = repaired
+                    srv._write_providers(data)
+        except Exception as e:
+            logger.warning(f"[Server] Failed to align provider with agent model: {e}")
         # Reload LLM config for the new agent
         ctx.llm_config = srv.load_llm_config(srv._current_agent)
         # The other client shows the agent in its header; let it refresh.

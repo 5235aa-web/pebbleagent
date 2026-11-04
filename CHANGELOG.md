@@ -7,6 +7,16 @@ which is what the in-app update sheet shows before installing. Add the section
 before running `npm run release`; the release stops if it is missing, because a
 feed with empty notes tells the user nothing.
 
+## 1.0.9
+
+- Fixed the add-provider crash loop; a failing RPC now returns an error without closing the WebSocket.
+- Fixed provider/model routing for duplicate model ids, per-agent bindings, and draft providers; drafts activate only with a base URL and at least one model.
+- Deleting a provider or its last model now repairs the agent model instead of sending a stale name.
+- Invalid provider operations now fail; base URLs and request-shaping fields are normalised and validated.
+- Provider and agent configs are written atomically with a `.bak` copy; a corrupt user config no longer falls back to bundled sample providers.
+- LLM pane: draft/active/no-key states, per-provider settings, Enter/blur model entry, auto-activation, delete confirmation, and dirty-edit preservation.
+- Unknown provider fields and agent settings survive saves; agent selection persists; the reply model label follows the actual model.
+
 ## 1.0.8
 
 - Fixed the update sheet opening above the window. It was mounted inside the title bar, and the bar's blur effect made the overlay size itself against that 78px strip instead of the window, so the notes were cut off at the top and could not be read.
