@@ -64,14 +64,6 @@ def _validate_pricing_block(block) -> tuple:
     return True, ""
 
 
-def _atomic_write_json(path: Path, data: dict):
-    """原子写 JSON：先写临时文件再 os.replace，防止写一半崩溃损坏原文件"""
-    tmp = path.with_name(path.name + ".tmp")
-    with open(tmp, "w", encoding="utf-8") as f:
-        json.dump(data, f, ensure_ascii=False, indent=2)
-    os.replace(tmp, path)
-
-
 # ==================== file.* RPC 路径守卫 ====================
 
 def _get_current_project_root() -> str:
@@ -415,6 +407,17 @@ def _write_providers(data: dict):
 
 
 def _norm_project_path(path: str) -> str:
+    """Normalise a project path without inventing one.
+
+    Empty input stays empty: ``os.path.abspath("")`` is the process cwd, and in
+    a packaged app that is the sidecar's install directory. Treating it as a
+    project would register, or adopt sessions into, a folder nobody picked.
+    """
+    if not isinstance(path, str):
+        return ""
+    path = path.strip()
+    if not path:
+        return ""
     return os.path.normpath(os.path.abspath(path))
 
 
@@ -435,31 +438,86 @@ def _validate_project_dir(path: str) -> tuple:
     return True, "", resolved
 
 
+def _preserve_corrupt_projects(reason: str) -> str:
+    """Copy an unreadable projects.json aside so a later save cannot erase it.
+
+    The original file stays where it is: it is the user's only copy of the
+    registry, and a read failure must never be turned into "no projects". The
+    copy is written once, so repeated failures do not pile up files.
+    """
+    try:
+        if not _PROJECTS_PATH.exists():
+            return ""
+        backup = _PROJECTS_PATH.with_name(_PROJECTS_PATH.name + ".corrupt")
+        if not backup.exists():
+            shutil.copy2(_PROJECTS_PATH, backup)
+            logger.error(f"[Server] projects.json unreadable ({reason}); preserved at {backup}")
+        else:
+            # The copy is already there. Repeating the error on every read (a
+            # prompt submit reads the registry) only floods the log.
+            logger.warning(f"[Server] projects.json still unreadable ({reason}); kept the existing copy at {backup}")
+        return str(backup)
+    except Exception as e:
+        logger.error(f"[Server] Could not preserve the unreadable projects.json: {e}")
+        return ""
+
+
 def _read_projects() -> dict:
     """读取项目列表 {active, projects[]}。
 
     未选择项目时返回空列表，交给前端引导用户指定。用服务当前工作目录做
     默认值是不可靠的：打包后它是 sidecar 的工作目录（取决于启动方式，
     可能是安装目录），会诱使用户把文件写进安装位置。
+
+    读不出来和"没有项目"是两种状态：损坏的文件先复制一份再返回空表，并把
+    ``corrupt`` 带出去，避免上层把一次读失败当成空注册表继续写。
     """
+    if not _PROJECTS_PATH.exists():
+        return {"active": "", "projects": []}
     try:
-        if _PROJECTS_PATH.exists():
-            with open(_PROJECTS_PATH, "r", encoding="utf-8") as f:
-                data = json.load(f)
-                if isinstance(data, dict) and isinstance(data.get("projects"), list):
-                    projects = [_norm_project_path(p) for p in data["projects"] if p]
-                    active = data.get("active", "")
-                    if active not in projects and projects:
-                        active = projects[0]
-                    return {"active": active, "projects": projects}
+        with open(_PROJECTS_PATH, "r", encoding="utf-8") as f:
+            data = json.load(f)
+        if not isinstance(data, dict) or not isinstance(data.get("projects"), list):
+            raise ValueError("projects.json has no projects list")
+        projects = []
+        for raw in data["projects"]:
+            norm = _norm_project_path(raw) if raw else ""
+            if norm and norm not in projects:
+                projects.append(norm)
+        # `active` is normalised as well: an older file may carry a trailing
+        # separator or a different case, and an exact string compare used to
+        # silently reselect projects[0] behind the user's back.
+        active = _norm_project_path(data.get("active") or "")
+        if active not in projects:
+            active = projects[0] if projects else ""
+        return {"active": active, "projects": projects}
     except Exception as e:
-        logger.warning(f"[Server] Failed to read projects.json: {e}")
-    return {"active": "", "projects": []}
+        backup = _preserve_corrupt_projects(str(e))
+        return {"active": "", "projects": [], "corrupt": True, "backup": backup}
 
 
 def _write_projects(data: dict):
-    with open(_PROJECTS_PATH, "w", encoding="utf-8") as f:
-        json.dump(data, f, ensure_ascii=False, indent=2)
+    """Persist the registry atomically, never over an unreadable original.
+
+    projects.json decides which folders the tools may touch. A truncated file
+    reads as "no projects" and the next save makes that permanent, so this goes
+    through the same atomic writer (temp file + fsync + replace + .bak) as the
+    provider and agent configs.
+    """
+    if _PROJECTS_PATH.exists():
+        try:
+            with open(_PROJECTS_PATH, "r", encoding="utf-8") as f:
+                json.load(f)
+        except Exception:
+            _preserve_corrupt_projects("unreadable before write")
+    # Only the two keys the registry actually owns are persisted. `_read_projects`
+    # also answers `corrupt` / `backup`, and writing them back would leave a
+    # transient read error recorded in the file it describes.
+    clean = {
+        "active": str(data.get("active") or ""),
+        "projects": [str(p) for p in (data.get("projects") or []) if p],
+    }
+    _atomic_write_json(_PROJECTS_PATH, clean)
 
 
 def _read_agent_model_config() -> dict:
@@ -549,6 +607,9 @@ def broadcast_event(event_type: str, payload: dict):
 # this hook so `session.resume` can report whether a turn is still running
 # instead of guessing from client-side event traffic.
 _session_running_probe = None
+# Same registry, asked the broader question: is *any* worker alive. A project
+# switch is global, so it has to see turns started by other clients.
+_any_session_running_probe = None
 
 
 def set_session_running_probe(fn):
@@ -562,6 +623,28 @@ def is_session_running(session_id: str) -> bool:
         return False
     try:
         return bool(fn(session_id))
+    except Exception:
+        return False
+
+
+def set_any_session_running_probe(fn):
+    global _any_session_running_probe
+    _any_session_running_probe = fn
+
+
+def is_any_session_running() -> bool:
+    """True while any prompt worker is still alive.
+
+    Switching the project root is a global operation: a running turn resolves
+    every later tool call against the service's current path, so the guard
+    cannot look only at the session named in the request. A client that sends no
+    session id must not be able to switch underneath somebody else's turn.
+    """
+    fn = _any_session_running_probe
+    if fn is None:
+        return False
+    try:
+        return bool(fn())
     except Exception:
         return False
 

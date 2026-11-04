@@ -77,17 +77,19 @@ export interface PermissionRequest {
   leaving: boolean
 }
 
-export const sessions = reactive<Session[]>([
-  { id: 's1', index: null, title: 'Orbit UI — a revolutionary surface', msgs: 42, time: 'now', group: 'Pinned', pinned: true },
-  { id: 's2', index: '04', title: 'Gateway TLS for mobile pairing', msgs: 18, time: '2h ago', group: 'Today', pinned: false },
-  { id: 's3', index: '03', title: 'Live token rate in the status bar', msgs: 24, time: '5h ago', group: 'Today', pinned: false },
-  { id: 's4', index: '02', title: 'Snapshot revert semantics', msgs: 39, time: '1d ago', group: 'Yesterday', pinned: false },
-  { id: 's5', index: '01', title: 'Bootstrapping the knowledge base', msgs: 12, time: '6d ago', group: 'Earlier', pinned: false }
-])
+/* Empty until `bootstrap` answers with the rows the gateway holds for this
+   project. The prototype used to seed five demo conversations here, and a
+   project with no sessions kept showing them: they were clickable, they
+   answered `session.list` from nobody, and the switcher looked populated on a
+   fresh install. An empty list is a real state; fake rows are not. */
+export const sessions = reactive<Session[]>([])
 
 export const sessionState = reactive({
-  activeId: 's1',
+  activeId: '',
   filter: '',
+  /* How the switcher's last read went. Without it an empty panel cannot say
+     whether it is still loading, failed to read, or has nothing to show. */
+  listState: 'idle' as 'idle' | 'loading' | 'ok' | 'failed',
   /* Status-bar counters. Both come from session.resume: `info.tools` and
      `info.skills` carry what the gateway loaded, and the tool-call total is
      counted from the restored transcript. */
@@ -108,7 +110,12 @@ export const projects = reactive({
   active: '',
   /** False until project.list answers, so the switcher can avoid flashing an
       empty registry over a real one. */
-  loaded: false
+  loaded: false,
+  /** True when projects.json exists but could not be read. The panel then says
+      the registry is unreadable instead of drawing an empty one. */
+  corrupt: false,
+  /** Where the preserved copy of an unreadable registry was written. */
+  backup: ''
 })
 
 export interface CatalogGroup {

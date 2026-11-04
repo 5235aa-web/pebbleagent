@@ -13,10 +13,14 @@ def handle(ctx, method):
     rid = ctx.rid
 
     if method == "session.create":
-        project_path = params.get("project_path", "")
+        # Normalise before storing: session.list filters with an exact string
+        # match, so a trailing separator or a different case would hide the row
+        # from the very project it belongs to. The memory map is keyed by
+        # session id and must hold the project path, not the id.
+        project_path = srv._norm_project_path(params.get("project_path", ""))
         session = srv._session_store.create(project_path=project_path)
         if project_path:
-            srv._session_project_paths[session["session_id"]] = srv._norm_project_path(session["session_id"])
+            srv._session_project_paths[session["session_id"]] = project_path
         # A session started on one client has to show up in the other one's list
         # without a manual refresh.
         srv.broadcast_event("session.created", {
@@ -41,7 +45,9 @@ def handle(ctx, method):
 
     if method == "session.list":
         limit = params.get("limit", 200)
-        project_path = params.get("project_path") or None
+        # Normalised so a request spelled with a trailing separator still finds
+        # the rows stored under the canonical path.
+        project_path = srv._norm_project_path(params.get("project_path") or "") or None
         sessions = srv._session_store.list(limit, project_path=project_path)
         return {"id": rid, "result": {"sessions": sessions}}
 

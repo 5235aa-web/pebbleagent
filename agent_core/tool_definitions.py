@@ -37,17 +37,17 @@ def get_tools_definition() -> List[Dict[str, Any]]:
             "type": "function",
             "function": {
                 "name": "execute_code",
-                "description": "执行Python代码并返回结果。可以执行任意Python代码，支持多行代码块。",
+                "description": "Run Python (or JavaScript / bash) code and return the result; multi-line blocks are supported. The whole output is read back into the context, so do not use it for jobs that print a lot: write the result to a file and read it back instead.",
                 "parameters": {
                     "type": "object",
                     "properties": {
                         "code": {
                             "type": "string",
-                            "description": "要执行的Python代码"
+                            "description": "Code to execute"
                         },
                         "language": {
                             "type": "string",
-                            "description": "编程语言",
+                            "description": "Language of the snippet",
                             "enum": ["python", "javascript", "bash"],
                             "default": "python"
                         }
@@ -60,17 +60,17 @@ def get_tools_definition() -> List[Dict[str, Any]]:
             "type": "function",
             "function": {
                 "name": "execute_shell",
-                "description": "执行Shell/命令行命令并返回结果。",
+                "description": "Run a shell command and return its output. The whole output is read back into the context, so redirect anything over a few KB to a file and read it back with read_file or grep (command > log 2>&1). Avoid the more pager, type and findstr /C:. Keep timeout at 60 seconds or less; for long jobs write a log file and poll it.",
                 "parameters": {
                     "type": "object",
                     "properties": {
                         "command": {
                             "type": "string",
-                            "description": "要执行的Shell命令"
+                            "description": "Shell command to run"
                         },
                         "timeout": {
                             "type": "integer",
-                            "description": "超时时间（秒）",
+                            "description": "Timeout in seconds",
                             "default": 60
                         }
                     },
@@ -670,22 +670,22 @@ def get_tools_definition() -> List[Dict[str, Any]]:
             "type": "function",
             "function": {
                 "name": "powershell",
-                "description": "执行 PowerShell 命令。写操作，需要串行执行。",
+                "description": "Run a PowerShell command and return its output; use it for Windows-native work and for officecli (add $env:LOCALAPPDATA\\OfficeCLI to PATH first). The whole output is read back into the context, so redirect anything over a few KB to a file and read it back with read_file or grep (command > log 2>&1). Avoid the more pager and findstr /C:. Keep timeout at 60000 ms (60 s) or less; for long jobs write a log file and poll it.",
                 "parameters": {
                     "type": "object",
                     "properties": {
                         "command": {
                             "type": "string",
-                            "description": "PowerShell 命令"
+                            "description": "PowerShell command to run"
                         },
                         "timeout": {
                             "type": "integer",
-                            "description": "超时时间（毫秒）",
+                            "description": "Timeout in milliseconds",
                             "default": 60000
                         },
                         "run_in_background": {
                             "type": "boolean",
-                            "description": "是否后台运行",
+                            "description": "Run the command in the background",
                             "default": False
                         }
                     },

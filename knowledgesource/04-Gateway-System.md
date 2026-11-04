@@ -21,8 +21,8 @@
 
 | Domain | Methods |
 |------|------|
-| session | create / list / most_recent / resume / title / delete / info / search / export (returns markdown) / export_save (writes project_path/history/) / compress / interrupt / file_changes / file_accept / file_diff / file_revert / file_revert_all (conflict_strategy: abort / skip_conflicts) / unassigned_count / adopt_unassigned |
-| project | list / add / delete / set_active / set_path (multi-project management) |
+| session | create / list / most_recent / resume / title / delete / info / search / export (returns markdown) / export_save (writes project_path/history/) / compress / interrupt / file_changes / file_accept / file_diff / file_revert / file_revert_all (conflict_strategy: abort / skip_conflicts) / unassigned_count / adopt_unassigned. `list` matches the project path exactly **or** on a normalised form (separators, trailing slash, case), so rows written by older builds under a different spelling are still returned instead of an empty list |
+| project | list / add / delete / set_active / set_path (multi-project management). Registration and switching normalise the path (`_norm_project_path`: empty input stays empty, never the sidecar cwd) and refuse a missing directory or a drive root. `set_active` derives "a reply is still running" from the live worker registry (`is_any_session_running`, not just the session named in the request) and answers with an error instead of switching — a running turn resolves every later tool call against the service's current root, so switching underneath it would write into the new project halfway through the reply, including for turns started by another client. When the service cannot take the new path the registry write is rolled back and the RPC answers with an error rather than `ok: true` |
 | message | delete (message deletion) |
 | model | options / provider.set / provider.save / provider.delete / params.set / switch |
 | agent | list / switch |
@@ -33,7 +33,7 @@
 | pairing | status (supported / enabled / port / host / fingerprint / runtime_error) / session (mints a single-use code and returns everything needed to render a QR: host, port, fingerprint, code, expires_in, uri, qr_svg — qr_svg is null when segno is absent, and the call fails outright when no LAN address is detected) / enable (persists lan.json then hot-applies; restart_required when no apply hook) / disable (also clears outstanding codes) / revoke (drops the live code) / rotate_certificate (regenerates the cert, invalidating every paired device) |
 | permission | mode.get / mode.set (audited) / rules.get / check (sync evaluation, fail-closed) / decide / audit.verify (chained-checksum integrity check) |
 | path_whitelist | read / save (entries validated absolute, non-empty, no drive/filesystem roots) |
-| file | search / read_text / read_base64 / write_base64 / open (project-boundary/whitelist guard ; open additionally allows http/https/ftp URLs) |
+| file | search / read_text / read_base64 / write_base64 / open (project-boundary/whitelist guard ; open additionally allows http/https/ftp URLs). `search` with no `path` answers for the registry's active project and returns `{"results": [], "error": "no active project"}` when there is none — it never falls back to the program root, which in a packaged build is the install directory |
 | usernote / quick-notes | read / write |
 | pricing | save |
 | config | get / set |

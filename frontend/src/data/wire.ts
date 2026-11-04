@@ -711,6 +711,9 @@ function onEvent(ev: GatewayEvent) {
         void bootstrap()
       } else {
         void refreshPanes()
+        /* A reconnect is a recovery, not a replay: the list may have moved
+           while the socket was down, so it is re-read instead of trusted. */
+        void refreshSessionList()
       }
       window.dispatchEvent(new CustomEvent('pebble:gateway-ready'))
       return
@@ -1237,28 +1240,42 @@ export function renameSession(id: string, title: string): void {
   })
 }
 
-/** Deletes a session and opens the neighbour when it was the one on screen. */
-export async function deleteSession(id: string): Promise<void> {
+/** Deletes a session and opens the neighbour when it was the one on screen.
+
+    Returns false when the gateway refused. The row goes back where it was: a
+    refused delete used to stay hidden, so the session looked deleted until the
+    next restart brought it back. */
+export async function deleteSession(id: string): Promise<boolean> {
   const i = sessions.findIndex(s => s.id === id)
-  if (!id || i < 0) return
+  if (!id || i < 0) return false
   const wasActive = sessionState.activeId === id || streamState.sessionId === id
+  const row = sessions[i]
   sessions.splice(i, 1)
-  if (gateway.connected) {
-    try {
-      await gateway.request('session.delete', { session_id: id })
-    } catch {
-      /* the row stays gone: the refusal belongs to the gateway, not the user */
+  if (!gateway.connected) {
+    /* Deleting a stored session is a gateway write. Offline it cannot happen,
+       and reporting success would be a lie the next refresh exposes. */
+    sessions.splice(Math.min(i, sessions.length), 0, row)
+    notify('Delete failed', 'The gateway is offline, so the session was not deleted.', 'err')
+    return false
+  }
+  try {
+    await gateway.request('session.delete', { session_id: id })
+  } catch (e) {
+    sessions.splice(Math.min(i, sessions.length), 0, row)
+    notify('Delete refused', e instanceof Error ? e.message : 'the gateway kept the session', 'err')
+    return false
+  }
+  if (wasActive) {
+    const next = sessions[i] ?? sessions[i - 1] ?? null
+    if (!next) {
+      sessionState.activeId = ''
+      streamState.sessionId = null
+      clearStream()
+    } else {
+      await loadSession(next.id)
     }
   }
-  if (!wasActive) return
-  const next = sessions[i] ?? sessions[i - 1] ?? null
-  if (!next) {
-    sessionState.activeId = ''
-    streamState.sessionId = null
-    clearStream()
-    return
-  }
-  await loadSession(next.id)
+  return true
 }
 
 /** Pins a session. The gateway has no pin column, so this stays per client. */
@@ -2421,7 +2438,12 @@ export async function revertToMessage(messageId: number): Promise<boolean> {
 /** Pulls the dock panes. Each call is independent: a failing RPC leaves the
     pane on its prototype numbers instead of blanking it. */
 export async function refreshPanes(): Promise<void> {
-  if (!gateway.connected) return
+  if (!gateway.connected) {
+    /* Nothing can be read offline. If the ledger never loaded, this is a failed
+       read, not an empty one. */
+    if (ledger.state === 'idle' || ledger.state === 'loading') ledger.state = 'failed'
+    return
+  }
   /* Only a real session uuid can answer `usage.stats range=session`. The local
      list id (`s1`) resolves to nothing, and that empty payload would overwrite the
      live totals with zeros on every dock refresh. */
@@ -2519,39 +2541,47 @@ export async function refreshPanes(): Promise<void> {
 
   await refreshPairing()
 
+  /* Set here, not at the top of the pass: the calls above are unrelated reads,
+     and a throw among them would leave the status stuck on "loading" forever. */
+  ledger.state = 'loading'
   try {
     const mem = await gateway.request<Record<string, unknown>>('memory.list', { limit: 50 })
     const list = Array.isArray(mem.memories) ? (mem.memories as Array<Record<string, unknown>>) : []
-    if (list.length) {
-      ledger.entries = list.map(m => {
-        const applies = m.applies_to
-        const tools = applies && typeof applies === 'object' && Array.isArray((applies as Record<string, unknown>).tools)
-          ? ((applies as Record<string, unknown>).tools as unknown[]).map(String)
-          : []
-        const conf = Number(m.confidence ?? 0)
-        return {
-          id: String(m.id ?? m.memory_id ?? ''),
-          text: String(m.text ?? m.statement ?? m.content ?? ''),
-          scope: String(m.scope ?? 'project'),
-          kind: String(m.kind ?? m.memory_type ?? 'reference'),
-          confidence: Math.round(conf * (conf <= 1 ? 100 : 1)),
-          age: String(m.age ?? ''),
-          rationale: String(m.rationale ?? ''),
-          appliesTo: tools,
-          status: String(m.status ?? 'active')
-        }
-      })
-      ledger.total = Number(mem.count ?? list.length)
-      context.ledgerTotal = ledger.total
-    }
-  } catch { /* keep prototype numbers */ }
+    /* An empty answer replaces the list instead of leaving the previous rows
+       behind: a ledger with nothing in it is a state the panel can describe. */
+    ledger.entries = list.map(m => {
+      const applies = m.applies_to
+      const tools = applies && typeof applies === 'object' && Array.isArray((applies as Record<string, unknown>).tools)
+        ? ((applies as Record<string, unknown>).tools as unknown[]).map(String)
+        : []
+      const conf = Number(m.confidence ?? 0)
+      return {
+        id: String(m.id ?? m.memory_id ?? ''),
+        text: String(m.text ?? m.statement ?? m.content ?? ''),
+        scope: String(m.scope ?? 'project'),
+        kind: String(m.kind ?? m.memory_type ?? 'reference'),
+        confidence: Math.round(conf * (conf <= 1 ? 100 : 1)),
+        age: String(m.age ?? ''),
+        rationale: String(m.rationale ?? ''),
+        appliesTo: tools,
+        status: String(m.status ?? 'active')
+      }
+    })
+    ledger.total = Number(mem.count ?? list.length)
+    context.ledgerTotal = ledger.total
+    ledger.state = 'ok'
+  } catch {
+    /* Keep the last known rows but say the read failed; the panel must not
+       render an unreachable gateway as an empty ledger. */
+    ledger.state = 'failed'
+  }
 }
 
-/** Re-reads the session list. A gateway that answers with nothing is a real
-    state, but a failed call is not: this returns the rows and lets the caller
-    decide, so an offline blip cannot empty the switcher. */
-async function fetchSessions(): Promise<Array<Record<string, unknown>>> {
-  if (!gateway.connected) return []
+/** Re-reads the session list. `null` means the call failed, an empty array
+    means the project genuinely has no sessions. Collapsing the two — the old
+    contract — is what kept the seeded prototype rows on screen forever. */
+async function fetchSessions(): Promise<Array<Record<string, unknown>> | null> {
+  if (!gateway.connected) return null
   try {
     /* Scoped to the active project: a session belongs to the directory it was
        created under, and an unscoped list is what left another project's
@@ -2560,15 +2590,20 @@ async function fetchSessions(): Promise<Array<Record<string, unknown>>> {
       limit: 200,
       project_path: projects.active || undefined
     })
-    return Array.isArray(res?.sessions) ? res.sessions : []
+    return Array.isArray(res?.sessions) ? res.sessions : null
   } catch {
-    return []
+    return null
   }
 }
 
 async function refreshSessionList(): Promise<void> {
+  sessionState.listState = 'loading'
   const list = await fetchSessions()
-  if (!list.length) return
+  if (list === null) {
+    sessionState.listState = 'failed'
+    return
+  }
+  sessionState.listState = 'ok'
   const total = list.length
   sessions.splice(0, sessions.length, ...list.map((raw, i) => toSession(raw, i, total)))
 }
@@ -2690,22 +2725,33 @@ export async function exportSession(sessionId?: string): Promise<string | null> 
     session answers, those rows are not just stale, they are wrong. */
 export async function bootstrap(): Promise<void> {
   if (!gateway.connected) return
+  /* A term typed while one project was open should not filter the next one's
+     sessions into an empty panel. */
+  sessionState.filter = ''
   /* Sessions belong to the project they were created under, so the registry is
      resolved before the list is asked for. An unscoped list is what left the
      previous project's conversations on screen after a switch. */
   if (!projects.loaded) await refreshProjects()
   sessionState.projectPath = projects.active
 
-  let list: Array<Record<string, unknown>> = []
+  sessionState.listState = 'loading'
+  let list: Array<Record<string, unknown>> | null = null
   try {
     const res = await gateway.request<{ sessions?: Array<Record<string, unknown>> }>('session.list', {
       limit: 200,
       project_path: projects.active || undefined
     })
-    list = Array.isArray(res?.sessions) ? res.sessions : []
+    list = Array.isArray(res?.sessions) ? res.sessions : null
   } catch {
-    /* keep the seeded list when session.list is unavailable */
+    /* A failed call says nothing about the project. Leaving the panel alone is
+       the honest answer; reporting zero sessions would erase real rows. */
   }
+
+  if (list === null) {
+    sessionState.listState = 'failed'
+    return
+  }
+  sessionState.listState = 'ok'
 
   if (list.length) {
     const total = list.length
@@ -2721,13 +2767,23 @@ export async function bootstrap(): Promise<void> {
     }
     const open = recent && sessions.some(s => s.id === recent) ? recent : String(list[0].id ?? list[0].session_id ?? '')
     if (open) await loadSession(open)
+    /* First contact also fills the dock: usage, files, notes and the experience
+       ledger belong to the session that just opened. Without this the ledger
+       stayed "idle" until the user happened to touch the dock. */
+    void refreshPanes()
     return
   }
+
+  /* The project really has no sessions. Drop whatever the switcher is holding
+     before creating one: the seeded prototype rows are not a fallback, they are
+     other conversations, and they stayed clickable and switchable. */
+  sessions.splice(0, sessions.length)
 
   /* No session stored for this project yet. Going through createSession keeps
      the project_path attached and puts the row in the switcher immediately,
      instead of leaving an unassigned session the list never shows. */
   await createSession()
+  void refreshPanes()
 }
 
 function toSession(raw: Record<string, unknown>, i: number, total: number): Session {
@@ -2843,8 +2899,22 @@ export async function searchFiles(q: string, path = '', limit = 100): Promise<Ar
   } catch { return [] }
 }
 
-export function openFile(path: string): void {
-  if (!gateway.connected || !path) return
+/** Same call as searchFiles, but keeps the gateway's error so the project tree
+    can tell an empty folder from a refused read. */
+export async function searchProjectDir(path = '', limit = 200): Promise<{ rows: Array<Record<string, unknown>>; error: string }> {
+  if (!gateway.connected) return { rows: [], error: 'gateway offline' }
+  try {
+    const params: Record<string, unknown> = { q: '', limit }
+    if (path) params.path = path
+    const res = await gateway.request<{ results?: unknown; error?: unknown }>('file.search', params)
+    const rows = Array.isArray(res?.results) ? (res.results as Array<Record<string, unknown>>) : []
+    return { rows, error: String(res?.error ?? '') }
+  } catch (e) {
+    return { rows: [], error: e instanceof Error ? e.message : 'could not read this folder' }
+  }
+}
+
+export function openFile(path: string): void {  if (!gateway.connected || !path) return
   void gateway.request('file.open', { path }).catch(() => {
     notify('Cannot open', path, 'err')
   })
@@ -2911,10 +2981,11 @@ export async function fileDiff(relativePath: string): Promise<Array<Record<strin
 }
 
 /** Asks the gateway for the transcript as markdown instead of rebuilding it
-    locally, so the export matches what the model actually saw. */
-export async function exportSessionMarkdown(): Promise<string> {
+    locally, so the export matches what the model actually saw. Takes an explicit
+    id because the context menu can export a row that is not the open one. */
+export async function exportSessionMarkdown(sessionId?: string): Promise<string> {
   if (!gateway.connected) return ''
-  const sid = streamState.sessionId || sessionState.activeId
+  const sid = sessionId || streamState.sessionId || sessionState.activeId
   if (!sid) return ''
   try {
     const res = await gateway.request<{ markdown?: string; content?: string }>('session.export', { session_id: sid })
@@ -2933,13 +3004,24 @@ export async function unassignedCount(): Promise<number> {
   } catch { return 0 }
 }
 
-export async function adoptUnassigned(projectPath: string): Promise<number> {
-  if (!gateway.connected || !projectPath) return 0
+export interface AdoptResult {
+  ok: boolean
+  adopted: number
+  error?: string
+}
+
+/** Adopts every session that has no project yet. The count comes from the
+    gateway, so the panel reports what actually moved instead of a guess. */
+export async function adoptUnassigned(projectPath: string): Promise<AdoptResult> {
+  if (!gateway.connected) return { ok: false, adopted: 0, error: 'gateway offline' }
+  if (!projectPath) return { ok: false, adopted: 0, error: 'no active project' }
   try {
     const res = await gateway.request<{ adopted?: number }>('session.adopt_unassigned', { project_path: projectPath })
     await refreshSessionList()
-    return Number(res?.adopted ?? 0)
-  } catch { return 0 }
+    return { ok: true, adopted: Number(res?.adopted ?? 0) }
+  } catch (e) {
+    return { ok: false, adopted: 0, error: e instanceof Error ? e.message : 'could not adopt sessions' }
+  }
 }
 
 /* ---------------- projects ---------------- */
@@ -2949,10 +3031,12 @@ export async function adoptUnassigned(projectPath: string): Promise<number> {
 export async function refreshProjects(): Promise<void> {
   if (!gateway.connected) return
   try {
-    const res = await gateway.request<{ projects?: string[]; active?: string }>('project.list', {})
+    const res = await gateway.request<{ projects?: string[]; active?: string; corrupt?: boolean; backup?: string }>('project.list', {})
     const list = Array.isArray(res?.projects) ? res.projects.map(String) : []
     projects.list.splice(0, projects.list.length, ...list)
     projects.active = String(res?.active ?? '')
+    projects.corrupt = res?.corrupt === true
+    projects.backup = String(res?.backup ?? '')
     projects.loaded = true
     if (projects.active) sessionState.projectPath = projects.active
   } catch {
@@ -2967,11 +3051,13 @@ export async function addProject(path: string): Promise<{ ok: boolean; error?: s
   if (!p) return { ok: false, error: 'path required' }
   if (!gateway.connected) return { ok: false, error: 'gateway offline' }
   try {
-    await gateway.request('project.add', { path: p })
+    const res = await gateway.request<{ added?: string; active?: string }>('project.add', { path: p })
     await refreshProjects()
-    const match = projects.list.find(x => x.toLowerCase() === p.toLowerCase())
-      ?? projects.list[projects.list.length - 1]
-    if (match) await switchProject(match)
+    /* The gateway answers with the exact path it stored. Guessing it by
+       comparing the user's spelling and falling back to the last row opened an
+       unrelated project whenever realpath resolved case or a link differently. */
+    const target = String(res?.added ?? '') || String(res?.active ?? '')
+    if (target) await switchProject(target)
     return { ok: true }
   } catch (e) {
     return { ok: false, error: e instanceof Error ? e.message : 'add failed' }
@@ -2979,30 +3065,74 @@ export async function addProject(path: string): Promise<{ ok: boolean; error?: s
 }
 
 /** Points the gateway at a directory and reloads the surface: every session row
-    belongs to the project that was active when it was created. */
+    belongs to the project that was active when it was created. A running turn is
+    refused rather than carried across: its tools resolve paths against the
+    service's current root, so switching underneath it writes into the new
+    project halfway through the reply. */
 export async function switchProject(path: string): Promise<boolean> {
   if (!gateway.connected) return false
-  try {
-    await gateway.request('project.set_active', { path })
-    projects.active = path
-    sessionState.projectPath = path
-    await refreshProjects()
-    await bootstrap()
-    return true
-  } catch {
+  /* The gateway owns this decision: it reads the live worker registry, which
+     cannot go stale. The local flag is only a shortcut so a running reply does
+     not wait for a round trip, and it is skipped while the socket is down:
+     a disconnect can leave `streaming` stuck on, which would lock every switch
+     behind a reply that is no longer running. */
+  if (streamState.streaming && streamState.gatewayOnline) {
+    notify(
+      'Cannot switch project',
+      'A reply is still running. Stop it first, then switch the project root.',
+      'warn'
+    )
     return false
   }
+  const sid = streamState.sessionId || ''
+  try {
+    await gateway.request('project.set_active', { path, session_id: sid || undefined })
+  } catch (e) {
+    /* The gateway refuses a missing folder, a stale registry entry, a corrupt
+       registry and a turn still running anywhere. Reporting it is the only way
+       the panel stops looking like the switch worked. */
+    notify(
+      'Project switch failed',
+      e instanceof Error ? e.message : 'The gateway refused this project.',
+      'err'
+    )
+    return false
+  }
+  projects.active = path
+  sessionState.projectPath = path
+  /* The switch already landed. A reload that fails afterwards must not be
+     reported as a refusal, or the panel contradicts the gateway. */
+  try {
+    await refreshProjects()
+    await bootstrap()
+  } catch {
+    notify(
+      'Project switched',
+      'The surface could not reload. Reopen the window if it looks stale.',
+      'warn'
+    )
+  }
+  return true
 }
 
 /** Drops a directory from the registry. When it was the active one the gateway
     rewrites `active` itself, so the list is re-read rather than guessed. */
-export async function removeProject(path: string): Promise<void> {
-  if (!gateway.connected) return
+export interface RemoveResult {
+  ok: boolean
+  error?: string
+}
+
+export async function removeProject(path: string): Promise<RemoveResult> {
+  if (!gateway.connected) return { ok: false, error: 'gateway offline' }
   try {
     await gateway.request('project.delete', { path })
     await refreshProjects()
-  } catch {
-    /* keep the list */
+    return { ok: true }
+  } catch (e) {
+    /* A refusal is the gateway's answer (a corrupt registry, for instance), so
+       the list is re-read from it rather than kept as if the row had gone. */
+    await refreshProjects()
+    return { ok: false, error: e instanceof Error ? e.message : 'could not remove this project' }
   }
 }
 
@@ -3079,15 +3209,20 @@ export async function checkPermission(tool: string, content: string): Promise<{ 
 
 /* ---------------- agent memory ---------------- */
 
-export async function getAgentMemory(agentType = '', scope = 'project'): Promise<string> {
-  if (!gateway.connected) return ''
+/** `null` means the note could not be read (offline, no agent, or a refused
+    call). An empty string is a real answer: that agent has no note yet. The two
+    used to be the same value, so a failed read looked like an empty note and
+    saving over it destroyed the stored text. */
+export async function getAgentMemory(agentType = '', scope = 'project'): Promise<string | null> {
+  if (!gateway.connected || !agentType) return null
   try {
-    const res = await gateway.request<{ content?: string; memory?: string }>('agent-memory.get', {
+    const res = await gateway.request<{ success?: boolean; content?: string; memory?: string }>('agent-memory.get', {
       agent_type: agentType,
       scope
     })
+    if (res?.success === false) return null
     return String(res?.content ?? res?.memory ?? '')
-  } catch { return '' }
+  } catch { return null }
 }
 
 export function setAgentMemory(content: string, agentType = '', scope = 'project'): Promise<boolean> {
@@ -3252,6 +3387,12 @@ export async function openImage(path: string): Promise<boolean> {
   el?.classList.add('open')
   el?.setAttribute('aria-hidden', 'false')
   return true
+}
+
+/** Shared toast host. Components call this instead of reaching for the window
+    global, so every surface reports through the same stack. */
+export function toast(title: string, message: string, kind: 'ok' | 'warn' | 'err' = 'ok'): void {
+  notify(title, message, kind)
 }
 
 export { escapeHtml }

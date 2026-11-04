@@ -42,7 +42,7 @@
             <span class="lg-main"><span class="lg-st">{{ e.text }}</span><span class="lg-meta">{{ e.kind }} · {{ e.confidence }}%</span></span>
           </button>
         </template>
-        <div class="lg-none" v-if="!groups.length">no entry matches</div>
+        <div class="lg-none" v-if="!groups.length">{{ emptyText }}</div>
       </aside>
 
       <section class="lg-detail" v-if="selected">
@@ -51,10 +51,14 @@
           <span class="lg-scope">{{ selected.scope.toUpperCase() }}</span>
           <span class="lg-age">{{ selected.age || 'now' }}</span>
         </div>
-        <h4 class="lg-dt-title">{{ selected.text }}</h4>
+        <div class="lg-field">
+          <label>Statement</label>
+          <textarea class="lg-edit" rows="3" spellcheck="false" v-model="ledgerDraft"></textarea>
+        </div>
         <div class="lg-field">
           <label>Confidence</label>
-          <div class="lg-conf"><span class="lg-conf-bar"><i :style="{ '--c': selected.confidence + '%' }"></i></span><b>{{ selected.confidence }}%</b></div>
+          <div class="lg-conf"><span class="lg-conf-bar"><i :style="{ '--c': ledgerConf + '%' }"></i></span><b>{{ ledgerConf }}%</b></div>
+          <input class="lg-range" type="range" min="0" max="100" step="1" v-model.number="ledgerConf" />
         </div>
         <div class="lg-field" v-if="selected.rationale">
           <label>Rationale</label>
@@ -97,7 +101,7 @@
         <div class="lg-dt-head">
           <span class="lg-badge cons">agent</span>
           <span class="lg-scope">{{ agentName || 'no agent' }}</span>
-          <span class="lg-age">{{ agentDirty ? 'unsaved' : 'synced' }}</span>
+          <span class="lg-age">{{ noteStatus }}</span>
         </div>
         <div class="lg-field">
           <label>Scope</label>
@@ -117,14 +121,14 @@
           ></textarea>
         </div>
         <div class="lg-actions">
-          <button class="lg-del" @click="clearAgentNotes">Clear</button>
-          <button class="lg-save" @click="saveAgentNotes">Save</button>
+          <button class="lg-del" :disabled="!agentName" @click="clearAgentNotes">Clear</button>
+          <button class="lg-save" :disabled="!agentName" @click="saveAgentNotes">Save</button>
         </div>
       </section>
     </div>
 
     <footer class="lg-ft">
-      <span class="lg-hint">{{ ledger.total }} entries · {{ globalCount }} global · synced</span>
+      <span class="lg-hint">{{ matches.length }} shown · {{ ledger.total }} stored · {{ globalCount }} global in view</span>
       <button class="lg-new" @click="openNewEntry">New entry</button>
       <button class="btn btn-ghost" data-close>Close</button>
     </footer>
@@ -135,7 +139,8 @@
 <script setup lang="ts">
 import { computed, ref, watch } from 'vue'
 import { ledger, llm } from '../data/panels'
-import { clearAgentMemory, deleteMemory, getAgentMemory, memoryStats, setAgentMemory, updateMemory } from '../data/wire'
+import { clearAgentMemory, deleteMemory, getAgentMemory, memoryStats, setAgentMemory, toast, updateMemory } from '../data/wire'
+import { askConfirm } from '../data/confirm'
 
 const globalCount = computed(() => ledger.entries.filter(e => e.scope === 'global').length)
 
@@ -199,15 +204,73 @@ watch(() => ledger.entries.length, () => {
   }
 })
 
-function onDelete() {
-  const id = selected.value?.id
-  if (id) void deleteMemory(id)
+/* The detail pane edits a draft, not the store row. `memory.update` is the only
+   thing allowed to change the ledger, and an abandoned edit must leave no trace
+   in the list. */
+const ledgerDraft = ref('')
+const ledgerConf = ref(100)
+const ledgerSavedText = ref('')
+const ledgerSavedConf = ref(100)
+const ledgerDirty = computed(() => ledgerDraft.value !== ledgerSavedText.value || ledgerConf.value !== ledgerSavedConf.value)
+
+function syncLedgerDraft(): void {
+  const row = selected.value
+  ledgerDraft.value = row?.text ?? ''
+  ledgerConf.value = row?.confidence ?? 100
+  ledgerSavedText.value = ledgerDraft.value
+  ledgerSavedConf.value = ledgerConf.value
 }
 
-function onSave() {
+watch(() => selected.value?.id ?? '', syncLedgerDraft, { immediate: true })
+
+/* Three ways to be empty, told apart: a failed read is not "no entries". */
+const emptyText = computed(() => {
+  if (ledger.state === 'loading') return 'loading…'
+  if (ledger.state === 'failed') return 'could not read the ledger'
+  if (ledgerQuery.value.trim() || kindFilter.value !== 'all') return 'no entry matches'
+  return 'no entries yet'
+})
+
+async function onDelete(): Promise<void> {
   const row = selected.value
   if (!row) return
-  void updateMemory(row.id, { statement: row.text, confidence: row.confidence / 100 })
+  const text = row.text.length > 90 ? row.text.slice(0, 90) + '…' : row.text
+  const ok = await askConfirm({
+    title: 'Delete entry?',
+    body: `"${text}" is removed from the experience ledger.`,
+    confirmLabel: 'Delete',
+    cancelLabel: 'Keep',
+    danger: true,
+    hint: 'this cannot be undone'
+  })
+  if (!ok) return
+  if (await deleteMemory(row.id)) {
+    toast('Deleted', 'The entry was removed from the ledger.', 'ok')
+    return
+  }
+  toast('Could not delete', 'The gateway refused the request.', 'err')
+}
+
+async function onSave(): Promise<void> {
+  const row = selected.value
+  if (!row) return
+  const text = ledgerDraft.value.trim()
+  if (!text) {
+    toast('Cannot save', 'The statement is empty.', 'warn')
+    return
+  }
+  if (!ledgerDirty.value) {
+    toast('Nothing to save', 'No changes since the last save.', 'warn')
+    return
+  }
+  const ok = await updateMemory(row.id, { statement: text, confidence: ledgerConf.value / 100 })
+  if (!ok) {
+    toast('Could not save', 'The gateway refused the update.', 'err')
+    return
+  }
+  ledgerSavedText.value = text
+  ledgerSavedConf.value = ledgerConf.value
+  toast('Saved', 'The entry was updated.', 'ok')
 }
 
 function openNewEntry() {
@@ -233,30 +296,78 @@ const agentScope = ref<'user' | 'project'>('project')
 const agentDraft = ref('')
 const agentSaved = ref('')
 const agentDirty = computed(() => agentDraft.value !== agentSaved.value)
+/* A failed read and an empty note are different answers: only one of them may
+   clear the textarea. */
+const noteError = ref(false)
+let noteSeq = 0
+
+const noteStatus = computed(() => {
+  if (!agentName.value) return 'no agent'
+  if (noteError.value) return 'could not read'
+  return agentDirty.value ? 'unsaved' : 'synced'
+})
 
 async function loadAgentNote(): Promise<void> {
-  if (!agentName.value) return
-  const text = await getAgentMemory(agentName.value, agentScope.value)
+  const name = agentName.value
+  if (!name) return
+  /* Only the newest request may write. Two quick agent picks used to resolve out
+     of order, leaving the name on one agent and the text on another. */
+  const seq = ++noteSeq
+  noteError.value = false
+  const text = await getAgentMemory(name, agentScope.value)
+  if (seq !== noteSeq) return
+  if (text === null) {
+    /* A failed read must not leave the previous agent's text in the box: the
+       next save would write it under this agent's name. Clearing it and saying
+       so is honest; the status line keeps reading "could not read". */
+    noteError.value = true
+    agentDraft.value = ''
+    agentSaved.value = ''
+    return
+  }
   agentDraft.value = text
   agentSaved.value = text
 }
 
+/* Switching agent or scope replaces the textarea, so unsaved work has to be
+   acknowledged first. It used to be discarded without a word. */
+async function confirmDiscard(): Promise<boolean> {
+  if (!agentDirty.value) return true
+  return askConfirm({
+    title: 'Discard unsaved note?',
+    body: `The ${agentScope.value} note for ${agentName.value} has changes that were not saved.`,
+    confirmLabel: 'Discard',
+    cancelLabel: 'Keep editing',
+    danger: true
+  })
+}
+
 async function pickAgent(name: string): Promise<void> {
+  if (name === agentName.value) return
+  if (!(await confirmDiscard())) return
   agentName.value = name
   await loadAgentNote()
 }
 
 async function pickScope(scope: 'user' | 'project'): Promise<void> {
+  if (scope === agentScope.value) return
+  if (!(await confirmDiscard())) return
   agentScope.value = scope
   await loadAgentNote()
 }
 
 watch(
-  () => llm.agents.length,
+  () => llm.agents.map(a => a.name).join('\u0000'),
   () => {
-    if (agentName.value) return
+    const names = llm.agents.map(a => a.name)
+    /* An agent that disappeared must not stay selected: saving would write to a
+       type nothing renders any more. */
+    if (agentName.value && names.includes(agentName.value)) return
     const current = llm.agents.find(a => a.current) ?? llm.agents[0]
-    if (!current) return
+    if (!current) {
+      agentName.value = ''
+      return
+    }
     agentName.value = current.name
     if (mode.value === 'agent') void loadAgentNote()
   },
@@ -264,21 +375,54 @@ watch(
 )
 
 async function setMode(next: 'ledger' | 'agent'): Promise<void> {
+  if (next === mode.value) return
+  /* Coming back reloads the note, so leaving has the same rule as switching. */
+  if (!(await confirmDiscard())) return
   mode.value = next
   if (next === 'agent') await loadAgentNote()
 }
 
 async function saveAgentNotes(): Promise<void> {
+  if (!agentName.value) {
+    toast('Cannot save', 'Select an agent first.', 'warn')
+    return
+  }
+  /* After a failed read the box is blank, and saving blank would wipe a note the
+     gateway still holds. Writing blind is worse than asking for a reload. */
+  if (noteError.value) {
+    toast('Cannot save', 'The note could not be read. Pick the agent again to reload it.', 'warn')
+    return
+  }
   if (await setAgentMemory(agentDraft.value, agentName.value, agentScope.value)) {
     agentSaved.value = agentDraft.value
+    noteError.value = false
+    toast('Saved', `The ${agentScope.value} note for ${agentName.value} was updated.`, 'ok')
+    return
   }
+  toast('Could not save', 'The gateway refused the note.', 'err')
 }
 
 async function clearAgentNotes(): Promise<void> {
+  if (!agentName.value) {
+    toast('Cannot clear', 'Select an agent first.', 'warn')
+    return
+  }
+  const ok = await askConfirm({
+    title: 'Clear agent note?',
+    body: `The ${agentScope.value} note for ${agentName.value} is deleted.`,
+    confirmLabel: 'Clear',
+    cancelLabel: 'Keep',
+    danger: true,
+    hint: 'this cannot be undone'
+  })
+  if (!ok) return
   if (await clearAgentMemory(agentName.value, agentScope.value)) {
     agentDraft.value = ''
     agentSaved.value = ''
+    toast('Cleared', `The ${agentScope.value} note for ${agentName.value} was removed.`, 'ok')
+    return
   }
+  toast('Could not clear', 'The gateway refused the request.', 'err')
 }
 
 /* The header total comes from memory.stats so the sheet agrees with the ledger

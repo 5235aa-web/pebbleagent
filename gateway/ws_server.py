@@ -614,9 +614,18 @@ async def main(host: str = "127.0.0.1", port: int = 19876):
             return False
         return True
 
-    from gateway.server import set_session_running_probe
+    def _any_session_running() -> bool:
+        """True while any prompt worker is alive, whichever client started it."""
+        for sid, task in list(_prompt_tasks.items()):
+            if task is not None and task.is_alive():
+                return True
+            _prompt_tasks.pop(sid, None)
+        return False
+
+    from gateway.server import set_session_running_probe, set_any_session_running_probe
     set_session_running_probe(_session_running)
-    logger.info("[WS] Session running probe registered")
+    set_any_session_running_probe(_any_session_running)
+    logger.info("[WS] Session running probes registered")
 
     # MCP 状态变化推送：连接/断开完成后前端无需轮询
     async def _broadcast_mcp_state(state):

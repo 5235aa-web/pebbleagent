@@ -6,7 +6,7 @@ import os
 import signal
 import subprocess
 import time
-from typing import Any, Dict, List, Optional
+from typing import Any, Dict, Optional
 
 
 from ..code_destructive_guard import scan_code_for_destructive_behavior
@@ -59,35 +59,43 @@ class ExecutionToolsMixin:
 
     async def _run_subprocess_exec(
         self,
-        command: List[str],
+        command,
         timeout: float,
         context: Optional[ToolExecutionContext] = None,
-        cwd: Optional[str] = None
+        cwd: Optional[str] = None,
+        shell: bool = False,
     ) -> tuple[int, str, str]:
-        """以可取消的方式运行子进程"""
+        """以可取消的方式运行子进程
+
+        读取必须从进程启动时就开始。stdout/stderr 是管道，写满缓冲区
+        （Windows 上约 4KB）后子进程会阻塞在 write 上、永远不会退出；
+        以前只 poll() 再事后 communicate()，任何输出超过缓冲区的命令都会
+        一直挂到超时。communicate() 放在线程里立即启动，由它持续排空管道。
+        """
         popen_kwargs: Dict[str, Any] = {
             "stdout": subprocess.PIPE,
             "stderr": subprocess.PIPE,
             "cwd": cwd or self._current_project_path,
         }
+        if shell:
+            popen_kwargs["shell"] = True
         if os.name != "nt":
             popen_kwargs["start_new_session"] = True
 
         process = subprocess.Popen(command, **popen_kwargs)
         start_time = time.time()
+        reader = asyncio.ensure_future(asyncio.to_thread(process.communicate))
         try:
             while True:
                 if context is not None and context.cancel_event.is_set():
                     logger.info(f"[ToolExecutor] Cancelling subprocess pid={process.pid}")
                     await self._terminate_process(process)
-                    try:
-                        await asyncio.to_thread(process.wait, timeout=1)
-                    except Exception:
-                        pass
+                    await self._settle_reader(reader)
                     raise asyncio.CancelledError()
 
-                if process.poll() is not None:
-                    stdout, stderr = await asyncio.to_thread(process.communicate)
+                done, _ = await asyncio.wait({reader}, timeout=0.1)
+                if reader in done:
+                    stdout, stderr = reader.result()
                     return (
                         process.returncode or 0,
                         stdout.decode("utf-8", errors="replace") if stdout else "",
@@ -96,17 +104,20 @@ class ExecutionToolsMixin:
 
                 if time.time() - start_time > timeout:
                     await self._terminate_process(process)
-                    try:
-                        await asyncio.to_thread(process.wait, timeout=1)
-                    except Exception:
-                        pass
+                    await self._settle_reader(reader)
                     raise asyncio.TimeoutError()
-
-                await asyncio.sleep(0.1)
         except asyncio.CancelledError:
             await self._terminate_process(process)
             raise
 
+    async def _settle_reader(self, reader) -> None:
+        """进程被杀后给读取线程一点时间返回，避免线程悬挂"""
+        try:
+            await asyncio.wait({reader}, timeout=1)
+        except Exception:
+            pass
+        if not reader.done():
+            reader.cancel()
 
     async def _tool_execute_code(
         self,
@@ -220,15 +231,23 @@ class ExecutionToolsMixin:
         
         try:
             if os.name == 'nt':
-                exec_command = ['cmd', '/c', command]
+                # A single command line, not an argv list. list2cmdline escaped the
+                # inner quotes of `python -c "..."`, so the interpreter received the
+                # code as a string literal (empty output) and a semicolon inside it
+                # died as a truncated-source SyntaxError. shell=True hands the string
+                # to cmd.exe unchanged, which is what the caller wrote.
+                exec_command = command
+                use_shell = True
             else:
                 exec_command = ['bash', '-c', command]
+                use_shell = False
 
             returncode, stdout, stderr = await self._run_subprocess_exec(
                 command=exec_command,
                 timeout=timeout,
                 context=context,
-                cwd=self._current_project_path
+                cwd=self._current_project_path,
+                shell=use_shell
             )
 
             if returncode == 0:

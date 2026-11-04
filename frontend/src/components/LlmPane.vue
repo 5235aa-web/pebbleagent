@@ -152,6 +152,7 @@
 import { computed, ref } from 'vue'
 import { llm, isOpenCodeProvider, isProviderReady, type LlmProvider } from '../data/panels'
 import { switchAgent, switchModel, setModelParams, saveProvider, deleteProvider, addProvider, switchProvider } from '../data/wire'
+import { askConfirm } from '../data/confirm'
 
 const EFFORTS = [
   { key: 'low', label: 'low', h: '34%' },
@@ -389,10 +390,19 @@ function onSave() {
   })
 }
 
-function onDelete() {
+async function onDelete() {
   const provider = selectedProvider.value
   if (!provider) return
-  if (!window.confirm(`Delete provider "${provider.name}"? This removes its API key, base URL and models from llm_providers.json.`)) return
+  /* window.confirm does not follow the shell's theme or sizing, so the delete
+     decision goes through the shared confirmation sheet. */
+  const confirmed = await askConfirm({
+    title: 'Delete provider?',
+    body: `"${provider.name}" is removed from llm_providers.json, including its API key, base URL and models.`,
+    confirmLabel: 'Delete',
+    danger: true,
+    hint: 'this cannot be undone'
+  })
+  if (!confirmed) return
   void deleteProvider(effectiveSelectedIndex.value).then(ok => {
     if (ok) selectedIndex.value = -1
   })

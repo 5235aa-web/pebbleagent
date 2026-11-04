@@ -129,9 +129,19 @@ class SessionStore:
             "ORDER BY m.sort_order DESC LIMIT 1) AS last_message_at"
         )
         if project_path:
+            # One statement covers both spellings. The exact match keeps the
+            # index; the normalised form catches rows written by builds that
+            # stored the raw value the client sent (forward slashes, a trailing
+            # separator, different case). Falling back only when the exact
+            # match was empty was not enough: one correctly spelled row hid
+            # every legacy row in the same project.
+            trimmed = project_path.replace("/", "\\").rstrip("\\")
             rows = conn.execute(
-                f"SELECT s.*, {last_msg_sub} FROM sessions s WHERE s.project_path=? ORDER BY s.updated_at DESC LIMIT ?",
-                (project_path, limit),
+                f"SELECT s.*, {last_msg_sub} FROM sessions s "
+                "WHERE s.project_path=? "
+                "   OR lower(rtrim(replace(s.project_path, '/', '\\'), '\\')) = lower(?) "
+                "ORDER BY s.updated_at DESC LIMIT ?",
+                (project_path, trimmed, limit),
             ).fetchall()
         else:
             rows = conn.execute(

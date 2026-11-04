@@ -12,6 +12,7 @@ Behaviour that needs new CSS goes into `styles/app.css`, never into `orbit.css`.
 | Framework | Vue 3 `<script setup>` + TypeScript, Vite dev server on `:5180` |
 | Entry | `main.ts` -> `App.vue` -> `StreamPane` / `RightDock` / `StatusBar` |
 | Prototype runtime | `orbit/runtime.js` (verbatim prototype script), `orbit/theme.js` |
+| Confirmation sheet | `data/confirm.ts` (`askConfirm` / `settleConfirm`, module-level store) + `components/ConfirmSheet.vue` on the shared `.overlay` + `.sheet` markup; destructive confirm uses `.btn-danger` from `styles/app.css`. Every delete path asks through it instead of `window.confirm` |
 | Transport | `data/gateway.ts`: JSON-RPC 2.0 over WebSocket to the Python gateway (`:19876`) |
 | Token | Tauri `get_gateway_token` first, else `window.__PEBBLE_GATEWAY_TOKEN__`, injected by a dev-only Vite plugin reading `~/.pebble/gateway.token` |
 | Gateway origin | `http://localhost:5180` is whitelisted in `gateway/ws_server.py` `_ALLOWED_ORIGINS` |
@@ -124,6 +125,19 @@ hook, which appends the extensions the source omits from its relative imports.
 - `runtime.js` delegates clicks on `.cdiv`, `.summary-hdr`, `.tool-hdr`; rows rendered from
   the store carry `data-live` and the delegate skips them, so component state and DOM
   classes cannot disagree.
+- The project popover keeps its open/close in `runtime.js` (chip click, outside click,
+  Escape, placement) and nothing else: the registry rows, adopt and add handlers live in
+  `ProjectSwitcher.vue`. The prototype handlers that used to sit on `#ppList` /
+  `#ppAdopt` / `#ppAddBtn` toasted success without calling the gateway, so a refused
+  switch still looked like it worked. `switchProject` now also refuses while a reply is
+  running and reports it through the shared toast host in the bottom right. The footer
+  `Manage` button was removed outright: it only toasted "rename, delete and reorder roots
+  here", none of which existed — deletion is the row's `×` plus the confirm sheet, and
+  there is no rename or reorder RPC.
+- `#confirmSheet` is excluded from `runtime.js`'s Escape sweep, like `#permDialog`: its
+  visibility is Vue state, and removing the `open` class from outside would close the
+  dialog while the promise that opened it stayed unresolved. The component owns its own
+  Escape handling and resolves the caller either way.
 - `messages.tool_calls` holds the agent's execution order
   (`{type:'reasoning'|'text'|'tool'|'question'}`), not OpenAI tool calls. Reading it as
   OpenAI calls made every restored card look "running" and left thousands of infinite
@@ -142,7 +156,7 @@ hook, which appends the extensions the source omits from its relative imports.
 - Compaction writes the measured `after.tokens` back into `usage.contextTokens`, resets `usage.contextOut`, and recomputes `contextPct` inside `compressSession`. The ring otherwise keeps reading the last call's `latest_input_tokens`, which still describes the transcript as it was before the fold, so the window stayed at its old height until the next prompt returned a usage payload.
 - The usage ring is driven from `usage.contextPct` through an inline `strokeDashoffset` on a `pathLength="100"` circle; the CSS contributes only `stroke-dasharray` and a transition. A fixed offset there drew the same two-thirds arc for every session while the label printed the real share, and the `animation … both` kept that first value frozen forever.
 - `toSession` resolves the session timestamp as `last_message_at || started_at || updated_at || created_at` and treats 0 as absent. The gateway's list rows (`_row_to_list_item`) expose the start time as `started_at` and answer `last_message_at: null` for a session with no turns yet, so a fallback chain that only knew `updated_at`/`created_at` collapsed to 0 and bucketed a freshly created session into "Earlier" — the newest row landed at the bottom of the switcher.
-- Session lists are scoped to `projects.active` in both `fetchSessions` and `bootstrap`; `bootstrap` resolves the registry before asking, because an unscoped `session.list` is exactly what kept the previous project's conversations on screen after a switch. A project with no stored session goes through `createSession()` rather than a bare `session.create`, so the row keeps its `project_path` and lands in the switcher immediately.
+- Session lists are scoped to `projects.active` in both `fetchSessions` and `bootstrap`; `bootstrap` resolves the registry before asking, because an unscoped `session.list` is exactly what kept the previous project's conversations on screen after a switch. A project with no stored session goes through `createSession()` rather than a bare `session.create`, so the row keeps its `project_path` and lands in the switcher immediately. `fetchSessions` answers `null` for a failed call and `[]` for a project that genuinely has none, and the two are handled differently: a failure leaves the panel alone, an empty answer clears `sessions` before `createSession()` runs. Collapsing them (the old `if (!list.length) return`) is what kept the seeded prototype rows in the switcher forever — five demo conversations, clickable and switchable, on a project that had none.
 - The project switcher is data-driven: `projects` in `store.ts` holds `list` / `active` / `loaded`, `wire.ts` exposes `refreshProjects`, `addProject`, `switchProject` and `removeProject`, and `switchProject` re-runs `bootstrap()` because every session row belongs to the project that was active when it was created. The component had shipped as prototype markup — hardcoded names, no listeners on any of its buttons.
 - `paintAgent` writes `plain` on every paint, not only when the turn settles: the island's tok/s, the context split and Copy mid-stream all read that field, and leaving it empty until the end made the rate read `— tok/s` for the whole reply. The island also finds the live row by scanning back for `streaming` rather than assuming the last item, so a row appended after it cannot blank the headline.
 - The live tok/s figure has one owner: `runRate` in `wire.ts`, read through `formatRate()`. Every `message.delta` / `thinking.delta` / `tool.call_streaming` carries the backend's cumulative token count for the call in flight (`StreamConsumer._count_tokens`, reasoning included), so a chunk banks its own delta and the time since the previous chunk; `RATE_STOP_EVENTS` (tool start/complete, clarify, permission, usage, complete, error) closes the window, which keeps tool execution and waits out of the divisor, while side-channel pushes such as `todos.update` leave it open. `message.usage.latest_output_tokens` then replaces the estimate banked for the settled call. The earlier formula divided the row's visible characters by the whole run wall clock and again by 3.6 characters per token, so tool time, reasoning tokens and Chinese text each pushed a 30 tok/s reply down to a fraction of a token per second. The island and the pane read the same `formatRate`, which is what keeps them from disagreeing.
@@ -206,6 +220,34 @@ Notes that cost time to find:
 - Session rows are rendered by Vue (`SessionSwitcher.vue` `v-for`), so the prototype's
   conversation menu cannot mutate them. Rename / delete / pin go through `wire.ts` and the
   store; the DOM branches only run for rows without `data-id`.
+- The conversation menu owns `.conv-more`: the row click handler returns early for that
+  target and the menu listener opens the sheet. A leftover prototype branch toasted
+  "Session actions" and fell through, so every click produced a toast plus a sheet.
+- Delete asks through `askConfirm` and then calls `wire.deleteSession`, which puts the row
+  back and reports the gateway's reason when the delete is refused. The old path removed
+  the row first and swallowed the failure, so a refused delete looked applied until restart.
+- The session search term lives in `sessionState.filter` and filters a computed in
+  `SessionSwitcher.vue`; the runtime only writes the term. A DOM-level `display` filter was
+  undone by the next list re-render while the box still showed the term; a watcher writes a
+  cleared term back into the input, so a project switch cannot leave a stale filter behind.
+- `sessionState.listState` (`idle` / `loading` / `ok` / `failed`) drives the empty sentence:
+  loading, could not read, or no sessions yet. Without it all three states rendered as the
+  same line, which is the project-panel distinction applied to this list.
+- `deleteSession` refuses when the gateway is offline, restoring the row instead of
+  reporting a delete that the next refresh would undo. `gateway.ready` re-reads
+  `session.list` on a reconnect rather than trusting the list loaded at startup.
+- Export falls back to `exportSessionMarkdown(sessionId)`: when the gateway cannot write its
+  own file, the download carries the real transcript instead of a header-only stub.
+- The experience ledger has no seeded rows: `panels.ts` starts empty and `refreshPanes`
+  replaces the list on every read, including an empty answer. `ledger.state` (`idle` /
+  `loading` / `ok` / `failed`) drives the empty sentence, and the detail pane edits a draft
+  (`ledgerDraft` / `ledgerConf`) so an abandoned edit never mutates the list. Save submits
+  `memory.update` and reports the result; Delete asks through `askConfirm`.
+- Agent notes treat a failed read as a failed read: `getAgentMemory` answers `null` (not
+  `''`) when the call is refused or offline, `loadAgentNote` keeps the draft and shows
+  "could not read", and a request sequence number stops an out-of-order reply from writing
+  one agent's text under another's name. Switching agent, scope or tab asks before
+  discarding unsaved text, and Clear asks through `askConfirm`.
 - The permission-mode control's `MODES` table is `manual` / `auto` / `readonly`; the mode is
   read back from `permission.mode.get` on load and again on `pebble:gateway-ready`.
 - `message.usage` carries `this_call`; each one appends a row to `usage.history` and bumps

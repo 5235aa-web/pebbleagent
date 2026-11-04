@@ -7,6 +7,35 @@ which is what the in-app update sheet shows before installing. Add the section
 before running `npm run release`; the release stops if it is missing, because a
 feed with empty notes tells the user nothing.
 
+## 1.1.1
+
+- Session switcher: the five seeded prototype conversations are gone. The list starts empty and the gateway's `session.list` answer replaces it, so a fresh project no longer shows clickable sessions that do not exist.
+- A failed `session.list` and an empty one are now handled differently: a failure leaves the panel untouched, while an empty answer clears the rows before a new session is created.
+- An empty panel says which empty it is: still loading, could not read, or no sessions yet.
+- Deleting a session asks for confirmation in the shared sheet. A refused delete puts the row back and shows the gateway's reason, and an offline delete is refused instead of reported as success.
+- The row's More button opens the conversation menu only; the leftover prototype toast that fired alongside it is gone.
+- Search filters through Vue state instead of inline `display`, so it survives a list re-render and is cleared when the project changes.
+- Export falls back to the gateway's markdown when it cannot write its own file, instead of downloading a header-only stub.
+- A reconnect re-reads the session list instead of trusting the one loaded at startup.
+- Experience ledger: the five seeded demo entries and the hardcoded total are gone. The list starts empty, `memory.list` replaces it, and the panel says loading, could not read or no entries yet instead of rendering all three as an empty list.
+- The detail pane edits now: the statement is a textarea, confidence is a slider, and Save works on a draft. It reports success or the gateway's refusal, and Delete asks for confirmation first.
+- Agent notes: switching agent, scope or tab asks before discarding unsaved text. A slow read can no longer land on the wrong agent, and a failed read keeps the draft and says so instead of looking like an empty note.
+- Clear asks for confirmation, and Save/Clear report success or refusal instead of leaving the button silent.
+- An agent that disappears from the list is no longer left selected, and Save/Clear stay disabled until an agent is chosen.
+- New entry reports a refused save, and the footer shows what is on screen versus what is stored instead of a hardcoded "synced".
+
+## 1.1.0
+
+- Project panel: the file tree now lists the active project instead of the app's install folder, and says whether it is loading, empty or refused instead of drawing a blank list.
+- `projects.json` is written atomically with a `.bak` copy. An unreadable registry is kept as `projects.json.corrupt` and reported in the panel rather than shown as "no projects"; adding or removing a project is refused while it is corrupt.
+- Empty paths no longer resolve to the sidecar's working directory, so adding a project, adopting sessions or starting a session can no longer point the tools at the install folder.
+- Switching projects is refused while a reply is running, including a turn started by another client, and a failed switch rolls the active project back instead of reporting success.
+- The panel has a single owner again: the leftover prototype handlers that toasted "switched" without calling the gateway are gone, the popover closes after a pick, and refused add/remove/switch operations say so.
+- Adding a project opens the path the gateway actually stored, removing one asks first, and adopt reports how many sessions moved.
+- Sessions stored under an older spelling of the project path (separators, trailing slash, case) are visible again instead of vanishing from the list.
+- One shared confirmation sheet replaces `window.confirm` for provider deletion.
+- Removed the dead `Manage` button in the project panel; the session list's `Manage` now reads `Projects`.
+
 ## 1.0.9
 
 - Fixed the add-provider crash loop; a failing RPC now returns an error without closing the WebSocket.

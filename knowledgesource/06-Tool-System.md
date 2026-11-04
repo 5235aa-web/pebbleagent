@@ -30,6 +30,8 @@ These two managers are the runtime state behind the `todo_write` / `todo_read` a
 
 `get_tools_definition()` returns 46 tools on Windows and 45 elsewhere: `_PLATFORM_ONLY = {"powershell": "win32"}` together with `_drop_platform_only()` removes the PowerShell schema on any other platform, so the model is never handed a tool it cannot call. `_tool_powershell` keeps a matching `os.name != "nt"` guard for the two paths that bypass the schema — a replayed history row and a direct RPC call — returning a plain error instead of failing at process spawn.
 
+**The three execution tools carry their operating constraints in the schema text** (`execute_code`, `execute_shell`, `powershell`, all English): the whole output is read back into the context, so large output is redirected to a file and read back with read_file or grep; the `more` pager / `type` / `findstr /C:` are avoided, and timeouts stay at 60 seconds or less. These strings are what the model reads on every turn, so they are the first place to correct a recurring execution mistake. **`_run_subprocess_exec` starts `communicate()` in a thread before the first poll**: polling alone never drains the pipe, so a command whose output filled the ~4KB pipe buffer blocked in `write` and the call sat there until its timeout. `execute_shell` runs Windows commands through `shell=True` with the original string; building `['cmd', '/c', command]` let `list2cmdline` escape the inner quotes, so `python -c "print(1+1)"` reached the interpreter as a string literal and returned nothing.
+
 
 ### agent_core/mcp/ (5 files)
 

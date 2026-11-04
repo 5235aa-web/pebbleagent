@@ -74,6 +74,9 @@
 <!-- ================= MESSAGE SEARCH ================= -->
 <MessageSearch />
 
+<!-- ================= CONFIRM SHEET ================= -->
+<ConfirmSheet />
+
 <!-- TOASTS -->
 <ToastStack />
 </template>
@@ -101,5 +104,6 @@ import ImageViewer from './components/ImageViewer.vue'
 import DropOverlay from './components/DropOverlay.vue'
 import ConversationMenu from './components/ConversationMenu.vue'
 import MessageSearch from './components/MessageSearch.vue'
+import ConfirmSheet from './components/ConfirmSheet.vue'
 import ToastStack from './components/ToastStack.vue'
 </script>

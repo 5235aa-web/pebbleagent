@@ -21,6 +21,11 @@
         </button>
       </div>
 
+      <div v-if="projects.corrupt" class="pp-err">
+        projects.json is unreadable; a copy was kept at {{ projects.backup || 'projects.json.corrupt' }}.
+        the list below is what could be recovered, not the whole registry.
+      </div>
+
       <div class="pp-list" id="ppList">
         <button
           v-for="p in projects.list"
@@ -34,11 +39,11 @@
           <span v-if="p === projects.active" class="pp-mark">&#10003;</span>
           <span v-else class="pp-x" @click.stop="onRemove(p)">&#215;</span>
         </button>
-        <div v-if="projects.loaded && !projects.list.length" class="pp-empty">no projects registered yet</div>
+        <div v-if="projects.loaded && !projects.corrupt && !projects.list.length" class="pp-empty">no projects registered yet</div>
       </div>
 
       <button class="pp-adopt" id="ppAdopt" @click="onAdopt">
-        <span>adopt <b>{{ unassigned }}</b> unassigned files → current root</span>
+        <span>adopt <b>{{ unassigned }}</b> unassigned sessions → current root</span>
         <svg width="10" height="10" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2"><line x1="4" y1="12" x2="19" y2="12"/><polyline points="13 6 19 12 13 18"/></svg>
       </button>
 
@@ -57,6 +62,9 @@
         <button class="pp-refresh" @click="reloadTree">refresh</button>
       </div>
       <div class="pp-tree">
+        <div v-if="treeLoading" class="pp-empty">loading…</div>
+        <div v-else-if="treeError" class="pp-err">{{ treeError }}</div>
+        <div v-else-if="!visibleRows.length" class="pp-empty">no entries</div>
         <div
           v-for="row in visibleRows"
           :key="row.path"
@@ -72,8 +80,7 @@
         </div>
       </div>
       <div class="pp-foot">
-        <span class="pp-hint">unassigned files are adopted by the active root</span>
-        <button class="pp-manage" id="ppManage">Manage</button>
+        <span class="pp-hint">unassigned sessions are adopted by the active root</span>
       </div>
     </div>
 </template>
@@ -82,8 +89,9 @@
 import { computed, onMounted, ref } from 'vue'
 import {
   adoptUnassigned, addProject, isImagePath, openFile, openImage,
-  refreshProjects, removeProject, searchFiles, switchProject, unassignedCount
+  refreshProjects, removeProject, searchProjectDir, switchProject, toast, unassignedCount
 } from '../data/wire'
+import { askConfirm } from '../data/confirm'
 import { projects } from '../data/store'
 
 /* The registry is the gateway's, not the UI's: every entry is a directory the
@@ -91,6 +99,14 @@ import { projects } from '../data/store'
 const addPath = ref('')
 const addError = ref('')
 const unassigned = ref(0)
+/* The tree has three states, not two: still loading, read refused, and a folder
+   with nothing in it. Rendering a refusal as "no entries" is what made a broken
+   registry look like an empty project. */
+const treeLoading = ref(false)
+const treeError = ref('')
+/* Which file row is selected, so the tree can show it without asking the
+   gateway. Reset on every project switch: it names a path inside the old root. */
+const activePath = ref('')
 
 const activeName = computed(() => baseName(projects.active) || 'no project')
 
@@ -102,7 +118,10 @@ function baseName(p: string): string {
 
 async function onPick(path: string): Promise<void> {
   if (path === projects.active) return
-  await switchProject(path)
+  const ok = await switchProject(path)
+  /* The tree belongs to the root it was read from, so a selection made under
+     the previous project cannot stay highlighted. */
+  if (ok) activePath.value = ''
 }
 
 /** Re-reads the registry and reselects the active project, which reloads the
@@ -123,13 +142,37 @@ async function onAdd(): Promise<void> {
 }
 
 async function onRemove(path: string): Promise<void> {
-  await removeProject(path)
+  /* Removing an entry is not destructive to files, but it is not undoable from
+     the panel either, and the row disappears on a single stray click otherwise. */
+  const ok = await askConfirm({
+    title: 'Remove project?',
+    body: `${path} leaves the registry. Sessions keep their records and the folder itself is not touched.`,
+    confirmLabel: 'Remove',
+    danger: true,
+    hint: 'the folder is not deleted'
+  })
+  if (!ok) return
+  const res = await removeProject(path)
+  if (!res.ok) {
+    toast('Could not remove project', res.error ?? 'The gateway refused this project.', 'err')
+    return
+  }
+  toast('Project removed', `${baseName(path)} left the registry. Sessions keep their records.`, 'warn')
 }
 
 async function onAdopt(): Promise<void> {
   if (!projects.active) return
-  await adoptUnassigned(projects.active)
+  const res = await adoptUnassigned(projects.active)
   unassigned.value = await unassignedCount()
+  if (!res.ok) {
+    toast('Adopt failed', res.error ?? 'The gateway could not adopt these sessions.', 'err')
+    return
+  }
+  if (!res.adopted) {
+    toast('Nothing to adopt', 'No unassigned sessions were found.', 'warn')
+    return
+  }
+  toast('Sessions adopted', `${res.adopted} unassigned sessions now belong to ${baseName(projects.active)}.`, 'ok')
 }
 
 interface TreeRow {
@@ -142,7 +185,6 @@ interface TreeRow {
 
 const children = ref<Record<string, TreeRow[]>>({})
 const expanded = ref<Record<string, boolean>>({})
-const activePath = ref('')
 
 /* Flattened view of the expanded directories. Building it on every change keeps
    the markup a single v-for instead of a recursive component, and the project
@@ -159,10 +201,25 @@ const visibleRows = computed<TreeRow[]>(() => {
   return out
 })
 
-const treeHint = computed(() => visibleRows.value.length + ' entries')
+const treeHint = computed(() => {
+  const n = visibleRows.value.length
+  /* Each level is read with a 200-entry cap, so a full folder means the list is
+     a sample rather than the directory. Say so instead of implying a count. */
+  const capped = Object.values(children.value).some(rows => rows.length >= 200)
+  return capped ? `${n}+ entries` : `${n} entries`
+})
 
 async function load(path: string, depth: number): Promise<void> {
-  const list = await searchFiles('', path, 200)
+  const { rows: list, error } = await searchProjectDir(path, 200)
+  if (error) {
+    /* A refused read and an empty folder are different answers. Only the root
+       owns the tree-level message; a subfolder reports through the toast so the
+       rest of the tree stays usable. */
+    if (depth === 0) treeError.value = error
+    else toast('Could not read folder', error, 'err')
+    children.value[path] = []
+    return
+  }
   const rows: TreeRow[] = list.map(raw => ({
     name: String(raw.name ?? ''),
     path: String(raw.path ?? ''),
@@ -191,9 +248,16 @@ async function onRow(row: TreeRow): Promise<void> {
 }
 
 async function reloadTree(): Promise<void> {
+  treeLoading.value = true
+  treeError.value = ''
   children.value = {}
   expanded.value = {}
-  await load('', 0)
+  activePath.value = ''
+  try {
+    await load('', 0)
+  } finally {
+    treeLoading.value = false
+  }
 }
 
 /** Registry + adopt counter, both of which the gateway only answers once the

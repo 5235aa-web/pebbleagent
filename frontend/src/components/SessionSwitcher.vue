@@ -39,11 +39,11 @@
             </div>
           </template>
 
-          <div class="sess-empty" id="sessEmpty" hidden>no session matches</div>
+          <div class="sess-empty" id="sessEmpty" v-if="!filtered.length">{{ emptyText }}</div>
         </div>
 
         <div class="sp-foot">
-          <button class="sp-manage">Manage</button>
+          <button class="sp-manage">Projects</button>
           <button class="sp-adopt" v-if="unassigned > 0" @click="adopt">{{ unassigned }} unassigned · adopt</button>
         </div>
       </div>
@@ -51,9 +51,9 @@
 </template>
 
 <script setup lang="ts">
-import { computed, onMounted, ref } from 'vue'
+import { computed, onMounted, ref, watch } from 'vue'
 import { sessions, sessionState, activeSession, type Session, type SessionGroup } from '../data/store'
-import { adoptUnassigned, unassignedCount } from '../data/wire'
+import { adoptUnassigned, toast, unassignedCount } from '../data/wire'
 
 /* Sessions created before a project was chosen have no owner; the gateway can
    adopt them into the project that is open right now. */
@@ -64,8 +64,21 @@ async function pullUnassigned(): Promise<void> {
 }
 
 async function adopt(): Promise<void> {
-  const moved = await adoptUnassigned(sessionState.projectPath)
-  if (moved >= 0) unassigned.value = 0
+  const res = await adoptUnassigned(sessionState.projectPath)
+  if (!res.ok) {
+    toast('Adopt failed', res.error ?? 'The gateway could not adopt these sessions.', 'err')
+    return
+  }
+  unassigned.value = 0
+  /* The count comes back from the gateway, so the row reports what moved
+     instead of assuming every unassigned session was adopted. */
+  toast(
+    res.adopted ? 'Sessions adopted' : 'Nothing to adopt',
+    res.adopted
+      ? `${res.adopted} unassigned sessions now belong to this project.`
+      : 'No unassigned sessions were found.',
+    res.adopted ? 'ok' : 'warn'
+  )
 }
 
 onMounted(() => {
@@ -89,9 +102,38 @@ const GROUPS: SessionGroup[] = [
 
 const current = computed(() => activeSession())
 
+/* The search box is driven by runtime.js, so the term lives in the store and
+   the filter runs here. Filtering the DOM (the old way) was undone by the next
+   list re-render while the term stayed in the box. */
+const filtered = computed<Session[]>(() => {
+  const q = sessionState.filter.trim().toLowerCase()
+  if (!q) return sessions
+  return sessions.filter(s => s.title.toLowerCase().includes(q))
+})
+
 const grouped = computed<Record<string, Session[]>>(() => {
   const out: Record<string, Session[]> = {}
-  for (const g of GROUPS) out[g] = sessions.filter(s => s.group === g)
+  for (const g of GROUPS) out[g] = filtered.value.filter(s => s.group === g)
   return out
+})
+
+/* The input element itself is owned by runtime.js, so a term cleared in code
+   (a project switch resets the filter) has to be written back into the box.
+   The store stays the single source and the DOM follows it. */
+watch(
+  () => sessionState.filter,
+  value => {
+    const el = document.getElementById('convSearch') as HTMLInputElement | null
+    if (el && el.value !== value) el.value = value
+  }
+)
+
+/* An empty panel says which empty it is: still reading, could not read, or
+   genuinely nothing stored. All three used to render as the same sentence. */
+const emptyText = computed(() => {
+  if (sessionState.filter.trim()) return 'no session matches'
+  if (sessionState.listState === 'loading') return 'loading sessions…'
+  if (sessionState.listState === 'failed') return 'could not read sessions'
+  return 'no sessions yet'
 })
 </script>

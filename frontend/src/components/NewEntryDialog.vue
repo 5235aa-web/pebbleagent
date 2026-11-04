@@ -57,7 +57,7 @@
 
 <script setup lang="ts">
 import { ref } from 'vue'
-import { createMemory } from '../data/wire'
+import { createMemory, toast } from '../data/wire'
 
 const KINDS = [
   { key: 'correction', label: 'Correction', cls: 'corr' },
@@ -84,7 +84,14 @@ async function create() {
     tools: tools.value.split(',').map(s => s.trim()).filter(Boolean),
     confidence: confidence.value
   })
-  if (ok) close()
+  if (!ok) {
+    /* The sheet stays open with the text intact; saying why beats leaving the
+       user clicking Save at a gateway that already refused. */
+    toast('Could not add entry', 'The gateway refused the new entry.', 'err')
+    return
+  }
+  toast('Entry added', 'The experience ledger now carries it.', 'ok')
+  close()
 }
 
 /** Closes the sheet through the same class the overlay system uses, then resets

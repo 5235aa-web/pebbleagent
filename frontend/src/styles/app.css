@@ -513,6 +513,44 @@ input.attach-input[type="file"] {
   color: var(--faint);
 }
 
+/* ---- ledger entry editor ----
+
+   The detail pane rendered the statement as a heading with no field to change
+   it and a confidence bar with no control, so Save had nothing to submit. The
+   editor now works on a draft: a textarea sized like the agent-note editor and a
+   slider for confidence. */
+
+.lg-edit {
+  width: 100%;
+  min-height: 78px;
+  padding: 10px 12px;
+  font-family: var(--font-mono);
+  font-size: 12px;
+  line-height: 1.65;
+  color: var(--ink);
+  background: var(--surface-2);
+  border: 1px solid var(--line);
+  border-radius: 8px;
+  resize: vertical;
+}
+
+.lg-edit:focus {
+  outline: none;
+  border-color: var(--accent);
+}
+
+.lg-range {
+  width: 100%;
+  margin-top: 6px;
+  accent-color: var(--accent);
+}
+
+.lg-save:disabled,
+.lg-del:disabled {
+  opacity: .4;
+  cursor: default;
+}
+
 /* ---- agent note editor ----
 
    The note body inherited `.lm-ta`, which is an 8.5px inline field sized for a
@@ -647,3 +685,17 @@ input.attach-input[type="file"] {
   color: var(--faint);
 }
 .lm-foot button:disabled { opacity: .4; cursor: default; }
+
+
+/* ---- confirm sheet ----
+
+   orbit.css is frozen, so the one destructive button variant lives here. It
+   matches .btn-primary's geometry and swaps the accent for the error tone. */
+#confirmSheet { z-index: 260; }
+
+.btn-danger {
+  background: var(--err);
+  color: #fff;
+  box-shadow: 0 4px 12px -5px var(--err);
+}
+.btn-danger:hover { filter: brightness(1.06); }

@@ -2,8 +2,9 @@
    The prototype body is mounted as static DOM before this runs, so the
    original imperative code operates on the same nodes it always did. */
 import { createTheme } from "./theme.js";
-import { selectSession, plan, permissions, settlePermission, dropPermission, pendingPermissions } from "../data/store";
-import { decidePermission, loadSession, sendPrompt, interruptSession, renameSession, deleteSession, toggleSessionPin, syncPermissionMode, setPermissionMode, createSession, exportSession } from "../data/wire";
+import { selectSession, plan, permissions, settlePermission, dropPermission, pendingPermissions, sessionState } from "../data/store";
+import { decidePermission, loadSession, sendPrompt, interruptSession, renameSession, deleteSession, toggleSessionPin, syncPermissionMode, setPermissionMode, createSession, exportSession, exportSessionMarkdown } from "../data/wire";
+import { askConfirm } from "../data/confirm";
 import { previewState, reloadPreview, capturePreview } from "../data/preview";
 import { gateway } from "../data/gateway";
 import { wireAttachments, clearFiles } from "../data/fileDrop";
@@ -221,7 +222,6 @@ export function initOrbit() {
   var ssCount = document.querySelector(".ss-count");
   var convSearch = document.getElementById("convSearch");
   var convList = document.getElementById("convList");
-  var sessEmpty = document.getElementById("sessEmpty");
 
   function setSessOpen(open) {
     if (!ssBtn || !ssPop) return;
@@ -243,11 +243,9 @@ export function initOrbit() {
 
   if (convList) {
     convList.addEventListener("click", function (e) {
-      if (e.target.closest(".conv-more")) {
-        e.stopPropagation();
-        toast("Session actions", "Pin, rename, export or delete this session.", "warn");
-        return;
-      }
+      /* The menu button has its own listener below. This handler only has to
+         leave the row alone — it used to toast a fake menu on the way. */
+      if (e.target.closest(".conv-more")) return;
       var row = e.target.closest(".conv");
       if (!row) return;
       // Vue owns the row classes and the header label; this only moves state.
@@ -266,30 +264,17 @@ export function initOrbit() {
     });
   }
 
-  if (convSearch && convList) {
+  /* The filter lives in Vue state, not in inline `display` on the rows. Every
+     list update re-renders those rows, and a DOM-level filter was silently
+     dropped while the search box still showed the term. */
+  if (convSearch) {
     convSearch.addEventListener("input", function () {
-      var q = convSearch.value.trim().toLowerCase();
-      var shown = 0;
-      convList.querySelectorAll(".conv").forEach(function (row) {
-        var hit = !q || row.textContent.toLowerCase().indexOf(q) > -1;
-        row.style.display = hit ? "" : "none";
-        if (hit) shown++;
-      });
-      convList.querySelectorAll(".sb-label").forEach(function (lbl) {
-        var any = false;
-        var n = lbl.nextElementSibling;
-        while (n && !n.classList.contains("sb-label")) {
-          if (n.classList.contains("conv") && n.style.display !== "none") any = true;
-          n = n.nextElementSibling;
-        }
-        lbl.style.display = any ? "" : "none";
-      });
-      if (sessEmpty) sessEmpty.hidden = shown > 0;
+      sessionState.filter = convSearch.value;
     });
     convSearch.addEventListener("keydown", function (e) {
       if (e.key === "Escape") {
         convSearch.value = "";
-        convSearch.dispatchEvent(new Event("input"));
+        sessionState.filter = "";
       }
     });
   }
@@ -914,8 +899,14 @@ export function initOrbit() {
       closeCmd();
       setSessOpen(false);
       setStageOpen(false);
+      /* A confirmation sheet owns the key while it is open. Closing the panel
+         that asked would take the question away and strand the answer. */
+      var confirmEl = document.getElementById("confirmSheet");
+      if (confirmEl && confirmEl.classList.contains("open")) return;
       document.querySelectorAll(".overlay.open").forEach(function (ov) {
-        if (ov.id === "permDialog") return;
+        /* permDialog owns its own dismissal; confirmSheet is Vue state, and
+           closing it here would leave the promise that opened it unresolved. */
+        if (ov.id === "permDialog" || ov.id === "confirmSheet") return;
         closeOverlay(ov);
       });
       if (island) island.classList.remove("open");
@@ -944,43 +935,16 @@ export function initOrbit() {
     document.addEventListener("click", function () { toggle(false); });
     document.addEventListener("keydown", function (e) { if (e.key === "Escape") toggle(false); });
 
+    /* Vue owns the rows and answers the gateway. The popover still closes
+       itself, which is the one behaviour the prototype had that no component
+       replaced. A remove click keeps it open: the list is being edited, not
+       dismissed. */
     var list = document.getElementById("ppList");
     if (list) list.addEventListener("click", function (e) {
-      var x = e.target.closest(".pp-x");
-      if (x) {
-        e.stopPropagation();
-        var it = x.closest(".pp-item");
-        it.style.opacity = "0";
-        setTimeout(function () { it.remove(); }, 180);
-        toast("Project removed", "Sessions keep their records.", "warn");
-        return;
-      }
-      var item = e.target.closest(".pp-item");
-      if (!item) return;
-      list.querySelectorAll(".pp-item").forEach(function (i) { i.classList.remove("on"); });
-      item.classList.add("on");
-      var nm = pop.querySelector(".pp-name");
-      if (nm) nm.textContent = item.querySelector("b").textContent;
-      toast("Switched project", item.querySelector("b").textContent + " is now the active root.", "ok");
-      toggle(false);
+      if (e.target.closest(".pp-x")) return;
+      if (e.target.closest(".pp-item")) toggle(false);
     });
 
-    var adopt = document.getElementById("ppAdopt");
-    if (adopt) adopt.addEventListener("click", function () {
-      toast("Adopted", "2 unassigned files moved under the current root.", "ok");
-    });
-    var addBtn = document.getElementById("ppAddBtn");
-    if (addBtn) addBtn.addEventListener("click", function () {
-      var inp = document.getElementById("ppAddInput");
-      if (!inp || !inp.value.trim()) { toast("Path required", "Paste a project folder path first.", "warn"); return; }
-      toast("Project added", inp.value.trim(), "ok");
-      inp.value = "";
-    });
-    var manage = document.getElementById("ppManage");
-    if (manage) manage.addEventListener("click", function () {
-      toggle(false);
-      toast("Project manager", "Rename, delete and reorder roots here.", "ok");
-    });
     var spManage = document.querySelector(".sp-manage");
     if (spManage) spManage.addEventListener("click", function (e) {
       e.stopPropagation();
@@ -1092,11 +1056,14 @@ export function initOrbit() {
         toast("Exported", saved.split(/[\\/]/).pop() || saved, "ok");
         return;
       }
-      // The gateway writes the file next to its own data. When it refuses, fall
-      // back to a browser download so the menu item never does nothing.
-      var metaEl = conv.querySelector(".conv-meta");
-      var meta = metaEl ? metaEl.textContent.replace(/\s+/g, " ").trim() : "";
-      var md = "# " + title + "\n\n" + meta + "\n\n---\n\n> exported from Pebble Agent\n";
+      // The gateway writes the file next to its own data. When it refuses, ask
+      // it for the markdown and download that: the old fallback built a header
+      // from the row label alone, so the file carried no transcript.
+      var md = await exportSessionMarkdown(conv.getAttribute("data-id") || undefined);
+      if (!md) {
+        toast("Export failed", "The gateway could not build the markdown.", "warn");
+        return;
+      }
       var blob = new Blob([md], { type: "text/markdown;charset=utf-8" });
       var a = document.createElement("a");
       a.href = URL.createObjectURL(blob);
@@ -1107,20 +1074,28 @@ export function initOrbit() {
       setTimeout(function () { URL.revokeObjectURL(a.href); }, 1500);
       toast("Exported", a.download, "ok");
     }
-    function removeConv(conv) {
+    async function removeConv(conv) {
       var title = titleOf(conv);
       var liveId = conv.getAttribute("data-id");
       var wasActive = conv.classList.contains("active");
+      var ok = await askConfirm({
+        title: "Delete session?",
+        body: '"' + title + '" and its transcript are removed from this project.',
+        confirmLabel: "Delete",
+        danger: true,
+        hint: "the stored transcript goes with it"
+      });
+      if (!ok) return;
+      if (liveId) {
+        // The store owns the row, so dropping it from the list is what removes
+        // the element. `deleteSession` puts it back if the gateway refuses.
+        if (await deleteSession(liveId)) toast("Conversation deleted", title, "warn");
+        return;
+      }
       conv.style.transition = "opacity .2s var(--ease), transform .2s var(--ease)";
       conv.style.opacity = "0";
       conv.style.transform = "translateX(-10px)";
       setTimeout(function () {
-        if (liveId) {
-          // The store owns the row, so dropping it from the list is what removes
-          // the element (and the gateway delete rides along).
-          deleteSession(liveId);
-          return;
-        }
         conv.remove();
         if (wasActive) {
           var next = list.querySelector(".conv");

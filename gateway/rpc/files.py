@@ -14,7 +14,18 @@ def handle(ctx, method):
     if method == "file.search":
         """搜索项目目录中的文件（自动补全用；目录受项目边界/白名单限制）"""
         q = params.get("q", "").strip().lower()
-        path = params.get("path", str(srv._PROJECT_ROOT))
+        # The project panel's tree asks without a path, which has to mean "the
+        # active project". The program root is not an answer: in a packaged
+        # build it is the install directory, so the tree listed the app's own
+        # files and the guard rejected the rest.
+        path = params.get("path") or ""
+        if not path:
+            try:
+                path = (srv._read_projects() or {}).get("active") or ""
+            except Exception:
+                path = ""
+        if not path:
+            return {"id": rid, "result": {"results": [], "error": "no active project"}}
         try:
             limit = max(1, min(int(params.get("limit", 20)), 1000))
         except Exception:

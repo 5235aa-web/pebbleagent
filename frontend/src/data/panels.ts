@@ -197,15 +197,15 @@ export interface LedgerEntry {
   status?: string
 }
 
+/* Empty until `refreshPanes` answers with `memory.list`. The prototype seeded
+   five demo entries and a total of 14, and an account with no memories kept
+   showing them — the same fake-data problem the session switcher had. */
 export const ledger = reactive({
-  entries: [
-    { id: 'm1', text: 'Always tell the user before modifying files', scope: 'project', kind: 'constraint', confidence: 92, age: '2h' },
-    { id: 'm2', text: 'Prefers dense, high-information layouts', scope: 'project', kind: 'preference', confidence: 88, age: '5h' },
-    { id: 'm3', text: 'Never use native title attributes for tooltips', scope: 'project', kind: 'correction', confidence: 95, age: '1d' },
-    { id: 'm4', text: 'Glob under-reports directory-prefixed paths', scope: 'global', kind: 'pitfall', confidence: 74, age: '3d' },
-    { id: 'm5', text: 'knowledgesource maps the UI surface', scope: 'global', kind: 'reference', confidence: 81, age: '6d' }
-  ] as LedgerEntry[],
-  total: 14
+  entries: [] as LedgerEntry[],
+  total: 0,
+  /* How the last read went, so the panel can say loading / failed / empty
+     instead of rendering all three as an empty list. */
+  state: 'idle' as 'idle' | 'loading' | 'ok' | 'failed'
 })
 
 export interface CtxSegment {
@@ -231,8 +231,8 @@ export const context = reactive({
     { ico: 'mod', mark: '\u2192', text: 'edit_file · InputArea.vue', time: '2.4s' },
     { ico: 'del', mark: '\u00d7', text: 'execute_shell · TS2339', time: '6.1s' }
   ],
-  ledgerTotal: 14,
-  ledgerSub: '3 constraints · 4 preferences · 2 pitfalls'
+  ledgerTotal: 0,
+  ledgerSub: ''
 })
 
 export interface ClarifyOption {
