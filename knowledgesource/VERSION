@@ -1547,3 +1547,17 @@
 - `refreshPaths()`'s catch comment corrected: it keeps the last known roots, not "the prototype roots" (there are none)
 - Verified: `Edit` present and opens `sheet-paths` showing `no path yet`; change list 0 rows with `no changes` /
   `could not read the change list`; `vue-tsc --noEmit` clean, `vite build` succeeds
+
+## Build and packaging commands are denied by the permission system
+
+- 用户要求把「打包」写进项目权限系统。三处校验器各有一份独立的规则表，漏掉任何一处都是一条绕路：
+  `permission_rules.json` 的 `deny` 现在列出 `tauri build` / `npm run build|release|publish` /
+  `npx tauri|vite build` / `vite build` / `pnpm|yarn build` / `*yinstaller*`，`execute_shell` 与 `powershell`
+  两个工具各一套；`bash_validator._DESTRUCTIVE_BLOCK`、`powershell_validator._DESTRUCTIVE_BLOCK`、
+  `code_destructive_guard._DESTRUCTIVE_PATTERNS` 同时内置同样的模式，覆盖 `execute_code` 里用字符串拼出来的调用
+- 放行清单保持不变：`npm run dev`、`npm run tauri dev`、`npm run test`、`cargo build`（只编译不打包）、`git status`
+- 验证：22 条 deny 规则被 `PermissionManager` 加载，12 个打包命令全部 denied，5 个开发命令全部放行；三份校验器对同样
+  10 个命令全部 blocked；代码扫描对 `subprocess.run("npm run tauri build")` 和 `os.system("pyinstaller x")` 命中
+- `tests/test_minor_hardening.py` 的两条断言跟着 `path_whitelist.save` 的新错误文案更新（`too broad` →
+  `drive or filesystem root`，`non-empty` → `empty or not a string`），这两条在本次改动之前就已经失败
+- `tests/run_all.py`：`ALL PASSED: 38 tests`
