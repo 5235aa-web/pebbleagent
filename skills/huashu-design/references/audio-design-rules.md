@@ -91,15 +91,15 @@ Anthropic 的秘诀不是「SFX 音量大」，是**频段分层**：
 
 ## BGM 选择决策树
 
-huashu-design skill 自带 6 首 BGM（`assets/bgm-*.mp3`）：
+按这几种风格选曲（下面的 `assets/bgm-*.mp3` 未随包分发，用自备曲子按同样风格匹配）：
 
 ```
 动画性格是什么？
-├─ 产品发布 / 技术演示 → bgm-tech.mp3（minimal synth + piano）
-├─ 教程讲解 / 工具使用 → bgm-tutorial.mp3（warm, instructional）
-├─ 教育学习 / 原理解释 → bgm-educational.mp3（curious, thoughtful）
-├─ 营销广告 / 品牌宣传 → bgm-ad.mp3（upbeat, promotional）
-└─ 同类风格需要变体 → bgm-*-alt.mp3（各自替代版）
+├─ 产品发布 / 技术演示 → tech 风格（minimal synth + piano）
+├─ 教程讲解 / 工具使用 → tutorial 风格（warm, instructional）
+├─ 教育学习 / 原理解释 → educational 风格（curious, thoughtful）
+├─ 营销广告 / 品牌宣传 → ad 风格（upbeat, promotional）
+└─ 同类风格需要变体 → 对应风格的 -alt 版本（各自替代版）
 ```
 
 ### 无 BGM 的场景（值得考虑）
@@ -118,7 +118,7 @@ huashu-design skill 自带 6 首 BGM（`assets/bgm-*.mp3`）：
 ### 配方 A · 产品发布 hero（huashu-design v9 同款）
 ```
 时长：25 秒
-BGM：bgm-tech.mp3 · 45% · 频段 <4kHz
+BGM：tech 风格曲目 · 45% · 频段 <4kHz
 SFX 密度：~6个/10s
 
 cue：
@@ -136,7 +136,7 @@ cue：
 ### 配方 B · 工具功能演示（参考 Anthropic Code Desktop）
 ```
 时长：30-45 秒
-BGM：bgm-tutorial.mp3 · 50%
+BGM：tutorial 风格曲目 · 50%
 SFX 密度：0-2个/10s（极少）
 
 策略：让 BGM + 讲解 voiceover 驱动，SFX 只在**决定性时刻**（文件保存/命令执行完成）
@@ -145,7 +145,7 @@ SFX 密度：0-2个/10s（极少）
 ### 配方 C · AI 生成演示
 ```
 时长：15-20 秒
-BGM：bgm-tech.mp3 或无 BGM
+BGM：tech 风格曲目 或无 BGM
 SFX 密度：~8个/10s（高密度）
 
 cue：

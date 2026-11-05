@@ -2,8 +2,8 @@
 # PebbleAgent - Development and packaging dependencies
 # Install: pip install -r requirements-dev.txt
 # ------------------------------------------------------------
-# Superset of the optional set. PyInstaller needs the PDF/OCR modules to be
-# importable at build time, otherwise they are missing from the packaged exe.
+# Superset of the optional set. PyInstaller needs an optional module to be
+# importable at build time, otherwise it is missing from the packaged exe.
 # ============================================================
 
 -r requirements-optional.txt

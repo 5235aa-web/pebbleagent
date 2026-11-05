@@ -21,6 +21,13 @@ venv/
 # ---------- Dependencies ----------
 node_modules/
 
+# ---------- Vendored binaries (fetched, never committed) ----------
+# ripgrep backs the grep tool. 4 MB per platform, so it is downloaded rather
+# than tracked; CONTRIBUTING.md carries the exact command. The app falls back
+# to PATH when it is absent, and the packaged build only bundles it when the
+# file exists at packaging time.
+/vendor/ripgrep/
+
 # ---------- Frontend build output / caches ----------
 frontend/dist/
 frontend/dist-ssr/

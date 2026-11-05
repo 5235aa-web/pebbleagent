@@ -1,12 +1,14 @@
 """Filesystem, search and repository tools."""
 
 import asyncio
+import fnmatch
 import json
 import logging
 import os
 import re
 import shutil
 import subprocess
+import sys
 import time
 from typing import List
 
@@ -14,6 +16,56 @@ from typing import List
 from ..truncation_manager import truncate_output
 
 logger = logging.getLogger(__name__)
+
+
+def _resolve_rg():
+    """Locate the ripgrep binary used by the grep tool.
+
+    Order: the copy bundled into the packaged app, the copy in the repository's
+    vendor directory, then whatever `rg` resolves to on PATH. The bundled copy
+    is what makes grep work in the shipped build, where PATH usually has no
+    ripgrep; the vendor copy keeps dev runs on a known version instead of
+    whatever the machine happens to have installed.
+    """
+    exe = "rg.exe" if os.name == "nt" else "rg"
+    roots = []
+    bundle = getattr(sys, "_MEIPASS", None)
+    if bundle:
+        roots.append(bundle)
+    # agent_core/tool_impl/filesystem.py -> project root
+    roots.append(os.path.dirname(os.path.dirname(os.path.dirname(os.path.abspath(__file__)))))
+    for root in roots:
+        candidate = os.path.join(root, "vendor", "ripgrep", exe)
+        if os.path.isfile(candidate):
+            return candidate
+    return shutil.which("rg")
+
+
+def _glob_match(rel_path: str, pattern: str) -> bool:
+    """Match a relative path against a glob pattern, globstar included.
+
+    Matching is segment by segment, so `*` never crosses a separator and `**`
+    stands for zero or more segments: `**/*.py` matches `b.py` and `a/b.py`,
+    while `src/*.ts` matches `src/a.ts` but not `src/a/b.ts`. The earlier code
+    compared the pattern against the bare file name, so any pattern carrying a
+    directory prefix (`knowledgesource/content.md`) matched nothing at all.
+    """
+    rel_parts = [p for p in rel_path.replace("\\", "/").split("/") if p]
+    pat_parts = [p for p in pattern.replace("\\", "/").split("/") if p]
+
+    def walk(rel, pat):
+        if not pat:
+            return not rel
+        head = pat[0]
+        if head == "**":
+            return any(walk(rel[i:], pat[1:]) for i in range(len(rel) + 1))
+        if not rel:
+            return False
+        if not fnmatch.fnmatchcase(rel[0], head):
+            return False
+        return walk(rel[1:], pat[1:])
+
+    return walk(rel_parts, pat_parts)
 
 
 
@@ -825,7 +877,11 @@ class FileToolsMixin:
         
         search_path = self._resolve_path(path) if path else self._current_project_path
         
-        cmd = ["rg"]
+        rg = _resolve_rg()
+        if not rg:
+            return "Error: ripgrep (rg) not found"
+        
+        cmd = [rg]
         
         if output_mode == "content":
             if show_line_numbers:
@@ -927,13 +983,23 @@ class FileToolsMixin:
         matches = []
         
         try:
+            pat = pattern.replace('\\', '/')
+            # A pattern carrying a directory segment is matched against the path
+            # relative to the search root; a bare file-name pattern keeps
+            # matching the name at any depth, which is how `*.py` is used.
+            match_rel = '/' in pat.strip('/')
+            
             for root, dirs, files in os.walk(search_path):
                 dirs[:] = [d for d in dirs if not d.startswith('.') and d not in 
                           ['node_modules', '__pycache__', '.git', 'venv', 'dist', 'build']]
                 
                 for filename in files:
-                    if fnmatch.fnmatch(filename, pattern.replace('**/', '').replace('/**', '')):
-                        matches.append(os.path.join(root, filename))
+                    full = os.path.join(root, filename)
+                    if match_rel:
+                        if _glob_match(os.path.relpath(full, search_path), pat):
+                            matches.append(full)
+                    elif fnmatch.fnmatch(filename, pat.replace('**/', '')):
+                        matches.append(full)
             
             matches.sort(key=lambda x: os.path.getmtime(x) if os.path.exists(x) else 0, reverse=True)
             

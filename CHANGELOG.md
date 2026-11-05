@@ -7,6 +7,15 @@ which is what the in-app update sheet shows before installing. Add the section
 before running `npm run release`; the release stops if it is missing, because a
 feed with empty notes tells the user nothing.
 
+## 1.1.4
+
+- Skill media is trimmed, not the skills. The huashu-design examples that made the package heavy are gone: six background music tracks and 24 pre-rendered showcase screenshots. All 24 showcase HTML files stay, so the style gallery still works, and the skill's instructions now open those HTML files instead of pointing at images that no longer ship. Every skill still loads and behaves exactly as before, the install is simply much smaller.
+- `read_pdf` is removed. A coding agent has no use for it, and the engine behind it (PyMuPDF) would have cost roughly 66 MB, none of which ever reached the shipped build. Users who need PDF content have better tools.
+- Uploading a PDF is unaffected. A PDF dropped into the conversation is still read through `pypdf`, a separate library; it now appears in `requirements-optional.txt`, where it had been missing all along.
+- Also out of the bundle: numpy and sounddevice (27.8 MB, both unreachable once OCR was removed) and the project's own knowledge base (0.31 MB). With the trimmed skill media the sidecar loses about 57 MB uncompressed.
+- `grep` now carries its own ripgrep. The tool shells out to `rg`, and the packaged app depended on the user having it on PATH, which almost nobody does; `vendor/ripgrep/rg.exe` (4 MB) ships in the bundle and `_resolve_rg()` only falls back to PATH when that copy is missing.
+- `glob` was broken for any pattern carrying a directory. It compared `fnmatch` against the bare file name, so `knowledgesource/*.md` returned nothing; matching is now segment by segment, `*` staying inside one segment and `**` spanning any depth, while `*.py` still searches every depth as before.
+
 ## 1.1.3
 
 - The bundled skill set drops from 120 to 50. Kept are the skills the agent's own instructions depend on and the ones most users actually reach for: the CKB workflow, the design and OfficeCLI document chain, and the HyperFrames video pipeline. The rest were written for the author's own workflows and no longer ship.

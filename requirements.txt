@@ -3,10 +3,10 @@
 # Environment: Python 3.11+ (verified on 3.14, Windows)
 # Install: pip install -r requirements.txt
 # ------------------------------------------------------------
-# Core only: enough to start the backend and chat. PDF parsing, image OCR and
+# Core only: enough to start the backend and chat. Optional features and
 # packaging tools live in requirements-optional.txt / requirements-dev.txt.
-# They are lazy-imported, so their absence degrades the matching tool instead
-# of blocking startup.
+# They are lazy-imported, so their absence degrades the matching feature
+# instead of blocking startup.
 # ============================================================
 
 # WebSocket server (gateway/ws_server.py, ws://127.0.0.1:19876)

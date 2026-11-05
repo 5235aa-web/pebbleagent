@@ -14,7 +14,7 @@
 #   --timeline=<path>     timeline.json 路径（自动读 totalDuration 和 voiceover.mp3 路径）
 #
 # Optional:
-#   --bgm-mood=<name>     BGM 预设（educational / tech / tutorial / ...）
+#   --bgm-mood=<name>     BGM 预设（educational / tech / tutorial / ...）；曲子未随包分发，需自备 assets/bgm-<name>.mp3
 #   --bgm=<path>          自定义 BGM 文件
 #   --bgm-volume=<0-1>    BGM 静态音量，默认 0.18
 #   --no-ducking          关 sidechain ducking

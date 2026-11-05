@@ -13,12 +13,22 @@ Thanks for considering a contribution. This document covers the development setu
 - Python 3.11+ (the development environment uses 3.14)
 - Node.js 18+ for the frontend and npx-based MCP servers (CI uses 22)
 - Rust toolchain only if you build the Tauri desktop shell
+- ripgrep only if you package the backend: `vendor/ripgrep/rg.exe` is git-ignored, so fetch it first (command under Setup)
 
 ## Setup
 
 ```bash
 pip install -r requirements.txt
 cd frontend && npm install
+```
+
+Packaging additionally needs the ripgrep binary on disk, since it is git-ignored:
+
+```powershell
+Invoke-WebRequest -Uri "https://github.com/BurntSushi/ripgrep/releases/download/15.2.0/ripgrep-15.2.0-x86_64-pc-windows-msvc.zip" -OutFile "$env:TEMP\ripgrep.zip"
+Expand-Archive "$env:TEMP\ripgrep.zip" -DestinationPath "$env:TEMP\ripgrep" -Force
+New-Item -ItemType Directory -Force vendor\ripgrep | Out-Null
+Move-Item "$env:TEMP\ripgrep\ripgrep-15.2.0-x86_64-pc-windows-msvc\rg.exe" vendor\ripgrep\rg.exe
 ```
 
 The backend writes runtime data to `%USERPROFILE%\.pebble\`. Set `PEBBLE_HOME` to redirect it, which is also how the tests isolate storage.

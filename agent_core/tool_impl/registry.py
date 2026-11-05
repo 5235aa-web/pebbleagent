@@ -48,7 +48,6 @@ TOOL_HANDLERS: Dict[str, ToolHandler] = {
     "lsp_workspace_symbol": lambda self, args, context: self._tool_lsp_workspace_symbol(args.get('query', '')),
     "powershell": lambda self, args, context: self._tool_powershell(args.get('command', ''), args.get('timeout', 60000), context),
     "read_file": lambda self, args, context: self._tool_read_file(args.get('file_path', ''), args.get('start_line'), args.get('end_line')),
-    "read_pdf": lambda self, args, context: self._tool_read_pdf(args.get('file_path', ''), args.get('pages'), args.get('ocr_language', 'ch_sim+en')),
     "search_files": lambda self, args, context: self._tool_search_files(args.get('directory', ''), args.get('pattern', ''), args.get('search_type', 'name'), args.get('file_pattern')),
     "search_in_file": lambda self, args, context: self._tool_search_in_file(args.get('file_path', ''), args.get('pattern', ''), args.get('ignore_case', True)),
     "set_env_var": lambda self, args, context: self._tool_set_env_var(args.get('name', ''), args.get('value', '')),

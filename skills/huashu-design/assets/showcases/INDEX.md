@@ -31,15 +31,15 @@
 | 7 | SaaS落地页 | 1440×900 | `website-saas/saas-pentagram` | `website-saas/saas-build` | `website-saas/saas-takram` |
 | 8 | 开发者文档 | 1440×900 | `website-devdocs/devdocs-pentagram` | `website-devdocs/devdocs-build` | `website-devdocs/devdocs-takram` |
 
-> 每个条目同时有 `.html`（源码）和 `.png`（截图）两个文件
+> 每个条目是一个 `.html` 源文件；截图未随包分发，需要时用浏览器打开后现场截
 
 ## 使用说明
 
 ### Phase 3 推荐时引用
 推荐设计方向后，可展示对应场景的预制截图：
 ```
-「这是 Pentagram 风格做公众号封面的效果 → [展示 cover/cover-pentagram.png]」
-「Takram 风格做 PPT 数据页是这种感觉 → [展示 ppt/ppt-takram.png]」
+「这是 Pentagram 风格做公众号封面的效果 → [打开 cover/cover-pentagram.html]」
+「Takram 风格做 PPT 数据页是这种感觉 → [打开 ppt/ppt-takram.html]」
 ```
 
 ### 场景匹配优先级
@@ -105,8 +105,8 @@
 ## 文件统计
 
 - HTML 源文件：24 个
-- PNG 截图：24 个
-- 总资产：48 个文件
+- PNG 截图：未随包分发，需要时现场截
+- 总资产：24 个文件
 
 ---
 

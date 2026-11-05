@@ -2,7 +2,6 @@
   "mode": "manual",
   "allow": [
     "read_file",
-    "read_pdf",
     "list_directory",
     "get_file_info",
     "ls",

@@ -19,7 +19,6 @@ from .agent_loader import check_agent_tool_policy
 from .permission_enforcer import PermissionEnforcer
 from .tool_impl.filesystem import FileToolsMixin
 from .tool_impl.execution import ExecutionToolsMixin
-from .tool_impl.documents import DocumentToolsMixin
 from .tool_impl.web import WebToolsMixin, _sanitize_download_filename  # noqa: F401
 from .tool_impl.system import SystemToolsMixin
 from .tool_impl.workspace import WorkspaceToolsMixin
@@ -36,7 +35,6 @@ WRITE_TOOLS = frozenset({"write_file", "edit_file", "delete_file", "copy_file", 
 class AgentToolExecutorImpl(
     FileToolsMixin,
     ExecutionToolsMixin,
-    DocumentToolsMixin,
     WebToolsMixin,
     SystemToolsMixin,
     WorkspaceToolsMixin,

@@ -251,8 +251,7 @@ huashu-design/
 │   ├── deck_stage.js        # HTML deck engine
 │   ├── deck_index.html      # Multi-file deck assembler
 │   ├── design_canvas.jsx    # Side-by-side variation display
-│   ├── showcases/           # 24 prebuilt samples (8 scenes × 3 styles)
-│   └── bgm-*.mp3            # 6 scene-specific background tracks
+│   └── showcases/           # 24 prebuilt samples (8 scenes × 3 styles), HTML source only
 ├── references/              # Drill-down docs by task (Chinese)
 │   ├── animation-pitfalls.md
 │   ├── design-styles.md     # 20 design philosophies in detail

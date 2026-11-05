@@ -224,7 +224,7 @@ export const context = reactive({
     { cls: 'seg-free', pct: 31, color: 'var(--surface-3)', label: 'free', value: '137,860 · 68.9%' }
   ] as CtxSegment[],
   agentName: 'code_agent',
-  agentSub: 'claude-sonnet-4.5 · 46 tools · 12 skills',
+  agentSub: 'claude-sonnet-4.5 · 45 tools · 12 skills',
   skills: ['ckb', 'design', 'diagnose', 'tdd', 'read-the-damn-docs', 'quick-recap'],
   tools: [
     { ico: 'mod', mark: '\u2192', text: 'grep · 6 matches', time: '0.08s' },

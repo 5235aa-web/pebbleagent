@@ -9,7 +9,9 @@
 #
 # Optional:
 #   --bgm=<path>          BGM mp3 path (overrides --bgm-mood)
-#   --bgm-mood=<name>     Pick a preset BGM from assets/ (educational / tech / tutorial / ...)
+#   --bgm-mood=<name>     Pick a preset BGM from assets/ (educational / tech / tutorial / ...).
+#                         The tracks do not ship with this skill; the preset works
+#                         only after a file exists at assets/bgm-<name>.mp3.
 #   --bgm-volume=<0-1>    BGM 静态音量, 默认 0.18 (相对人声)
 #   --no-ducking          关闭 sidechain ducking（默认开启：人声响时 BGM 自动让路）
 #   --voice-volume=<0-2>  人声音量倍率, 默认 1.0
@@ -70,7 +72,9 @@ if [ -z "$BGM" ] && [ -n "$BGM_MOOD" ]; then
 fi
 if [ -n "$BGM" ] && [ ! -f "$BGM" ]; then
   echo "✗ BGM 文件不存在: $BGM" >&2
-  echo "  可用 mood: $(ls "$ASSETS_DIR" 2>/dev/null | grep -E '^bgm-.*\.mp3$' | sed 's/^bgm-//;s/\.mp3$//' | tr '\n' ' ')" >&2
+  echo "  内置配乐未随本技能分发。用 --bgm=<path> 指定自备音轨，" >&2
+  echo "  或者把文件放到 $ASSETS_DIR/bgm-${BGM_MOOD}.mp3 让 --bgm-mood 生效。" >&2
+  echo "  当前可用的 mood: $(ls "$ASSETS_DIR" 2>/dev/null | grep -E '^bgm-.*\.mp3$' | sed 's/^bgm-//;s/\.mp3$//' | tr '\n' ' ')" >&2
   exit 1
 fi
 

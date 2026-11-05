@@ -4,7 +4,9 @@
 # Usage:
 #   bash add-music.sh <input.mp4> [--mood=<name>] [--music=<path>] [--out=<path>]
 #
-# Mood library (in ../assets/, matching bgm-<mood>.mp3):
+# Mood names. The matching bgm-<mood>.mp3 does not ship with this skill: pass
+# --music=<path> with your own track, or drop a file at ../assets/bgm-<mood>.mp3
+# to make a preset work again.
 #   tech              — Apple Silicon / product keynote vibe, minimal synth+piano (default)
 #   ad                — upbeat modern, clear build + drop, social-media ad energy
 #   educational       — warm, patient, inviting learning tone
@@ -73,7 +75,8 @@ fi
 
 if [ ! -f "$MUSIC" ]; then
   echo "✗ Music not found: $MUSIC" >&2
-  echo "  Available moods: $(ls "$ASSETS_DIR" | grep -E '^bgm-.*\.mp3$' | sed 's/^bgm-//;s/\.mp3$//' | tr '\n' ' ')" >&2
+  echo "  The bundled tracks do not ship with this skill. Pass --music=<path> with your own" >&2
+  echo "  track, or drop a file at $ASSETS_DIR/bgm-<mood>.mp3 to use a --mood preset." >&2
   exit 1
 fi
 

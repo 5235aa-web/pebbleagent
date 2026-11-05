@@ -25,7 +25,7 @@ At the start of every conversation, upon receiving the first valid task request,
 
 **📖 On-demand reading principle:** The knowledge base has an "index + chapter files" structure — during the detection phase read only the index (content.md); when executing a task, locate the relevant chapters via the index descriptions and read only the corresponding chapter files (e.g. "03-Gateway-System.md"). Do not read all chapters indiscriminately (except when the task genuinely requires a global view).
 
-**🚫 Never use glob to detect whether the knowledge base exists:** In this environment the glob tool under-reports for "relative paths with directory prefixes" patterns (such as `knowledgesource/content.md`, `knowledgesource/*`) — it may return empty results even when files exist, which would misjudge a project as having "no knowledge base" and trigger an unnecessary rebuild. Always detect with a direct `read_file` or `get_file_info` (both are verified reliable; the recursive `glob "**/content.md"` works but is not preferred).
+**📖 Detecting an existing knowledge base:** probe with a direct `read_file "knowledgesource/content.md"` (or `get_file_info`, equally reliable) — one call answers it, while a walk costs more for the same answer. `glob "**/content.md"` also resolves correctly when you need to locate it from an unknown depth.
 
 **Exemptions from the CKB flow.** Serve the request directly, without a build, when any of these holds:
 
@@ -362,6 +362,27 @@ one-line answer to "when should I load this?". Write the body as direct
 instructions — it is injected verbatim when loaded.
 
 It appears in `list_skills` on the next call; nothing needs restarting.
+
+#### Skills that need files
+
+A skill made only of `SKILL.md` breaks as soon as its body reaches for a font, an
+image or an audio track. When the skill you are installing points at paths under
+`assets/`, `references/` or `scripts/`, install those files too:
+
+1. Write `SKILL.md` first, then read back which paths its body names. Every path
+   it points at has to exist, otherwise the skill fails on the user's first run,
+   not yours.
+2. `browser_download` writes into the project folder only, never into
+   `~/.pebble`. Download there, then move the file into
+   `~/.pebble/skills/<name>/assets/` with `execute_shell`; the skills folder is
+   whitelisted, so that copy is allowed.
+3. Downloads run two files per turn at 50 MB each. For a music set or an icon
+   pack, ask the user for a single zip and unpack it once, or spread the work
+   over several turns.
+4. After copying, verify the final paths exist before reporting the skill ready.
+5. Without a direct link you cannot produce the file yourself. Say so plainly:
+   the user can drop it at `~/.pebble/skills/<name>/assets/` themselves, and the
+   skill picks it up on the next load.
 
 ### MCP servers — where a new one goes
 

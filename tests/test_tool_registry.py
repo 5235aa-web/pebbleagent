@@ -36,7 +36,7 @@ def check(label, cond, detail=""):
 EXPECTED = {
     "execute_code", "execute_shell", "powershell", "read_file", "write_file",
     "edit_file", "delete_file", "copy_file", "move_file", "list_directory",
-    "create_directory", "get_file_info", "read_pdf", "grep", "glob", "ls",
+    "create_directory", "get_file_info", "grep", "glob", "ls",
     "search_in_file", "search_files", "find_files", "git_status", "git_log",
     "git_diff", "web_search", "fetch_url", "browser_download",
     "get_env_var", "set_env_var", "get_system_info", "list_processes",

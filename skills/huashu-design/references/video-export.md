@@ -47,13 +47,13 @@ NODE_PATH=$(npm root -g) node /path/to/claude-design/scripts/render-video.js <ht
 
 ### 2. `add-music.sh` — MP4 + BGM → MP4
 
-给无声 MP4 混入背景音乐，按场景（mood）从内置 BGM 库里选，也可自带音频。自动匹配时长、加淡入淡出。
+给无声 MP4 混入背景音乐，按场景（mood）选预设风格，也可自带音频。自动匹配时长、加淡入淡出。
 
 ```bash
 bash add-music.sh <input.mp4> [--mood=<name>] [--music=<path>] [--out=<path>]
 ```
 
-**内置 BGM 库**（在 `assets/bgm-<mood>.mp3`）：
+**预设 mood**（对应 `assets/bgm-<mood>.mp3`；这些曲子未随包分发，需要自备同名文件，或直接用 `--music=<path>`）：
 
 | `--mood=` | 风格 | 适配场景 |
 |-----------|------|---------|

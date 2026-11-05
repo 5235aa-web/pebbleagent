@@ -79,9 +79,10 @@ npm install
 cd ..
 ```
 
-`requirements.txt` is the core set — enough to start the backend and chat. PDF
-reading and image OCR are optional and lazy-imported; install them with
-`pip install -r requirements-optional.txt` when you need those tools.
+`requirements.txt` is the core set, enough to start the backend and chat. The
+optional set adds `pypdf` for reading PDF attachments, `psutil` for CPU/memory
+details and `playwright` for the verification script one skill ships; install
+it with `pip install -r requirements-optional.txt`.
 
 Then launch both services with the provided script:
 

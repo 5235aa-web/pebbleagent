@@ -150,7 +150,7 @@ async def prepare_turn(service, params: Dict[str, Any], state: TurnState) -> Asy
                 attachment_texts.append(f"[附件: {name}]\n{text_content}")
             else:
                 attachment_texts.append(
-                    f"[附件: {name}]\n(该文件类型的文本内容无法解析，请提示用户改用 read_file/read_pdf 工具处理或转换为文本格式)"
+                    f"[附件: {name}]\n(该文件类型的文本内容无法解析，请提示用户改用 read_file 工具处理或转换为文本格式)"
                 )
         if attachment_texts:
             full_message = message + "\n\n" + "\n\n".join(attachment_texts)

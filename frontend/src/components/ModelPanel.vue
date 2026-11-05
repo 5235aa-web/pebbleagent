@@ -18,7 +18,7 @@
             <svg width="9" height="9" viewBox="0 0 24 24" fill="none" stroke="var(--accent)" stroke-width="3"><polyline points="20 6 9 17 4 12"/></svg>
           </div>
           <div class="ac-desc">Reads, edits and verifies code across the workspace.</div>
-          <span class="ac-tag">46 tools</span>
+          <span class="ac-tag">45 tools</span>
         </div>
         <div class="agent-card">
           <div class="ac-name">research_agent</div>

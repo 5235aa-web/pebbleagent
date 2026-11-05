@@ -107,31 +107,6 @@ def get_tools_definition() -> List[Dict[str, Any]]:
         {
             "type": "function",
             "function": {
-                "name": "read_pdf",
-                "description": "读取PDF文件内容并提取文字。自动识别数字PDF（直接提取文字）和扫描版PDF（自动OCR识别）。支持中英文混合文档。返回Markdown格式文本。",
-                "parameters": {
-                    "type": "object",
-                    "properties": {
-                        "file_path": {
-                            "type": "string",
-                            "description": "PDF文件路径（绝对路径或相对路径）"
-                        },
-                        "pages": {
-                            "type": "string",
-                            "description": "页码范围，如 '1-5'（第1到5页）、'1,3,5'（第1/3/5页）。留空表示全部页面。"
-                        },
-                        "ocr_language": {
-                            "type": "string",
-                            "description": "OCR识别语言，默认 'ch_sim+en'（中文简体+英文）。可选：'en'（英文）、'ch_sim'（中文简体）、'ch_sim+en'（中英混合）、'ja'（日文）等。对数字PDF无效。"
-                        }
-                    },
-                    "required": ["file_path"]
-                }
-            }
-        },
-        {
-            "type": "function",
-            "function": {
                 "name": "write_file",
                 "description": "写入文件内容。如果文件不存在则创建。",
                 "parameters": {

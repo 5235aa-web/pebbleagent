@@ -93,7 +93,7 @@ class PermissionManager:
     # 只读工具（readonly 模式下放行）
     # 网络只读取回放行；browser_download 会落盘，仍按写操作拒绝
     READONLY_TOOLS = {
-        "read_file", "read_pdf", "list_directory", "get_file_info", "ls",
+        "read_file", "list_directory", "get_file_info", "ls",
         "grep", "glob", "search_in_file", "search_files", "find_files",
         "git_status", "git_log", "git_diff", "get_env_var", "get_system_info",
         "list_processes", "list_skills", "load_skill", "todo_read",
@@ -105,7 +105,7 @@ class PermissionManager:
 
     # 需要拦截敏感目标的读类工具（参数里带具体文件或目录路径）
     READ_TARGET_TOOLS = {
-        "read_file", "read_pdf", "search_in_file",
+        "read_file", "search_in_file",
         "list_directory", "get_file_info", "ls",
         "search_files", "find_files", "grep", "glob",
     }
@@ -118,7 +118,7 @@ class PermissionManager:
 
     # 默认放行的工具
     DEFAULT_ALLOW = [
-        "read_file", "read_pdf", "list_directory", "get_file_info", "ls",
+        "read_file", "list_directory", "get_file_info", "ls",
         "grep", "glob", "search_in_file", "search_files", "find_files",
         "git_status", "git_log", "git_diff",
         "todo_read", "todo_write",
@@ -430,7 +430,6 @@ class PermissionManager:
 
         mapping = {
             "read_file": PermissionType.FILE_READ,
-            "read_pdf": PermissionType.FILE_READ,
             "list_directory": PermissionType.FILE_READ,
             "get_file_info": PermissionType.FILE_READ,
             "ls": PermissionType.FILE_READ,
