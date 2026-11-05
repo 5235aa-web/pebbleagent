@@ -1561,3 +1561,56 @@
 - `tests/test_minor_hardening.py` 的两条断言跟着 `path_whitelist.save` 的新错误文案更新（`too broad` →
   `drive or filesystem root`，`non-empty` → `empty or not a string`），这两条在本次改动之前就已经失败
 - `tests/run_all.py`：`ALL PASSED: 38 tests`
+
+## Review pass on the build ban: two false-positive classes fixed
+
+- 首版规则用 `\b` 匹配，`grep -n "npm run build" package.json` 和 `echo "npm run build is forbidden"` 也会被拦，
+  也就是「只是提到命令」被当成「执行命令」。bash / powershell 的规则改为锚定命令起始
+  `(?:^|[;&|(]\s*)(?:[^\s;&|"']+\s+){0,2}`：引号内的同名文本不再命中，`cd frontend && npm run build` 仍然拦
+- `code_destructive_guard` 首版直接把 `tauri build` 当模式，注释 `# never run npm run tauri build here` 和文档字符串
+  都会命中——而它的输入是任意代码。改为只在执行调用里匹配（`subprocess` / `os.system` / `Popen` /
+  `check_output` / `child_process.exec|spawn|execSync`），字符串常量与注释不再触发
+- 验证：13 个打包命令在 bash 与 powershell 两侧全部 blocked；9 个含同名文本的正当命令（grep / echo / ls / cat /
+  `cargo build` / `npm run dev` / `npm run tauri dev` / `npm run test` / `git status`）全部放行；代码扫描 3 个执行调用
+  全部拦下，4 个「提到但不执行」的样例全部通过；`tests/run_all.py` `ALL PASSED: 38 tests`
+
+## Build ban: English remedy text, argv and sh -c covered, string false positives fixed
+
+- `block_reason` 改成英文并写明出口："Packaging is reserved for the user; the agent must not run it."。
+  `execution.py` 的三处拦截返回（execute_code / bash 分支 / powershell）统一成
+  `Error: blocked by the permission system - <reason>`，打包类还会额外前置一句
+  "do not retry through another form (argv list, `sh -c`, or a script file): say that the build must be run by the
+  user, and stop."
+- `bash_validator._destructive_check` 先剥一层 shell 包装（`sh -c` / `bash -lc` / `cmd /c` / `powershell -Command`）
+  再校验内层命令：`sh -c "npm run build"` 之前 blocked=False，现在 True；`sh -c "ls -la"` 仍然放行
+- `code_destructive_guard` 补 argv 数组模式：`subprocess.run(["npm","run","build"])` 之前返回 `(False, [])`，
+  现在命中 `build/packaging: argv list`；`["ls","-la"]` 不动
+- 修字符串误伤：`mkfs` / `diskpart` / `Format-Volume` / `vssadmin delete` 从宽匹配降到执行上下文匹配，
+  写文档说"不要运行 mkfs"不再触发；`rm -rf /` 保留宽匹配（写进代码本身就可疑）
+- 验证：docstring / 注释 / `pkg["scripts"]["build"]` 三例全部放行；三种 wrapper 全部拦截、`sh -c ls` 放行；
+  `tests/run_all.py` `ALL PASSED: 38 tests`（`test_command_validation.py` 三条断言同步到新文案）
+
+## argv pattern narrowed: no more false positive on build scripts
+
+- 上一版的 argv 模式要求「运行时词 + build 词同时出现」，`subprocess.run(["python","build.py"])` 因此被判成打包，
+  而 `python build.py` 是再普通不过的构建脚本调用
+- 现在 build 词必须是**完整的数组元素**（`"build"` 而不是 `"build.py"`），并且把 `cargo` 从运行时白名单里去掉，
+  让 `cargo build` 与 bash 规则保持一致（两边都放行）
+- 验证：`["python","build.py"]` / `["npm","test"]` / `["cargo","build"]` 放行；`["npm","run","build"]` /
+  `["npm","run","release"]` / `["npx","tauri","build"]` / `["python","-m","PyInstaller","x.spec"]` 仍然拦下；
+  `tests/run_all.py` `ALL PASSED: 38 tests`
+
+## argv pattern rewritten as three exact shapes
+
+- 上一版要求「运行时词 + build 词同时出现」，仍有两处误伤：`subprocess.run(["python","build","--release"])`
+  和 `["python","-m","pytest","-k","build"]` 都被判成打包
+- 改为三种精确组合，build 词必须紧跟对应动词：`["npm|pnpm|yarn","run","build|release|publish"]`、
+  `["npx|cargo","tauri|vite","build"]`、`["python","-m","pyinstaller"]`。顺带把 `["cargo","tauri","build"]`
+  这条之前漏掉的补上了
+- 验证 12 个用例 0 mismatch：放行 `["python","build.py"]`、`["python","build","--release"]`、
+  `["python","-m","pytest","-k","build"]`、`["npm","run","build:dev"]`、`["cmake","--build","."]`、
+  `["docker","build","."]`、`["npm","test"]`；拦下 `["npm","run","build"]`、`["npm","run","release"]`、
+  `["npx","tauri","build"]`、`["cargo","tauri","build"]`、`["python","-m","PyInstaller","x.spec"]`；
+  `tests/run_all.py` `ALL PASSED: 38 tests`
+- 另发现一处与本次无关的既有误伤：`cmd /c "dir"` 被 `_path_check` 当成访问 `/c` 路径而拦下，`sh -c` 不受影响。
+  没有改动，留待单独处理

@@ -27,21 +27,30 @@ _DESTRUCTIVE_PATTERNS: List[Tuple[str, str]] = [
     # Windows cmd 盘根递归删除（del /s /q C:\ 形态）
     (r'\bdel\s+/[sS]\b[^\r\n]*?\s+[A-Za-z]:[\\/]*\s*(?:$|["\'\n;])', "del /s <drive root>"),
     (r'\b(rd|rmdir)\s+/[sS]\b[^\r\n]*?\s+[A-Za-z]:[\\/]*\s*(?:$|["\'\n;])', "rd /s <drive root>"),
-    # 格式化 / 磁盘设备
+    # 格式化 / 磁盘设备 —— 这些词在 README、教程、错误提示里被正常引用，
+    # 只有真的被调用才拦；`rm -rf /` 这类留在上面做宽匹配，写出来本身就可疑。
     (r'\bformat\s+[A-Za-z]:', "format <drive>"),
-    (r'\bmkfs(\.\w+)?\b', "mkfs"),
-    (r'\bdd\s+if=[^\r\n]*\bof=/dev/', "dd of=/dev/"),
+    (r'(?:subprocess\.\w+|os\.system|os\.popen|Popen|check_output|check_call|run)\s*\([^\n]{0,240}?\b(?:mkfs(?:\.\w+)?|dd\s+if=[^\n]{0,120}?\bof=/dev/|Format-Volume|Clear-Disk|Initialize-Disk)\b',
+     "system: disk command via subprocess"),
     # 代码级根目录递归删除（Python）
     (r'\b(shutil\.rmtree|os\.rmdir)\s*\(\s*[\'"](?:/|[A-Za-z]:[\\/]*)[\'"]',
      "rmtree/rmdir on root"),
-    # PowerShell 磁盘命令（经代码字符串调用）
-    (r'\b(Format-Volume|Clear-Disk|Initialize-Disk)\b', "PS disk command"),
-    (r'\b(vssadmin|wbadmin)\b[^\r\n]*\bdelete\b', "backup delete"),
-    # 构建/打包命令（代码里以字符串或 argv 形式调用）
-    (r'\btauri\s+build\b', "tauri build"),
-    (r'\bnpm\s+run\s+(?:build|release|publish)\b', "npm run build/release/publish"),
-    (r'\b(?:npx\s+)?(?:tauri|vite)\s+build\b', "tauri/vite build"),
-    (r'\bpyinstaller\b', "PyInstaller"),
+    (r'(?:subprocess\.\w+|os\.system|os\.popen|Popen|check_output|check_call|run)\s*\([^\n]{0,240}?\b(?:vssadmin|wbadmin)\b[^\n]{0,120}?\bdelete\b',
+     "system: backup delete via subprocess"),
+    # 构建/打包命令只在「真的被执行」时才算：字符串常量、注释、文档里提到
+    # 这些词没有意义，宽匹配会把测试和说明文字一起拦掉。
+    (r'(?:subprocess\.\w+|os\.system|os\.popen|Popen|check_output|check_call|run)\s*\([^\n]{0,240}?(?:tauri\s+build|npm\s+run\s+(?:build|release|publish)|(?:npx\s+)?(?:tauri|vite)\s+build|\bpyinstaller\b)', "build/packaging: via subprocess"),
+    (r'(?:child_process\.(?:exec|spawn|execSync|spawnSync)|execSync)\s*\([^\n]{0,240}?(?:tauri\s+build|npm\s+run\s+(?:build|release|publish)|(?:npx\s+)?(?:tauri|vite)\s+build|\bpyinstaller\b)', "build/packaging: via child_process"),
+    # argv 数组形态（subprocess.run(["npm", "run", "build"])）：数组里没有连续的
+    # `npm run build` 字符串，上面两条都看不见，只有数组本身能命中。
+    # 三种组合分开写，build 词必须紧跟在对应动词后面：`["python","build","--release"]`
+    # 和 `["python","-m","pytest","-k","build"]` 都不是打包，宽匹配会把它们一起拦掉。
+    (r'\[\s*["\'](?:npm|pnpm|yarn)["\']\s*,\s*["\']run["\']\s*,\s*["\'](?:build|release|publish)["\']',
+     "build/packaging: argv list (run build)"),
+    (r'\[\s*["\'](?:npx|cargo)["\']\s*,\s*["\'](?:tauri|vite)["\']\s*,\s*["\']build["\']',
+     "build/packaging: argv list (tauri/vite build)"),
+    (r'\[\s*["\']python\d?["\']\s*,\s*["\']-m["\']\s*,\s*["\']pyinstaller["\']',
+     "build/packaging: argv list (python -m PyInstaller)"),
 ]
 
 

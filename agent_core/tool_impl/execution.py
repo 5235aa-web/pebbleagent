@@ -134,11 +134,20 @@ class ExecutionToolsMixin:
         if is_blocked:
             patterns_str = "; ".join(patterns)
             logger.warning(f"[ToolExecutor] Code blocked by DestructiveGuard: {patterns_str}")
-            return (
-                f"⛔ [安全拦截] 代码中检测到破坏性操作模式，已被阻止执行。\n"
-                f"检测到: {patterns_str}\n"
-                f"说明: 禁止对系统/根目录的破坏性操作。"
-            )
+            # 打包类禁令要给 agent 一条明确的行动指令：不要换一种写法重试，让用户
+            # 自己跑。系统破坏类没有这个出口，只说被拦。
+            if any(p.startswith("build/packaging") for p in patterns):
+                hint = (
+                    "Packaging is reserved for the user and the permission system blocks it for the agent. "
+                    "Do not retry through another form (argv list, `sh -c`, or a script file): say that the "
+                    "build must be run by the user, and stop."
+                )
+            else:
+                hint = (
+                    "A destructive system operation was detected and blocked. "
+                    "Do not attempt a workaround; state what you tried and stop."
+                )
+            return f"⛔ [Blocked] {hint}\nmatched: {patterns_str}"
         
         # bash 脚本 → 与 execute_shell 同级全量验证（BashValidator，语法一致）
         if language == "bash":
@@ -148,7 +157,7 @@ class ExecutionToolsMixin:
             report = validator.validate(code)
             if report.blocked:
                 logger.warning(f"[ToolExecutor] Bash script blocked: {report.block_reason}")
-                return f"Error: 代码被阻止执行 - {report.block_reason}"
+                return f"Error: blocked by the permission system - {report.block_reason}"
             if report.is_destructive:
                 logger.warning(f"[ToolExecutor] Bash script warnings: {report.warnings[:2]}")
         
@@ -209,7 +218,7 @@ class ExecutionToolsMixin:
         # 阻止级：拒绝执行
         if report.blocked:
             logger.warning(f"[ToolExecutor] BLOCKED command: {command} - {report.block_reason}")
-            return f"Error: 命令被阻止执行 - {report.block_reason}"
+            return f"Error: blocked by the permission system - {report.block_reason}"
         
         # 警告级：记录但允许
         if report.is_destructive:
@@ -283,7 +292,7 @@ class ExecutionToolsMixin:
         ps_report = ps_validator.validate(command)
         if ps_report.blocked:
             logger.warning(f"[ToolExecutor] PowerShell BLOCKED: {command[:200]} - {ps_report.block_reason}")
-            return f"Error: 命令被阻止执行 - {ps_report.block_reason}"
+            return f"Error: blocked by the permission system - {ps_report.block_reason}"
         if ps_report.warnings:
             logger.warning(f"[ToolExecutor] PowerShell warnings: {ps_report.warnings[:2]}")
 

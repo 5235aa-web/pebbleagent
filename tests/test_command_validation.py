@@ -110,7 +110,8 @@ def main() -> int:
 
     r = asyncio.run(ex._tool_execute_code('os.system("rm -rf /")', "python", None))
     check("execute_code destructive blocked at entry",
-          r.startswith("⛔") and "破坏性" in r, f"got: {r[:80]}")
+          r.startswith("⛔") and ("destructive" in r.lower() or "reserved for the user" in r),
+          f"got: {r[:80]}")
 
     r = asyncio.run(ex._tool_execute_code('del /s /q C:\\', "bash", None))
     check("execute_code bash destructive blocked at entry",
@@ -122,11 +123,11 @@ def main() -> int:
 
     r = asyncio.run(ex._tool_powershell("Remove-Item -Recurse -Force C:\\", 60000, None))
     check("powershell destructive blocked at entry",
-          r.startswith("Error: 命令被阻止执行"), f"got: {r[:80]}")
+          r.startswith("Error: blocked by the permission system"), f"got: {r[:80]}")
 
     r = asyncio.run(ex._tool_powershell("Format-Volume -DriveLetter C", 60000, None))
     check("powershell Format-Volume blocked at entry",
-          r.startswith("Error: 命令被阻止执行"), f"got: {r[:80]}")
+          r.startswith("Error: blocked by the permission system"), f"got: {r[:80]}")
 
     # ================= Static guards =================
     with open(os.path.join(ROOT, "agent_core", "tool_impl", "execution.py"), "r", encoding="utf-8") as f:

@@ -66,14 +66,21 @@ class PowerShellValidator:
         (r'\bshutdown\b[^\r\n]*\b(/s|/r|/p)\b', "系统关机/重启 (shutdown)"),
 
         # 构建与打包：产物覆盖正在运行的 exe / 安装包，只能由用户自己执行。
-        (r'\btauri\s+build\b', "禁止打包应用 (tauri build)，打包由用户自行执行"),
-        (r'\bnpm\s+run\s+(?:build|release|publish)\b', "禁止前端构建/发布 (npm run build|release|publish)"),
-        (r'\bnpx\s+(?:tauri|vite)\s+build\b', "禁止前端构建 (npx tauri/vite build)"),
-        (r'\bvite\s+build\b', "禁止前端构建 (vite build)"),
-        (r'\bpnpm\s+(?:run\s+)?(?:build|release|publish)\b', "禁止前端构建/发布 (pnpm build)"),
-        (r'\byarn\s+(?:run\s+)?(?:build|release|publish)\b', "禁止前端构建/发布 (yarn build)"),
-        (r'\bpyinstaller\b', "禁止打包 Python 后端 (PyInstaller)"),
-        (r'\bpython\S*\s+-m\s+pyinstaller\b', "禁止打包 Python 后端 (python -m PyInstaller)"),
+        # 前置 `(?:^|[;&|(]\s*)` 是命令起始，`(?:[^\s;&|"']+\s+){0,2}` 允许
+        # `cd x; npm run build` 这类前置词；引号内的同名文本不命中。
+        # reason 用英文写给 agent：它要知道「不要换一种形式重试，让用户自己跑」。
+        (r'(?:^|[;&|(]\s*)(?:[^\s;&|"\']+\s+){0,2}(?:npx\s+|cargo\s+|npm\s+run\s+)?tauri\s+build\b',
+         "Packaging is reserved for the user; the agent must not run it. (tauri build)"),
+        (r'(?:^|[;&|(]\s*)(?:[^\s;&|"\']+\s+){0,2}(?:npm|pnpm|yarn)\s+run\s+(?:build|release|publish)\b',
+         "Packaging is reserved for the user; the agent must not run it. (npm|pnpm|yarn run build|release|publish)"),
+        (r'(?:^|[;&|(]\s*)(?:[^\s;&|"\']+\s+){0,2}(?:pnpm|yarn)\s+(?:build|release|publish)\b',
+         "Packaging is reserved for the user; the agent must not run it. (pnpm|yarn build|release|publish)"),
+        (r'(?:^|[;&|(]\s*)(?:[^\s;&|"\']+\s+){0,2}(?:npx\s+|cargo\s+)?(?:tauri|vite)\s+build\b',
+         "Packaging is reserved for the user; the agent must not run it. (tauri/vite build)"),
+        (r'(?:^|[;&|(]\s*)(?:[^\s;&|"\']+\s+){0,2}pyinstaller\b',
+         "Packaging is reserved for the user; the agent must not run it. (PyInstaller)"),
+        (r'(?:^|[;&|(]\s*)(?:[^\s;&|"\']+\s+){0,2}python\S*\s+-m\s+pyinstaller\b',
+         "Packaging is reserved for the user; the agent must not run it. (python -m PyInstaller)"),
     ]
 
     # 警告但允许（🟡）
