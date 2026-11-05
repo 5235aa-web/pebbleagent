@@ -5,6 +5,7 @@ import concurrent.futures
 import json
 import logging
 import os
+import shutil
 
 logger = logging.getLogger(__name__)
 
@@ -23,15 +24,86 @@ def _is_unusable_config(raw) -> bool:
 
 def _installable_server_names(srv) -> set:
     """mcp_install.json 声明的可安装服务器（这些即使配置占位也保留在面板里）。"""
+    return set(_install_info(srv).get("servers", {}) or {})
+
+
+def _install_info(srv) -> dict:
+    """mcp_install.json 的完整内容；没有这个文件时返回空字典。"""
     for p in (srv._DATA_DIR / "mcp_install.json", srv._PROJECT_ROOT / "mcp_install.json"):
         try:
             if p.exists():
                 with open(p, "r", encoding="utf-8") as f:
                     data = json.load(f)
-                return set((data.get("servers") or {}).keys())
+                if isinstance(data, dict):
+                    return data
         except Exception:
             continue
-    return set()
+    return {}
+
+
+def _command_readiness(command, args=None) -> tuple:
+    """这个 command 能不能启动，以及缺的是什么。
+
+    返回 ``(ready, missing)``。npx / uvx 是运行时外壳，缺的是它们背后的 node / uv，
+    所以报告缺少的是依赖而不是外壳本身；占位符路径报告 ``path``，由面板提示用户
+    下载或手动指定。
+    """
+    cmd = str(command or "").strip()
+    if not cmd or "REPLACE_WITH" in cmd:
+        return False, ["path"]
+    base = os.path.basename(cmd).lower()
+    if base in ("npx", "npx.cmd"):
+        return (True, []) if shutil.which("npx") else (False, ["node"])
+    if base in ("uvx", "uvx.exe"):
+        return (True, []) if shutil.which("uvx") else (False, ["uv"])
+    if os.path.isabs(cmd):
+        return (True, []) if os.path.isfile(cmd) else (False, ["path"])
+    found = shutil.which(cmd)
+    return (bool(found), [] if found else [base or cmd])
+
+
+def _token_env(env) -> str:
+    """env 里承载凭据的变量名，没有则返回空字符串。
+
+    面板据此决定要不要画 token 输入框，并且知道该写回哪个变量：把名字固定
+    成 MCP_TOKEN 会让 github 那种只认 GITHUB_PERSONAL_ACCESS_TOKEN 的服务器
+    收到一个它从不读取的键。
+    """
+    if not isinstance(env, dict):
+        return ""
+    for key in env:
+        k = str(key).upper()
+        if k.endswith("TOKEN") or k.endswith("API_KEY") or k.endswith("_KEY"):
+            return str(key)
+    return ""
+
+
+def _requires_token(env) -> bool:
+    return bool(_token_env(env))
+
+
+def _prereq_ready(name: str) -> bool:
+    """mcp_install.json 的 requires 条目是否已满足。"""
+    key = str(name or "").lower()
+    if key == "node":
+        return shutil.which("npx") is not None
+    if key == "uv":
+        return shutil.which("uvx") is not None
+    # chrome 之类无法静态探测，交给运行时报告
+    return True
+
+
+def _read_json_object(path) -> dict:
+    """读一个 JSON 对象；文件缺失或损坏时返回空字典。"""
+    try:
+        if path.exists():
+            with open(path, "r", encoding="utf-8") as f:
+                data = json.load(f)
+            if isinstance(data, dict):
+                return data
+    except Exception as e:
+        logger.warning(f"[Server] cannot read {path}: {e}")
+    return {}
 
 
 def _config_fingerprint(scoped) -> str:
@@ -87,6 +159,7 @@ def handle(ctx, method):
         tools_list = []
         pending = []
         pending_user = []
+        available = []
         try:
             from agent_core.mcp.mcp_config import (
                 get_mcp_config_manager, get_pending_project_mcp, pending_user_overrides,
@@ -129,6 +202,9 @@ def handle(ctx, method):
                     conn_type = "disabled"
                 elif not conn_type:
                     conn_type = "not-started"
+                ready, missing = _command_readiness(
+                    getattr(raw, "command", None), getattr(raw, "args", None)
+                )
                 servers.append({
                     "name": name,
                     "transport": getattr(raw, "type", None) or "stdio",
@@ -139,6 +215,11 @@ def handle(ctx, method):
                     "tools": len(tnames),
                     "tool_names": tnames,
                     "error": getattr(conn, "error", None) if conn else None,
+                    "ready": ready,
+                    "missing": missing,
+                    "requires_token": _requires_token(getattr(raw, "env", None)),
+                    "token_env": _token_env(getattr(raw, "env", None)),
+                    "installable": name in installable,
                 })
             tools_list = [
                 {"server": s["name"], "name": tn}
@@ -146,9 +227,22 @@ def handle(ctx, method):
             ]
             pending = get_pending_project_mcp(str(srv._PROJECT_ROOT))
             pending_user = pending_user_overrides()
+
+            # mcp_install.json 里声明、但 .mcp.json 还没配的服务器：面板据此画安装入口。
+            for aname, entry in (_install_info(srv).get("servers") or {}).items():
+                if aname in all_configs or not isinstance(entry, dict):
+                    continue
+                requires = [str(r) for r in (entry.get("requires") or [])]
+                available.append({
+                    "name": aname,
+                    "desc": entry.get("description") or "",
+                    "type": entry.get("type") or "",
+                    "requires": requires,
+                    "missing": [r for r in requires if not _prereq_ready(r)],
+                })
         except Exception as e:
             logger.warning(f"[Server] mcp.list failed: {e}")
-        return {"id": rid, "result": {"servers": servers, "tools": tools_list, "pending_project_servers": pending, "pending_user_servers": pending_user}}
+        return {"id": rid, "result": {"servers": servers, "tools": tools_list, "available": available, "pending_project_servers": pending, "pending_user_servers": pending_user}}
 
     if method == "mcp.toggle":
         """连接/断开指定 MCP 服务器（持久化到全局禁用列表，热生效）。
@@ -389,18 +483,22 @@ def handle(ctx, method):
             return {"id": rid, "error": {"code": -32602, "message": "invalid env_key"}}
         user_mcp_path = srv._DATA_DIR / ".mcp.json"
         bundled_mcp = srv._PROJECT_ROOT / ".mcp.json"
-        data = None
-        for p in [user_mcp_path, bundled_mcp]:
-            if p.exists():
-                try:
-                    with open(p, "r", encoding="utf-8") as f:
-                        data = json.load(f)
-                    break
-                except Exception:
-                    continue
-        if not isinstance(data, dict) or not isinstance(data.get("mcpServers"), dict):
-            return {"id": rid, "error": {"code": -32603, "message": "base .mcp.json not found or invalid"}}
-        server_cfg = data["mcpServers"].get(server_name)
+        # Base the write on the user file alone. Copying the bundled file
+        # wholesale (the old behaviour) moved every bundled server into the user
+        # file the first time a token was saved; only the edited server is
+        # approved, so the rest landed in the pending queue as a row of "wants
+        # to run" banners that read like a security alert.
+        data = _read_json_object(user_mcp_path)
+        servers = data.get("mcpServers")
+        if not isinstance(servers, dict):
+            servers = {}
+            data["mcpServers"] = servers
+        server_cfg = servers.get(server_name)
+        if not isinstance(server_cfg, dict):
+            # Not in the user file yet: copy just this one entry from the bundle.
+            bundled = _read_json_object(bundled_mcp)
+            candidate = (bundled.get("mcpServers") or {}).get(server_name)
+            server_cfg = json.loads(json.dumps(candidate)) if isinstance(candidate, dict) else None
         if not isinstance(server_cfg, dict):
             return {"id": rid, "error": {"code": -32602, "message": f"server '{server_name}' not found"}}
         env = server_cfg.get("env")
@@ -408,6 +506,7 @@ def handle(ctx, method):
             env = {}
         env[env_key] = value
         server_cfg["env"] = env
+        servers[server_name] = server_cfg
         srv._atomic_write_json(user_mcp_path, data)
         # The write came through an RPC, which makes it the user's own edit:
         # approve it here, or the token they just typed would land in the
@@ -485,37 +584,51 @@ def handle(ctx, method):
                 except Exception:
                     continue
         entry = (install_info.get("servers") or {}).get(server_name)
-        if not isinstance(entry, dict) or entry.get("type") != "download":
-            return {"id": rid, "error": {"code": -32602, "message": f"server '{server_name}' is not a download-type server"}}
-        # 2. 获取 exe 路径（手动或自动）
-        if manual_path:
-            exe_path = manual_path
-            if not os.path.isfile(exe_path):
-                return {"id": rid, "error": {"code": -32602, "message": f"file not found: {exe_path}"}}
+        if not isinstance(entry, dict):
+            return {"id": rid, "error": {"code": -32602, "message": f"server '{server_name}' is not declared in mcp_install.json"}}
+
+        entry_type = str(entry.get("type") or "").strip()
+        if entry_type == "download":
+            # 2. 获取 exe 路径（手动或自动）
+            if manual_path:
+                exe_path = manual_path
+                if not os.path.isfile(exe_path):
+                    return {"id": rid, "error": {"code": -32602, "message": f"file not found: {exe_path}"}}
+            else:
+                try:
+                    exe_path = srv._install_download_server(server_name, entry)
+                except Exception as e:
+                    logger.error(f"[Server] MCP install failed for '{server_name}': {e}")
+                    return {"id": rid, "result": {"ok": False, "error": str(e)}}
+            config = {"command": exe_path, "args": []}
+        elif entry_type in ("npx", "uvx"):
+            # 运行时包管理器不需要下载：把命令写进配置，首次启动由 npx/uvx 拉取。
+            package = str(entry.get("package") or "").strip()
+            if not package:
+                return {"id": rid, "result": {"ok": False, "error": f"'{server_name}' declares no package"}}
+            command = "npx" if entry_type == "npx" else "uvx"
+            args = ["-y", package] if entry_type == "npx" else [package]
+            ready, missing = _command_readiness(command, args)
+            if not ready:
+                hints = {
+                    "node": "Install Node.js 18+ (https://nodejs.org/) and reopen the app",
+                    "uv": "Install uv (https://docs.astral.sh/uv/getting-started/installation/) and reopen the app",
+                }
+                hint = hints.get((missing or [""])[0], "install the missing prerequisite")
+                return {"id": rid, "result": {"ok": False,
+                                              "error": f"missing prerequisite: {', '.join(missing)}. {hint}"}}
+            config = {"command": command, "args": args}
         else:
-            try:
-                exe_path = srv._install_download_server(server_name, entry)
-            except Exception as e:
-                logger.error(f"[Server] MCP install failed for '{server_name}': {e}")
-                return {"id": rid, "result": {"ok": False, "error": str(e)}}
+            return {"id": rid, "result": {"ok": False,
+                                          "error": f"'{server_name}' has an unsupported install type: {entry_type or 'none'}"}}
         # 3. 合并写入 ~/.pebble/.mcp.json（保留其他服务器）
         try:
             user_mcp_path = srv._DATA_DIR / ".mcp.json"
-            bundled_mcp = srv._PROJECT_ROOT / ".mcp.json"
-            data = None
-            for p in [user_mcp_path, bundled_mcp]:
-                if p.exists():
-                    try:
-                        with open(p, "r", encoding="utf-8") as f:
-                            data = json.load(f)
-                        break
-                    except Exception:
-                        continue
-            if not isinstance(data, dict):
-                data = {}
+            # Only this entry is written; see the note in mcp.set_secret.
+            data = _read_json_object(user_mcp_path)
             if not isinstance(data.get("mcpServers"), dict):
                 data["mcpServers"] = {}
-            data["mcpServers"][server_name] = {"command": exe_path, "args": []}
+            data["mcpServers"][server_name] = config
             srv._atomic_write_json(user_mcp_path, data)
             # Installed through the UI, so it is approved by definition.
             from agent_core.mcp.mcp_config import approve_user_override as _approve_override

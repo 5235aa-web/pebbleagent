@@ -46,6 +46,15 @@
             <button class="sh-act" id="chgAccept" @click="acceptAll">Accept all</button>
           </div>
           <div class="chg-list" id="chgList">
+            <div class="tl-row base" v-if="!files.changes.length">
+              <span class="tl-dot"></span>
+              <div class="tl-main">
+                <div class="tl-t">no changes</div>
+                <div class="tl-m">{{ files.state === 'ok' ? 'no file edited in this session' : files.state === 'failed' ? 'could not read the change list' : 'loading…' }}</div>
+              </div>
+              <span class="tl-time">—</span>
+              <span class="tl-rev off"></span>
+            </div>
             <div class="chg" v-for="(f, i) in files.changes" :key="i" :class="{ open: f.open }">
               <button class="chg-row" @click="toggleDiff(f)">
                 <span class="chg-st" :class="f.status">{{ stLetter(f.status) }}</span>
@@ -62,7 +71,9 @@
               </div>
             </div>
           </div>
-          <div class="section-h">whitelisted paths</div>
+          <div class="section-h">whitelisted paths
+            <button class="sh-act" data-sheet="sheet-paths">Edit</button>
+          </div>
           <div class="section-sub">up to 5 paths the LLM can access</div>
           <div class="snap" v-for="(p, i) in files.paths" :key="i">
             <span class="snap-ico">
@@ -72,7 +83,6 @@
               <div class="snap-title">{{ p.path }}</div>
               <div class="snap-sub">{{ p.mode }}</div>
             </div>
-            <button class="btn btn-ghost btn-sm" data-sheet="sheet-paths">Edit</button>
           </div>
         </div>
 </template>
@@ -80,7 +90,7 @@
 <script setup lang="ts">
 import { computed, onMounted, ref, watch } from 'vue'
 import { files, type DiffHunk, type FileChange } from '../data/panels'
-import { acceptFileChanges, fileDiff, revertFileChange } from '../data/wire'
+import { acceptFileChanges, fileDiff, refreshFileChanges, revertFileChange } from '../data/wire'
 import { gateway } from '../data/gateway'
 import { sessionState } from '../data/store'
 import { clockOf } from '../data/render'
@@ -173,6 +183,10 @@ async function revertSnapshot(s: SnapshotRow): Promise<void> {
 
 onMounted(() => {
   void loadSnapshotList()
+  /* The change list is normally pushed by session load and by `file.change`,
+     but a pane that mounts before any of those ran sat on "loading…" forever.
+     Asking once here also turns a missing gateway into a stated failure. */
+  void refreshFileChanges()
 })
 
 watch(

@@ -59,11 +59,11 @@
                 <span class="mc-tn" v-for="n in fullTools(srv)" :key="n">{{ n }}</span>
               </div>
             </div>
-            <div class="mc-token">
-              <span class="mc-tk-l">token</span>
+            <div class="mc-token" v-if="srv.requiresToken">
+              <span class="mc-tk-l">{{ srv.tokenEnv || 'token' }}</span>
               <template v-if="editing === srv.name">
-                <input class="mc-tk-in" v-model="secretDraft" placeholder="paste token…" spellcheck="false" @keydown.enter.prevent="saveSecret(srv.name)" />
-                <button class="mc-tk-e" @click="saveSecret(srv.name)">Save</button>
+                <input class="mc-tk-in" v-model="secretDraft" placeholder="paste token…" spellcheck="false" @keydown.enter.prevent="saveSecret(srv)" />
+                <button class="mc-tk-e" @click="saveSecret(srv)">Save</button>
                 <button class="mc-tk-e" @click="editing = ''">Cancel</button>
               </template>
               <template v-else>
@@ -71,15 +71,23 @@
                 <button class="mc-tk-e" @click="startEdit(srv.name)">{{ srv.token ? 'Edit' : 'Set' }}</button>
               </template>
             </div>
+            <div class="mc-token" v-else-if="!srv.ready">
+              <span class="mc-tk-l">needs</span>
+              <span class="mc-tk-v unset">{{ missingLabel(srv.missing) }}</span>
+              <button class="mc-tk-e" v-if="srv.installable" @click="installMcpServer(srv.name)">Install</button>
+            </div>
           </div>
         </article>
       </div>
 
       <div class="mc-opt">
         <div class="mc-opt-h">Optional servers</div>
-        <div class="mc-opt-row" v-for="opt in mcp.optional" :key="opt.name">
-          <span class="mc-opt-logo">{{ opt.logo }}</span>
-          <span class="mc-opt-main"><b>{{ opt.name }}</b><small>{{ opt.desc }}</small></span>
+        <div class="mc-opt-row" v-for="opt in mcp.available" :key="opt.name">
+          <span class="mc-opt-logo">{{ opt.name.slice(0, 1).toUpperCase() }}</span>
+          <span class="mc-opt-main">
+            <b>{{ opt.name }}</b>
+            <small>{{ opt.desc }}<template v-if="opt.missing.length"> · needs {{ missingLabel(opt.missing) }}</template></small>
+          </span>
           <button class="mc-install" @click="installMcpServer(opt.name)">Install</button>
         </div>
       </div>
@@ -112,18 +120,30 @@ function fullTools(srv: McpServer): string[] {
 const editing = ref('')
 const secretDraft = ref('')
 
+/* Prerequisites arrive as identifiers (node / uv / path); the row spells them
+   the way a reader would search for them. */
+const PREREQ_LABELS: Record<string, string> = {
+  node: 'Node.js 18+',
+  uv: 'uv',
+  path: 'an executable'
+}
+
+function missingLabel(missing: string[]): string {
+  return missing.map(m => PREREQ_LABELS[m] ?? m).join(', ')
+}
+
 function startEdit(server: string): void {
   editing.value = server
   secretDraft.value = ''
 }
 
-/** Writes one env var into the server's `.mcp.json` entry. The gateway rejects
-    names that are not plain identifiers, so the field keeps the identifier and
-    the value is the only thing typed here. */
-async function saveSecret(server: string): Promise<void> {
+/** Writes the credential into the variable that server actually reads. The
+    gateway rejects names that are not plain identifiers, so the field keeps the
+    identifier and the value is the only thing typed here. */
+async function saveSecret(srv: McpServer): Promise<void> {
   const value = secretDraft.value.trim()
   if (!value) return
-  const ok = await setMcpSecret(server, 'MCP_TOKEN', value)
+  const ok = await setMcpSecret(srv.name, srv.tokenEnv || 'MCP_TOKEN', value)
   if (ok) {
     editing.value = ''
     secretDraft.value = ''

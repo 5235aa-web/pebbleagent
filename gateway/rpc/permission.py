@@ -7,6 +7,24 @@ import os
 logger = logging.getLogger(__name__)
 
 
+def _path_rejection(p) -> str:
+    """Why this whitelist entry cannot be saved, or "" when it is usable.
+
+    Lifted out of `path_whitelist.save` so `read` can report the same verdict:
+    a file written by hand (or by an older build) can carry a drive root, and
+    every save would then be refused without naming the entry at fault — which
+    left the pane unable to add, edit or remove anything at all.
+    """
+    if not isinstance(p, str) or not p.strip():
+        return "empty or not a string"
+    if not os.path.isabs(p):
+        return "not an absolute path"
+    stripped = os.path.abspath(p).rstrip("\\/")
+    if not stripped or (len(stripped) == 2 and stripped[1] == ":"):
+        return "drive or filesystem root"
+    return ""
+
+
 def handle(ctx, method):
     srv = ctx.srv
     params = ctx.params
@@ -25,7 +43,14 @@ def handle(ctx, method):
                         break
                 except Exception as e:
                     logger.warning(f"[Server] Failed to read path_whitelist.json from {wp}: {e}")
-        return {"id": rid, "result": {"paths": paths}}
+        usable, rejected = [], []
+        for p in paths if isinstance(paths, list) else []:
+            reason = _path_rejection(p)
+            if reason:
+                rejected.append({"path": str(p), "reason": reason})
+            else:
+                usable.append(p)
+        return {"id": rid, "result": {"paths": usable, "rejected": rejected}}
 
     if method == "path_whitelist.save":
         whitelist_path = srv._DATA_DIR / "path_whitelist.json"
@@ -36,13 +61,9 @@ def handle(ctx, method):
             return {"id": rid, "error": {"code": -32602, "message": "maximum 5 paths allowed"}}
         # 路径内容校验，防止"白名单盘根"关掉边界
         for p in new_paths:
-            if not isinstance(p, str) or not p.strip():
-                return {"id": rid, "error": {"code": -32602, "message": "paths entries must be non-empty strings"}}
-            if not os.path.isabs(p):
-                return {"id": rid, "error": {"code": -32602, "message": f"path must be absolute: {p}"}}
-            stripped = os.path.abspath(p).rstrip("\\/")
-            if not stripped or (len(stripped) == 2 and stripped[1] == ":"):
-                return {"id": rid, "error": {"code": -32602, "message": f"path too broad (drive/filesystem root not allowed): {p}"}}
+            reason = _path_rejection(p)
+            if reason:
+                return {"id": rid, "error": {"code": -32602, "message": f"path rejected ({reason}): {p}"}}
         try:
             data = {"paths": new_paths}
             if whitelist_path.exists():

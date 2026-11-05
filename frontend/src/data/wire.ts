@@ -584,6 +584,7 @@ function onEvent(ev: GatewayEvent) {
       files.totalAdded = 0
       files.totalRemoved = 0
       files.totalVersions = 0
+      files.state = 'ok'
       return
     }
 
@@ -1147,7 +1148,7 @@ function summaryInner(text: string): string {
   )
 }
 
-/** `info.tools` and `info.skills` are grouped maps (`{"Agent": [...]}`), not
+/** `info.tools` and `info.skills` are grouped maps (`{"Tools": [...]}`), not
     flat arrays, so the count has to walk one level in. */
 function countGrouped(value: unknown): number {
   if (Array.isArray(value)) return value.length
@@ -1593,26 +1594,66 @@ function syncUsage(p: Record<string, unknown>): void {
 export async function refreshPaths(): Promise<void> {
   if (!gateway.connected) return
   try {
-    const res = await gateway.request<{ paths?: unknown }>('path_whitelist.read', {})
+    const res = await gateway.request<{ paths?: unknown; rejected?: unknown }>('path_whitelist.read', {})
     const list = Array.isArray(res?.paths) ? res.paths.map(String) : []
     files.paths = list.map(p => ({ path: p, mode: 'read · write · execute' }))
-  } catch { /* keep the prototype roots */ }
+    const rej = Array.isArray(res?.rejected) ? (res.rejected as Array<Record<string, unknown>>) : []
+    files.rejected = rej.map(x => ({ path: String(x.path ?? ''), reason: String(x.reason ?? 'rejected') }))
+  } catch {
+    /* Leave the last known roots in place; an empty list would read as "no
+       boundary configured", which is a different claim. */
+  }
+}
+
+/** Rewrites the file with the usable rows only, which is the one way to clear
+    entries the gateway refuses to save. */
+export function dropRejectedPaths(): void {
+  if (!files.rejected.length) return
+  files.rejected = []
+  pushPaths()
 }
 
 function pushPaths(): void {
   void gateway.request('path_whitelist.save', { paths: files.paths.map(p => p.path) })
-    .catch(() => { void refreshPaths() })
+    .catch((e) => {
+      notify('Path not saved', e instanceof Error ? e.message : 'The gateway refused the change.', 'err')
+      /* The rows on screen are what the gateway accepted, not what was typed. */
+      void refreshPaths()
+    })
 }
 
-export function addWhitelistPath(path: string): boolean {
+/** Every refusal names its reason. The old boolean returned false for a blank
+    field, a duplicate, a closed gateway and the fifth root alike, so the pane
+    had nothing to say and the click read as dead. */
+export function addWhitelistPath(path: string): { ok: boolean; error?: string } {
   const p = path.trim()
-  if (!p || !gateway.connected) return false
-  if (files.paths.some(x => x.path === p)) return false
-  // The gateway refuses more than five roots; the pane must not offer a sixth.
-  if (files.paths.length >= 5) return false
+  if (!p) return { ok: false, error: 'Enter a path first.' }
+  if (!gateway.connected) return { ok: false, error: 'Not connected to the gateway.' }
+  if (files.paths.some(x => x.path === p)) return { ok: false, error: 'That path is already listed.' }
+  if (files.paths.length >= 5) return { ok: false, error: 'Five roots is the ceiling; remove one first.' }
   files.paths = [...files.paths, { path: p, mode: 'read · write · execute' }]
   pushPaths()
-  return true
+  return { ok: true }
+}
+
+export function updateWhitelistPath(index: number, path: string): { ok: boolean; error?: string } {
+  const p = path.trim()
+  if (!p) return { ok: false, error: 'Enter a path first.' }
+  if (!gateway.connected) return { ok: false, error: 'Not connected to the gateway.' }
+  if (!(index >= 0 && index < files.paths.length)) return { ok: false, error: 'That row is gone; reopen the panel.' }
+  if (files.paths.some((x, i) => i !== index && x.path === p)) return { ok: false, error: 'That path is already listed.' }
+  files.paths = files.paths.map((x, i) => (i === index ? { ...x, path: p } : x))
+  pushPaths()
+  return { ok: true }
+}
+
+export function removeWhitelistPath(path: string): { ok: boolean; error?: string } {
+  if (!gateway.connected) return { ok: false, error: 'Not connected to the gateway.' }
+  const next = files.paths.filter(x => x.path !== path)
+  if (next.length === files.paths.length) return { ok: false, error: 'That path is not in the list.' }
+  files.paths = next
+  pushPaths()
+  return { ok: true }
 }
 
 /* ---------------- experience ledger ---------------- */
@@ -1805,6 +1846,11 @@ export async function refreshMcp(): Promise<void> {
         chips: names.slice(0, 4),
         more: Math.max(0, names.length - 4),
         toolNames: names,
+        ready: Boolean(s.ready ?? true),
+        missing: Array.isArray(s.missing) ? (s.missing as string[]) : [],
+        installable: Boolean(s.installable),
+        requiresToken: Boolean(s.requires_token),
+        tokenEnv: String(s.token_env ?? ''),
         token: ''
       }
     })
@@ -1827,6 +1873,16 @@ export async function refreshMcp(): Promise<void> {
       name: String(p.name ?? ''),
       target: String(p.target ?? '')
     }))
+
+    /* Declared in mcp_install.json but missing from .mcp.json. Replaced
+       wholesale like the pending queues: a server installed in this pass must
+       disappear from the row, not linger until the next reload. */
+    const avail = Array.isArray(mc.available) ? (mc.available as Array<Record<string, unknown>>) : []
+    mcp.available = avail.map(a => ({
+      name: String(a.name ?? ''),
+      desc: String(a.desc ?? ''),
+      missing: Array.isArray(a.missing) ? (a.missing as string[]) : []
+    }))
   } catch { /* keep prototype numbers */ }
 }
 
@@ -1846,7 +1902,11 @@ export function installMcpServer(name: string): void {
   if (!gateway.connected || !name) return
   void gateway.request('mcp.install_server', { server: name })
     .then(() => { void refreshMcp() })
-    .catch(() => { /* the rack keeps its current state */ })
+    .catch((e) => {
+      /* A missing prerequisite (Node, uv) is the common failure and the backend
+         names it; swallowing it left the Install button looking dead. */
+      notify('Install failed', e instanceof Error ? e.message : 'The server refused the install.', 'err')
+    })
 }
 
 /** Approves the project-level .mcp.json, which also hot-loads its servers. */
@@ -2349,8 +2409,15 @@ export function deleteMessage(itemId: string): void {
     session with no edits must not keep showing another project's files. Only a
     failed call leaves the pane alone. */
 export async function refreshFileChanges(): Promise<void> {
-  if (!gateway.connected) return
+  if (!gateway.connected) {
+    files.state = 'failed'
+    return
+  }
   const sid = streamState.sessionId || sessionState.activeId
+  /* No session yet: asking with an empty id only earns an error. Leave the
+     state alone — session load and `file.change` both call back here. */
+  if (!sid) return
+  files.state = 'loading'
   try {
     const fc = await gateway.request<Record<string, unknown>>('session.file_changes', { session_id: sid })
     const list = Array.isArray(fc.files) ? (fc.files as Array<Record<string, unknown>>) : []
@@ -2374,8 +2441,11 @@ export async function refreshFileChanges(): Promise<void> {
     files.totalAdded = Number(fc.total_additions ?? 0)
     files.totalRemoved = Number(fc.total_deletions ?? 0)
     files.totalVersions = files.changes.reduce((n, f) => n + f.versions, 0)
+    files.state = 'ok'
   } catch {
-    /* keep whatever the pane already shows */
+    /* Keep whatever the pane already shows, but say the read failed: an empty
+       list and a refused call look identical otherwise. */
+    files.state = 'failed'
   }
 }
 
@@ -2391,6 +2461,7 @@ export async function acceptFileChanges(): Promise<boolean> {
     files.totalAdded = 0
     files.totalRemoved = 0
     files.totalVersions = 0
+    files.state = 'ok'
     return true
   } catch {
     return false

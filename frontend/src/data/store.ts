@@ -124,8 +124,8 @@ export interface CatalogGroup {
 }
 
 /* The tool and skill catalogue from session.info. Grouped the way the gateway
-   sends it (tools under "Agent", skills by folder), so the sheet can render the
-   same headings the prototype shows. */
+   sends it ("Tools" and "Skills"), so the sheet renders the same headings the
+   gateway uses rather than its own. */
 export const catalog = reactive({
   toolGroups: [] as CatalogGroup[],
   skillGroups: [] as CatalogGroup[],

@@ -148,14 +148,14 @@ def load_llm_config(agent_name: str = "code_agent") -> Dict[str, Any]:
 
 
 def load_tools_info() -> Dict[str, list]:
-    tools: Dict[str, list] = {"Agent": []}
+    tools: Dict[str, list] = {"Tools": []}
     try:
         sys.path.insert(0, str(_PROJECT_ROOT))
         from agent_core.tool_definitions import get_tools_definition
         for tool in get_tools_definition():
             name = tool.get("function", {}).get("name", "")
             if name:
-                tools["Agent"].append(name)
+                tools["Tools"].append(name)
     except Exception as e:
         logger.warning(f"[Config] Failed to load tool definitions: {e}")
     return tools
@@ -164,12 +164,13 @@ def load_tools_info() -> Dict[str, list]:
 def load_skills_info() -> Dict[str, list]:
     """Installed skills, grouped by where they come from.
 
-    The two roots mirror `skills_loader.skill_dirs()`: user skills live beside
-    the runtime data, built-ins inside the app. A user skill shadows a built-in
-    of the same name, so it is listed once, under `User`.
+    Both roots collapse into one "Skills" heading: the panel is a catalogue of
+    what the agent can load, and splitting it by install location made the
+    section read as a second category beside Tools. A user skill shadows a
+    built-in of the same name, so it is listed once.
     """
     skills: Dict[str, list] = {}
-    roots = [(_DATA_DIR / "skills", "User"), (_PROJECT_ROOT / "skills", "Built-in")]
+    roots = [(_DATA_DIR / "skills", "Skills"), (_PROJECT_ROOT / "skills", "Skills")]
     seen: set = set()
     for root, category in roots:
         if not root.is_dir():

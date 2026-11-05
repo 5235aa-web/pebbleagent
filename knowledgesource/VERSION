@@ -1426,3 +1426,124 @@
   paragraph so the notes read smaller-first, then fixed
 - The git lookup hardening is not in the notes: it only surfaces once a user installs git, and an entry there would
   read as if the app bundles one
+
+## MCP panel tells readiness apart from a credential
+
+- `mcp.list` now returns `ready` / `missing` / `requires_token` / `token_env` / `installable` per server plus an
+  `available` list. `_command_readiness()` resolves npx to node, uvx to uv, `REPLACE_WITH` to a missing path, and
+  an absolute path to its existence; `_token_env()` names the env key that carries the credential
+- The panel draws the token field only for `requires_token` servers. It used to draw it for every server, so
+  `time`, `think-tool` and `chrome-devtools`, which read no credential, all showed `paste token…` while the only
+  server that needs one looked identical
+- A server that is configured but cannot start now says `needs Node.js 18+` / `needs an executable` with an Install
+  button, instead of appearing installed and silently failing. On a machine without Node.js that is all five npx
+  servers at once
+- `mcp.optional` was a hardcoded `postgres` row the backend never mentioned and `refreshMcp()` never wrote to, so the
+  only Install button in the panel pointed at a server that does not exist. It is replaced by `mcp.available`, filled
+  from `mcp_install.json` minus what `.mcp.json` already configures
+- `mcp.install_server` gained `npx` / `uvx` handling (write the command into `~/.pebble/.mcp.json`); download-type
+  entries keep the exe route. A missing prerequisite returns the install URL instead of a dead button
+- `saveSecret` wrote `MCP_TOKEN` into every server. It now writes `token_env`, so github receives
+  `GITHUB_PERSONAL_ACCESS_TOKEN`
+- Verified: `mcp.list` on this repository reports six servers, github the only `requires_token` with
+  `GITHUB_PERSONAL_ACCESS_TOKEN`, `codebase-memory` `ready=false missing=['path']`, the rest `ready=true`;
+  `tests/test_rpc_smoke.py` 11 checks pass, `tests/run_all.py` `ALL PASSED: 38 tests`, `vue-tsc --noEmit` clean
+
+## Custom MCP: saving a secret no longer floods the pending queue
+
+- `mcp.set_secret` and `mcp.install_server` based their write on "the user file, or the bundled file when there is
+  none". The bundled `.mcp.json` carries six servers, so the first token saved on a fresh install copied all six into
+  `~/.pebble/.mcp.json` and approved only the one being edited; the other five surfaced as "wants to run" banners
+  that read like a security alert. Both now read the user file alone and copy a single entry from the bundle when that
+  server is missing there
+- Verified end to end: saving a github token leaves exactly `["github"]` in the user file, `pending_user_servers` is
+  empty, and all six servers still list. `test_rpc_smoke.py` 11 checks pass, `tests/run_all.py` `ALL PASSED: 38 tests`
+- Checked and found correct: `_DATA_DIR` and `_user_mcp_path()` resolve to the same `%USERPROFILE%\.pebble`;
+  `build_user_override_configs()` loads approved fingerprints only, so an entry the agent writes cannot start a
+  process on its own; the first-run seed stops an upgrade from re-approving everything; `approve_user_override()`
+  drops same-name fingerprints so the store does not grow one dead entry per save; `sync_user_overrides()` stats
+  before parsing, so an untouched file costs one stat
+
+## CHANGELOG gains 1.1.5
+
+- Three entries covering this round of MCP work: the token field narrowed to servers that read a credential (with the
+  variable name fixed to `token_env`), readiness reporting plus the Install path for missing prerequisites, and the
+  single-entry write that stopped a saved secret from pushing every bundled server into the approval queue
+- `frontend/src-tauri/tauri.conf.json` still reads `1.1.3`, so publishing 1.1.5 needs that bump first or
+  `publish.mjs` will pick the wrong section
+
+## Command palette rebuilt on store data
+
+- `CommandPalette.vue` was static markup with an empty `<script setup>`; `orbit/runtime.js` drove it by reading DOM
+  attributes and fell back to `toast("Command ran", ...)` for rows that carried none. Four of fourteen rows were dead
+  that way, and three subtitles were numbers typed once ("14 entries", "3 installed · 2 running", "5 sessions")
+- Rebuilt as a Vue component: rows come from `PANELS`, `sessions`, `ledger.total` and `mcp.servers`; filtering and
+  arrow-key selection are component state; the runtime keeps the overlay element and dispatches `pebble:cmd-open`,
+  because main.ts mounts Vue before `initOrbit()` runs and a callback registered at mount time would never fire
+- `window.__pebbleNav` exposes `openSheet` / `sessions` / `stage` / `tab` / `plan` / `newSession`; the DOM dispatcher
+  and its `data-sess` / `data-tab` / `data-todo` / `data-stage` / `data-open` / `data-open-tab` / `data-sheet`
+  attributes are gone
+- `Compact context` is deleted rather than wired: its `⌘⇧C` binding was never registered anywhere in the frontend
+- Verified in `vite preview`: opens with 12 rows in 2 groups, `mcp` filters to one row, clicking MCP servers closes
+  the palette and opens `sheet-mcp`, reopening clears the query and restores all 12 rows, ArrowDown selects index 1;
+  `vue-tsc --noEmit` clean, `vite build` succeeds
+
+## Palette row actions resolved at click time; ModelPanel deleted
+
+- `run: () => { n?.… }` captured `nav()` inside the `rows` computed, which runs on the very first render — before
+  `initOrbit()` installs `window.__pebbleNav`. The captured null made every row dead on the first open; typing a
+  character re-ran the computed and hid the bug. Rows now call `nav()?.…` so the lookup happens at click time
+- `Switch session` removed: the sessions group already lists the same rows and switches through `selectSession` +
+  `loadSession`, so the action only duplicated it
+- `ModelPanel.vue` deleted. It was a fully hardcoded prototype (claude-sonnet-4.5 / opus-4.1 / haiku-4, two invented
+  agents, an Auto/Deep/Off control with no handler, an Apply button carrying a toast). `LlmPane.vue` in the right dock
+  already renders the real stack through `agent.list` / `model.options` / `agent.switch` / `model.switch`; the palette
+  row now opens that tab and its subtitle reads `llm.model`, so a fresh install says `no model configured`
+- Verified in `vite preview`: 11 rows, no `Switch session`, first-open click on `Model & agents` sets `dr-tab on` +
+  `dr-pane on`, `MCP servers` opens `sheet-mcp`, both close the palette; `vue-tsc --noEmit` clean, `vite build` ok
+
+## Palette review pass
+
+- Dropped `NavBridge.onOpen` and the `ICON.list` glyph: both went dead when the bridge callback gave way to the
+  `pebble:cmd-open` DOM event and `Switch session` was removed
+- Arrow-key selection now scrolls its row into view (`scrollIntoView({ block: 'nearest' })` inside `nextTick`):
+  eleven actions plus six sessions overflow the 52vh list, and a selection below the fold reads as a broken key
+- Verified: ESC closes, a no-match query renders "No match", reopening clears the query and restores 11 rows, eight
+  ArrowDown presses land on row 9 with `inView: true`; `vue-tsc --noEmit` clean, `vite build` succeeds
+
+## Tools sheet headings say Tools and Skills
+
+- `load_tools_info()` returned `{"Agent": [...]}` and `load_skills_info()` returned `User` / `Built-in`. The sheet
+  rendered those keys verbatim, so the catalogue read as two unrelated categories ("Agent" and "Built-in") above a
+  panel titled `Tools & skills`
+- Tools now group under `Tools`; both skill roots collapse into a single `Skills` heading (the user tree is still
+  scanned first, so a user skill shadows a same-named built-in and nothing is listed twice)
+- Verified: `load_tools_info()` → `['Tools']` with 45 entries, `load_skills_info()` → `['Skills']` with 50;
+  `tests/run_all.py` `ALL PASSED: 38 tests`
+
+## Files pane no longer starts on another project's files
+
+- The `files` store seeded four changes (`components/InputArea.vue`, `design-preview/pebble-orbit.html`,
+  `styles/05-input.css`, `components/Backdrop.vue`, "4 files · 7 versions") plus two whitelist paths from the author's
+  machine, one of them pointing at this repository. A session that edited nothing kept showing them, because
+  `refreshFileChanges()` only replaced the list once an answer arrived
+- Store starts empty; `files.state` records `idle` / `loading` / `ok` / `failed` so the empty row distinguishes an
+  untouched session from a refused read, instead of leaving "loading…" up
+- `FilesPane` mounts with a `refreshFileChanges()` call: the list is normally pushed by session load and `file.change`,
+  and a pane that mounted before both stayed on "loading…" with no way to tell why
+- `PathsPanel` gains an empty row (`no path yet`) to match the cleared whitelist
+- Verified in `vite preview` with no gateway: 0 change rows, `no changes` / `could not read the change list`,
+  `files changed 0 files · 0 versions`, empty paths; `vue-tsc --noEmit` clean, `vite build` succeeds
+
+## Files pane review pass
+
+- `Edit` for the whitelist lived inside `v-for="p in files.paths"`, so once the store stopped seeding two prototype
+  roots an empty list had no way to open `sheet-paths` at all. Moved into the `whitelisted paths` section header as a
+  `.sh-act`, the same shape `Accept all` uses
+- `refreshFileChanges()` now returns early when there is no session id instead of asking `session.file_changes` with
+  an empty one
+- `files.accepted` and `acceptFileChanges()` set `files.state = 'ok'` when they clear the list, so a successful accept
+  stops the empty row from reporting a failed read
+- `refreshPaths()`'s catch comment corrected: it keeps the last known roots, not "the prototype roots" (there are none)
+- Verified: `Edit` present and opens `sheet-paths` showing `no path yet`; change list 0 rows with `no changes` /
+  `could not read the change list`; `vue-tsc --noEmit` clean, `vite build` succeeds

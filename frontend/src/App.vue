@@ -19,9 +19,6 @@
 <!-- ================= COMMAND PALETTE ================= -->
 <CommandPalette />
 
-<!-- ================= MODEL SHEET ================= -->
-<ModelPanel />
-
 <!-- ================= LEDGER SHEET ================= -->
 
 
@@ -89,7 +86,6 @@ import RightDock from './components/RightDock.vue'
 import StatusBar from './components/StatusBar.vue'
 import PreviewStage from './components/PreviewStage.vue'
 import CommandPalette from './components/CommandPalette.vue'
-import ModelPanel from './components/ModelPanel.vue'
 import LedgerPanel from './components/LedgerPanel.vue'
 import NewEntryDialog from './components/NewEntryDialog.vue'
 import McpPanel from './components/McpPanel.vue'

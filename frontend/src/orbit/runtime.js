@@ -67,6 +67,21 @@ export function initOrbit() {
   // Vue-rendered rows share this host instead of growing a second toast stack.
   window.__pebbleToast = toast;
 
+  /* The command palette is a Vue component; the panels and toggles the shell
+     owns are reached through this one object, so the component never touches
+     this closure and its rows can come from real state instead of markup. */
+  window.__pebbleNav = {
+    openSheet: openOverlay,
+    sessions: function () { setSessOpen(true); },
+    stage: function () { setStageOpen(true); },
+    tab: function (name) { ensureRightOpen(); selectTab(name); },
+    plan: function () {
+      var stream = document.querySelector(".stream");
+      setPlanOpen(!(stream && stream.classList.contains("plan-open")));
+    },
+    newSession: newSession
+  };
+
   document.querySelectorAll("[data-toast]").forEach(function (b) {
     b.addEventListener("click", function () { toast("Done", b.getAttribute("data-toast"), "ok"); });
   });
@@ -121,83 +136,28 @@ export function initOrbit() {
   });
 
   /* ---------------- command palette ---------------- */
+  /* ---------------- command palette ---------------- */
   var cmdOverlay = document.getElementById("cmdOverlay");
   var cmdInput = document.getElementById("cmdInput");
-  var cmdList = document.getElementById("cmdList");
 
+  /* The list is a Vue component (CommandPalette.vue); this file only owns the
+     overlay element and the open path every trigger binds to. Query text and
+     every row live in Vue state, so nothing here filters or dispatches — the
+     component used to be static markup driven by these handlers, which is why
+     half its rows were placeholders. */
   function openCmd() {
     if (!cmdOverlay) return;
     cmdOverlay.classList.add("open");
-    // A previous query left rows filtered and hidden; reset before showing.
-    if (cmdInput) {
-      cmdInput.value = "";
-      if (cmdList) {
-        cmdList.querySelectorAll(".cmd-item").forEach(function (it) {
-          it.style.display = "";
-          it.classList.remove("sel");
-        });
-        var first = cmdList.querySelector(".cmd-item");
-        if (first) first.classList.add("sel");
-      }
-    }
+    /* The component mounts before this file runs (main.ts mounts Vue first), so
+       it cannot have registered a callback here yet. The open signal is a DOM
+       event, which is live whenever the palette is actually shown. */
+    window.dispatchEvent(new CustomEvent("pebble:cmd-open"));
     window.setTimeout(function () { if (cmdInput) cmdInput.focus(); }, 60);
   }
   function closeCmd() { closeOverlay(cmdOverlay); }
 
   document.querySelectorAll("[data-cmd]").forEach(function (b) {
     b.addEventListener("click", openCmd);
-  });
-
-  if (cmdInput) {
-    cmdInput.addEventListener("input", function () {
-      var q = cmdInput.value.trim().toLowerCase();
-      var items = cmdList.querySelectorAll(".cmd-item");
-      items.forEach(function (it) {
-        var txt = it.textContent.toLowerCase();
-        it.style.display = (!q || txt.indexOf(q) !== -1) ? "" : "none";
-      });
-      var first = Array.prototype.find.call(items, function (it) { return it.style.display !== "none"; });
-      items.forEach(function (it) { it.classList.remove("sel"); });
-      if (first) first.classList.add("sel");
-    });
-    cmdInput.addEventListener("keydown", function (e) {
-      var items = Array.prototype.slice.call(cmdList.querySelectorAll(".cmd-item")).filter(function (it) {
-        return it.style.display !== "none";
-      });
-      if (!items.length) return;
-      var idx = items.findIndex(function (it) { return it.classList.contains("sel"); });
-      if (e.key === "ArrowDown") {
-        e.preventDefault();
-        items.forEach(function (it) { it.classList.remove("sel"); });
-        items[(idx + 1) % items.length].classList.add("sel");
-        items[(idx + 1) % items.length].scrollIntoView({ block: "nearest" });
-      } else if (e.key === "ArrowUp") {
-        e.preventDefault();
-        items.forEach(function (it) { it.classList.remove("sel"); });
-        items[(idx - 1 + items.length) % items.length].classList.add("sel");
-        items[(idx - 1 + items.length) % items.length].scrollIntoView({ block: "nearest" });
-      } else if (e.key === "Enter") {
-        e.preventDefault();
-        if (items[idx]) items[idx].click();
-      }
-    });
-  }
-
-  document.querySelectorAll(".cmd-item").forEach(function (it) {
-    it.addEventListener("click", function () {
-      var sheet = it.getAttribute("data-open");
-      var sess = it.hasAttribute("data-sess");
-      var tab = it.getAttribute("data-open-tab");
-      var todo = it.hasAttribute("data-todo");
-      var stg = it.hasAttribute("data-stage");
-      closeCmd();
-      if (sess) setSessOpen(true);
-      else if (tab) { ensureRightOpen(); selectTab(tab); }
-      else if (todo) setPlanOpen(!document.querySelector(".stream").classList.contains("plan-open"));
-      else if (stg) setStageOpen(true);
-      else if (sheet) openOverlay(sheet);
-      else toast("Command ran", it.querySelector(".cmd-t").textContent, "ok");
-    });
   });
 
   /* ---------------- tabs ---------------- */

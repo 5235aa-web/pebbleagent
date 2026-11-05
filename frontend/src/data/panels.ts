@@ -106,31 +106,28 @@ export interface WhitelistPath {
   mode: string
 }
 
+/* Empty until `session.file_changes` answers. The prototype seeded four files
+   from another project (`components/InputArea.vue`, `design-preview/…`) with
+   invented +/- counts, and a session that had edited nothing kept showing them;
+   this is the same fake-data problem the ledger and MCP panels carried.
+   `state` separates "not asked yet" from "asked, and there is nothing".
+   `paths` is filled by `path_whitelist.read`; the prototype shipped two paths
+   from the author's machine, one pointing at this very repository. */
 export const files = reactive({
-  changes: [
-    {
-      path: 'components/InputArea.vue', dir: 'components/', base: 'InputArea.vue',
-      status: 'mod', added: 42, removed: 18, versions: 2, open: true,
-      hunks: [{
-        header: '@@ -148,7 +148,9 @@',
-        lines: [
-          { prefix: '-', text: '<div class="ia-hint">' },
-          { prefix: '+', text: '<div class="ia-tray"><AttachTray />' }
-        ]
-      }]
-    },
-    { path: 'design-preview/pebble-orbit.html', dir: 'design-preview/', base: 'pebble-orbit.html', status: 'add', added: 2390, removed: 0, versions: 1, open: false, hunks: [] },
-    { path: 'styles/05-input.css', dir: 'styles/', base: '05-input.css', status: 'mod', added: 86, removed: 31, versions: 3, open: false, hunks: [] },
-    { path: 'components/Backdrop.vue', dir: 'components/', base: 'Backdrop.vue', status: 'del', added: 0, removed: 14, versions: 1, open: false, hunks: [] }
-  ] as FileChange[],
-  totalFiles: 4,
-  totalVersions: 7,
-  totalAdded: 2518,
-  totalRemoved: 63,
-  paths: [
-    { path: 'E:\\pebbleagent', mode: 'read · write · execute' },
-    { path: 'C:\\Users\\pebble\\Documents', mode: 'read' }
-  ] as WhitelistPath[]
+  changes: [] as FileChange[],
+  totalFiles: 0,
+  totalVersions: 0,
+  totalAdded: 0,
+  totalRemoved: 0,
+  /* 'idle' until the first answer. A failed read is not an empty session, so
+     the pane says which one it is instead of leaving "loading…" up forever. */
+  state: 'idle' as 'idle' | 'loading' | 'ok' | 'failed',
+  paths: [] as WhitelistPath[],
+  /* Entries the gateway will not accept on save (a drive root, a relative
+     path). The file can carry them from an older build or a hand edit, and
+     while they are in it every save is refused — which made the pane unable to
+     add, edit or remove anything. Shown separately so they can be deleted. */
+  rejected: [] as Array<{ path: string; reason: string }>
 })
 
 export interface McpServer {
@@ -147,42 +144,49 @@ export interface McpServer {
   /* Every tool the server exposes. `chips` is only the first four, which is
      enough for a collapsed row but hides what an enabled server actually adds. */
   toolNames?: string[]
+  /* Whether its command resolves to something runnable. A server configured on
+     another machine (npx with no Node, a REPLACE_WITH_ path) cannot start, and
+     the panel says which prerequisite is missing instead of showing a token. */
+  ready: boolean
+  missing: string[]
+  /* Declared in mcp_install.json, so the row can offer Install instead of only
+     reporting what is missing. */
+  installable: boolean
+  /* True only when the server's env carries a credential variable. Drawing the
+     token field unconditionally put "paste token" on stdio servers that never
+     read one. */
+  requiresToken: boolean
+  /* The env variable the credential belongs in (GITHUB_PERSONAL_ACCESS_TOKEN
+     and friends). Writing a fixed MCP_TOKEN handed github a key it never reads. */
+  tokenEnv: string
   token: string
 }
 
+/* A server declared in mcp_install.json but absent from .mcp.json. */
+export interface McpAvailable {
+  name: string
+  desc: string
+  missing: string[]
+}
+
 export const mcp = reactive({
-  servers: [
-    {
-      name: 'github', transport: 'stdio', logo: 'G',
-      cmd: 'npx -y @modelcontextprotocol/server-github',
-      tools: 8, on: true, open: true, state: 'ok',
-      chips: ['create_issue', 'list_prs', 'get_file', 'search_code'], more: 4, token: '\u2022\u2022\u2022\u2022 4f21'
-    },
-    {
-      name: 'filesystem', transport: 'stdio', logo: 'F',
-      cmd: 'npx -y @modelcontextprotocol/server-filesystem',
-      tools: 10, on: true, open: false, state: 'ok',
-      chips: [], more: 0, token: ''
-    },
-    {
-      name: 'postgres', transport: 'sse', logo: 'P',
-      cmd: 'postgres://localhost:5432/pebble',
-      tools: 0, on: false, open: false, state: 'err',
-      chips: [], more: 0, token: ''
-    }
-  ] as McpServer[],
-  running: 2,
-  idle: 1,
-  tools: 18,
+  /* Empty until `mcp.list` answers. The prototype seeded github / filesystem /
+     postgres, which is the same fake-data problem the session switcher had: an
+     account with none of them kept showing three. */
+  servers: [] as McpServer[],
+  running: 0,
+  idle: 0,
+  tools: 0,
   /* Approvals the reader still owes. A project-level file is trusted as a whole,
      one fingerprint per file; a user-level entry is trusted one server at a
      time, which is what lets the agent write one and have it wait here instead
      of quietly starting a process. */
   pendingProject: null as { path: string; servers: string[] } | null,
   pendingUser: [] as Array<{ name: string; target: string }>,
-  optional: [
-    { name: 'postgres', desc: 'query a local database', logo: 'P' }
-  ]
+  /* Declared in mcp_install.json but not yet in .mcp.json: the install row
+     points here. This replaces a hardcoded `postgres` placeholder that never
+     matched anything the backend could actually install. */
+  available: [] as McpAvailable[]
 })
 
 export interface LedgerEntry {
