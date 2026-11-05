@@ -198,11 +198,67 @@ check('renderMarkdown does not re-parse markup inside inline code', () => {
   assert.equal(renderMarkdown('`**x**`'), '<p><code>**x**</code></p>')
 })
 
-check('renderMarkdown renders a link with the external target', () => {
+check('renderMarkdown renders a markdown link with the app link class', () => {
   assert.equal(
     renderMarkdown('[t](http://x)'),
-    '<p><a href="http://x" target="_blank" rel="noreferrer">t</a></p>'
+    '<p><a class="md-link" href="http://x" data-href="http://x" target="_blank" rel="noreferrer">t</a></p>'
   )
+})
+
+check('renderMarkdown links a bare http address', () => {
+  assert.equal(
+    renderMarkdown('see https://x.y/z now'),
+    '<p>see <a class="md-link" href="https://x.y/z" data-href="https://x.y/z" target="_blank" rel="noreferrer">https://x.y/z</a> now</p>'
+  )
+})
+
+check('renderMarkdown keeps sentence punctuation out of the address', () => {
+  const html = renderMarkdown('go https://x.y/z.')
+  assert.ok(html.includes('data-href="https://x.y/z"'))
+  assert.ok(html.endsWith('</a>.</p>'))
+})
+
+check('renderMarkdown keeps a balanced closing paren inside the address', () => {
+  const html = renderMarkdown('https://x.y/a_(b)')
+  assert.ok(html.includes('data-href="https://x.y/a_(b)"'))
+})
+
+check('renderMarkdown drops a stray closing paren from the address', () => {
+  const html = renderMarkdown('https://x.y/a)')
+  assert.ok(html.includes('data-href="https://x.y/a"'))
+  assert.ok(html.endsWith(')</p>'))
+})
+
+check('renderMarkdown stops the address at CJK punctuation', () => {
+  assert.equal(
+    renderMarkdown('详见 https://x.y/a。'),
+    '<p>详见 <a class="md-link" href="https://x.y/a" data-href="https://x.y/a" target="_blank" rel="noreferrer">https://x.y/a</a>。</p>'
+  )
+})
+
+check('renderMarkdown links an address glued to CJK text without a space', () => {
+  assert.ok(renderMarkdown('看https://x.y的文档').includes('data-href="https://x.y"'))
+  assert.ok(renderMarkdown('（https://x.y）').includes('data-href="https://x.y"'))
+})
+
+check('renderMarkdown keeps a quote outside the address and escapes it once', () => {
+  const html = renderMarkdown('"https://x.y"')
+  assert.ok(html.includes('data-href="https://x.y"'))
+  assert.ok(!html.includes('&amp;quot;'))
+})
+
+check('renderMarkdown keeps a bracketed path inside the address', () => {
+  assert.ok(renderMarkdown('https://x.y/a[1]').includes('data-href="https://x.y/a[1]"'))
+})
+
+check('renderMarkdown never links a non-http scheme', () => {
+  const html = renderMarkdown('[x](javascript:alert(1)) file:///C:/x.exe')
+  assert.ok(!html.includes('md-link'))
+  assert.ok(html.includes('file:///C:/x.exe'))
+})
+
+check('renderMarkdown does not link inside inline code', () => {
+  assert.equal(renderMarkdown('`https://x.y`'), '<p><code>https://x.y</code></p>')
 })
 
 check('renderMarkdown escapes raw html', () => {
@@ -237,6 +293,23 @@ check('renderPlain keeps single newlines as line breaks', () => {
 
 check('renderPlain appends the caret only to the last paragraph while streaming', () => {
   assert.equal(renderPlain('a\n\nb', true), '<p>a</p><p>b<span class="caret"></span></p>')
+})
+
+check('renderPlain links a bare address and leaves other schemes alone', () => {
+  assert.ok(renderPlain('a https://x.y b', false).includes('data-href="https://x.y"'))
+  assert.ok(!renderPlain('javascript:alert(1)', false).includes('md-link'))
+})
+
+check('renderMarkdown links an address that follows a markdown link', () => {
+  const html = renderMarkdown('[t](https://a.one)https://b.two')
+  assert.ok(html.includes('data-href="https://a.one"'))
+  assert.ok(html.includes('data-href="https://b.two"'))
+})
+
+check('renderPlain does not swallow the address after a markdown link', () => {
+  const html = renderPlain('[t](https://a.one)https://b.two', false)
+  assert.ok(html.includes('data-href="https://b.two"'))
+  assert.ok(!html.includes('a.one)https'))
 })
 
 /* ---- renderAttachments ---- */
@@ -275,6 +348,10 @@ check('renderUserBubble escapes the message text and the clock', () => {
   const html = renderUserBubble('<b>hi</b>', [], '"><x>')
   assert.ok(html.includes('&lt;b&gt;hi&lt;/b&gt;'))
   assert.ok(html.includes('&quot;&gt;&lt;x&gt;'))
+})
+
+check('renderUserBubble links an address the user pasted', () => {
+  assert.ok(renderUserBubble('see https://x.y', [], '10:00').includes('data-href="https://x.y"'))
 })
 
 check('renderUserBubble says "sent" when no token count is given', () => {

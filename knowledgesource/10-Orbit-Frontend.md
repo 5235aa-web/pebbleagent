@@ -24,10 +24,10 @@ Behaviour that needs new CSS goes into `styles/app.css`, never into `orbit.css`.
 | File | Function | Key symbols | Tag |
 |---|---|---|---|
 | `gateway.ts` | JSON-RPC 2.0 over WebSocket, request/notify/event dispatch, reconnect | `gateway.connect`, `gateway.request`, `gateway.post`, `onEvent`, `onStatus` | Core |
-| `wire.ts` | Gateway events -> store: transcript build, compaction folding, streaming, permission decisions; **an interrupted turn settles on the gateway's body**: the `error` branch appends only the tail missing from the live row (the server copy is authoritative and always a superset), flips in-flight tool cards to `cancelled` exactly like a restored turn, and passes `interrupted` + `message_id` into `finishLive`, so the row on screen is the row the next resume rebuilds | `buildHistory`, `planCompaction`, `toggleCompact`, `loadSession`, `onEvent` | Core |
+| `wire.ts` | Gateway events -> store: transcript build, compaction folding, streaming, permission decisions; **a saved prompt adopts the stored id and the row markup is rewritten with it** — the user row's Copy/Delete buttons read `data-item-id` from an HTML string, so a stale pending id made both silently dead; **an interrupted turn settles on the gateway's body**: the `error` branch appends only the tail missing from the live row (the server copy is authoritative and always a superset), flips in-flight tool cards to `cancelled` exactly like a restored turn, and passes `interrupted` + `message_id` into `finishLive`, so the row on screen is the row the next resume rebuilds | `buildHistory`, `planCompaction`, `toggleCompact`, `loadSession`, `onEvent`, `copyMessage`, `deleteMessage`, `openExternalUrl` | Core |
 | `stream.ts` | Rendered message list, starts empty; owns the `StreamItem`/`StreamKind` types | `streamState`, `replaceStream`, `appendStream`, `StreamItem` | Core |
 | `blocks.ts` | Structured block model + streaming builder; finished paragraphs commit as markdown, the unfinished tail stays plain text | `Block`, `splitBlocks`, `LiveBuilder` | Core |
-| `render.ts` | Markdown runs, fenced code with `span.ln`, user bubbles with attachment chips; `clockOf`/`nowClock` normalise timestamps. Tool calls live in `StreamToolCard.vue`, not here | `renderMarkdown`, `renderUserBubble`, `toolIcon`, `clockOf`, `nowClock` | Core |
+| `render.ts` | Markdown runs, fenced code with `span.ln`, user bubbles with attachment chips. **Links are the only path from a transcript to the OS: markdown `[label](url)` and bare `http(s)` addresses both become `a.md-link` carrying `data-href`, while every other scheme (`file:`, `javascript:`, `data:`) stays plain text. The bare-address pass is ASCII-bound on both sides (`[!-~]+` for the address, any non-alphanumeric for the lead), so a Chinese sentence keeps `。`/`，`/`的` outside the href and `看https://x` still links; trailing ASCII punctuation moves outside the address, a balanced `)` stays inside it, and `]` is never stripped because `https://x/a[1]` is whole. `escapeAndLink` (plain rows and user bubbles) runs the same markdown-link hold before the bare pass, otherwise `[a](x)https://y` loses everything after the closing paren.** `clockOf`/`nowClock` normalise timestamps. Tool calls live in `StreamToolCard.vue`, not here | `renderMarkdown`, `renderUserBubble`, `toolIcon`, `clockOf`, `nowClock` | Core |
 | `store.ts` | Session list, plan card, permission queue, overlay state | `sessions`, `plan`, `permissions`, `resolvePermission` | Core |
 | `panels.ts` | Right-dock state (usage, files, mcp, ledger, context) refreshed after `gateway.ready` and `session.resume` | `usage`, `files`, `mcp`, `ledger`, `context`, `refreshPanes` | Core |
 | `notify.ts` | Five oscillator-synthesised alert voices, two independent picks (reply done / needs input), volume, desktop + per-event alert switches, `when` gate; settings persist to `localStorage` | `notifySettings`, `SOUNDS`, `playSound`, `notify`, `requestDesktopPermission` | Core |
@@ -37,7 +37,7 @@ Behaviour that needs new CSS goes into `styles/app.css`, never into `orbit.css`.
 
 | File | Function | Tag |
 |---|---|---|
-| `MessageStream.vue` | `v-for` over `streamState.items`; routes each item to `CompactDivider`, `ClarifyCard`, `StreamMessage`, or verbatim `innerHTML` | Core |
+| `MessageStream.vue` | `v-for` over `streamState.items`; routes each item to `CompactDivider`, `ClarifyCard`, `StreamMessage`, or verbatim `innerHTML`. **One delegated click listener covers both row actions and `a[data-href]` links: a link click is prevented and forwarded to `openExternalUrl`, because row markup is an HTML string and per-row bindings cannot reach it** | Core |
 | `CompactDivider.vue` | Folded-history divider: prototype `.cdiv` markup (badge / text / arrow), `data-live="1"`, keyboard toggle | Core |
 | `ClarifyCard.vue` | Agent question card: prototype `.qcard` markup, per-question steps, single/multi select, a free-form field per question (typed text is always kept and submits alongside the picks; a single-choice click only swaps which preset is selected), and an answer payload that holds presets and typed text apart (`{picked, custom}`); `Submit` / `Skip`, `done` class drives the stamp | Core |
 | `StreamMessage.vue` | One agent row rendered from `Block[]` (markdown runs, code, mermaid cards, tool cards, thinking rows) | Core |
@@ -104,6 +104,23 @@ Behaviour that needs new CSS goes into `styles/app.css`, never into `orbit.css`.
 4. Restored rows never animate (`live: false`): history carries hundreds of thinking rows
    and tool cards, and replaying their entry animations locked the page.
 
+### 4. Links leave through the gateway
+
+1. `inline()` and `escapeAndLink()` rewrite markdown links and bare `http(s)`
+   addresses as `a.md-link` with `data-href`. `renderPlain` runs the same pass, so an
+   address is already clickable during streaming rather than only after the turn
+   settles.
+2. `MessageStream` catches the click on `#streamInner` (row markup is an HTML string,
+   so there are no per-row bindings), calls `preventDefault`, and hands the address to
+   `wire.openExternalUrl`.
+3. `openExternalUrl` re-checks the protocol and sends `system.open_url`. The gateway
+   checks it a third time and opens the OS default browser (`os.startfile` on Windows,
+   `webbrowser.open` elsewhere). A `file:`, `javascript:` or `data:` address is
+   refused at whichever layer sees it first.
+4. The anchor keeps `target="_blank"` deliberately: if the delegated handler ever
+   misses a click, Tauri refuses the popup instead of letting the WebView navigate the
+   app shell to an external page.
+
 ## Test coverage
 
 `tests/run_all.mjs` imports these modules straight from `frontend/src` with no build
@@ -112,7 +129,7 @@ hook, which appends the extensions the source omits from its relative imports.
 
 | Test | Module | Pins |
 | --- | --- | --- |
-| `tests/test_render_html.mjs` | `data/render.ts` | escaping before any markup, tokenising, code-block gutter and copy button, the markdown block set, composed user rows, the seconds-vs-milliseconds split in `dateOf` |
+| `tests/test_render_html.mjs` | `data/render.ts` | escaping before any markup, tokenising, code-block gutter and copy button, the markdown block set, composed user rows, link and autolink output (punctuation, paren balancing, the non-http refusal), the seconds-vs-milliseconds split in `dateOf` |
 | `tests/test_blocks_split.mjs` | `data/blocks.ts` | fence routing to code / mermaid / svg, an open fence marked streaming, `LiveBuilder` committing only closed paragraphs and mutating the tail in place |
 | `tests/test_stream_state.mjs` | `data/stream.ts` | the `items` array identity across append / replace / clear, and `streaming` settling on every rebuild |
 

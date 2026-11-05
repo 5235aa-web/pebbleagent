@@ -415,7 +415,15 @@ function onEvent(ev: GatewayEvent) {
         pendingUser = null
         const idx = streamState.items.findIndex(i => i.id.indexOf('pending-') === 0)
         if (idx > -1) {
-          streamState.items[idx].id = String(p.message_id ?? streamState.items[idx].id)
+          const row = streamState.items[idx]
+          const adopted = String(p.message_id ?? row.id)
+          /* The markup carries the pending id in data-item-id. Once the row adopts
+             the stored id, a click that still reads the old value finds no row and
+             the handler returns silently — copy and delete both went dead that way. */
+          if (adopted !== row.id) {
+            row.innerHTML = row.innerHTML.split('data-item-id="' + row.id + '"').join('data-item-id="' + adopted + '"')
+            row.id = adopted
+          }
           return
         }
       }
@@ -426,12 +434,13 @@ function onEvent(ev: GatewayEvent) {
             kind: (a.kind === 'image' ? 'image' : 'file') as AttachmentView['kind']
           }))
         : []
+      const rowId = String(p.message_id ?? nextId('user'))
       streamState.items.push({
-        id: String(p.message_id ?? nextId('user')),
+        id: rowId,
         kind: 'message',
         className: 'msg user',
         attrs: {},
-        innerHTML: renderUserBubble(text, attachments, nowClock(), Number(p.tokens) || undefined),
+        innerHTML: renderUserBubble(text, attachments, nowClock(), Number(p.tokens) || undefined, rowId),
         plain: text,
         stamp: stampNow()
       })
@@ -2331,35 +2340,51 @@ export function switchProvider(index: number, model: string): Promise<boolean> {
 type ToastFn = (title: string, message: string, kind?: string) => void
 
 function notify(title: string, message: string, kind: 'ok' | 'warn' | 'err' = 'ok'): void {
+  if (typeof window === 'undefined') return
   const fn = (window as unknown as { __pebbleToast?: ToastFn }).__pebbleToast
   if (fn) fn(title, message, kind)
 }
 
 /** Copies the row's plain text. The clipboard API can refuse inside the Tauri
-    webview, so a scratch textarea is the fallback rather than a silent no-op. */
+    webview, so a scratch textarea is the fallback rather than a silent no-op.
+    Every path reports: an empty row says so, and a rejected write retries
+    through the textarea instead of printing "Copied" over a failed copy. */
 export function copyMessage(text: string): boolean {
   const body = text.trim()
-  if (!body) return false
-  try {
-    void navigator.clipboard.writeText(body)
-    notify('Copied', body.slice(0, 60))
-    return true
-  } catch {
+  if (!body) {
+    notify('Nothing to copy', 'That row carries no text.', 'warn')
+    return false
+  }
+  const scratch = (): boolean => {
+    const ta = document.createElement('textarea')
+    ta.value = body
+    ta.style.position = 'fixed'
+    ta.style.opacity = '0'
+    document.body.appendChild(ta)
     try {
-      const ta = document.createElement('textarea')
-      ta.value = body
-      ta.style.position = 'fixed'
-      ta.style.opacity = '0'
-      document.body.appendChild(ta)
       ta.select()
-      document.execCommand('copy')
-      ta.remove()
+      /* execCommand answers whether the copy happened; ignoring it kept the
+         "Copied" toast on top of a refused write. */
+      if (!document.execCommand('copy')) {
+        notify('Copy failed', 'The clipboard is not available here.', 'err')
+        return false
+      }
       notify('Copied', body.slice(0, 60))
       return true
     } catch {
       notify('Copy failed', 'The clipboard is not available here.', 'err')
       return false
+    } finally {
+      ta.remove()
     }
+  }
+  try {
+    const wrote = navigator.clipboard?.writeText(body)
+    if (!wrote) return scratch()
+    wrote.then(() => notify('Copied', body.slice(0, 60))).catch(scratch)
+    return true
+  } catch {
+    return scratch()
   }
 }
 
@@ -3486,6 +3511,33 @@ export async function openImage(path: string): Promise<boolean> {
     global, so every surface reports through the same stack. */
 export function toast(title: string, message: string, kind: 'ok' | 'warn' | 'err' = 'ok'): void {
   notify(title, message, kind)
+}
+
+/** Hands an address to the OS default browser. The gateway validates the
+    protocol again; this check only keeps a non-address off the wire.
+
+    A click that does nothing reads as a broken link, so every failure path says
+    which one it was: offline, slow, or a refusal from the gateway. */
+export async function openExternalUrl(raw: string): Promise<void> {
+  const url = String(raw || '').trim()
+  if (!/^https?:\/\//i.test(url)) {
+    toast('Link not opened', 'Only http and https links can be opened.', 'warn')
+    return
+  }
+  try {
+    await gateway.request('system.open_url', { url })
+  } catch (error) {
+    const message = error instanceof Error ? error.message : ''
+    toast(
+      'Link not opened',
+      message === 'Not connected'
+        ? 'The gateway is offline, so the link was not opened.'
+        : message.startsWith('Timeout:')
+          ? 'The gateway did not answer in time.'
+          : message || 'The gateway refused the link.',
+      'warn'
+    )
+  }
 }
 
 export { escapeHtml }

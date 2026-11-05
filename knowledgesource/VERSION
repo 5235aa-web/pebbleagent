@@ -1614,3 +1614,67 @@
   `tests/run_all.py` `ALL PASSED: 38 tests`
 - 另发现一处与本次无关的既有误伤：`cmd /c "dir"` 被 `_path_check` 当成访问 `/c` 路径而拦下，`sh -c` 不受影响。
   没有改动，留待单独处理
+## 聊天里的链接可点击，经网关交给系统默认浏览器
+
+- `render.ts` 新增 autolink：markdown `[label](url)` 与裸 `http(s)` 地址都变成 `a.md-link`，带 `data-href`
+  供点击使用；`file:` / `javascript:` / `data:` 等协议保持纯文本——链接来自模型输出，协议检查就是全部
+  安全边界。尾部句读留在链接外，成对的 `.../a_(b)` 保留、多余的 `)` 剥出。`renderPlain` 走同一套，
+  流式过程中地址就可点，不必等 `message.complete`
+- `MessageStream.vue` 在 `#streamInner` 上加一处委托：命中 `a[data-href]` 就 `preventDefault` 并调用
+  `wire.openExternalUrl`。行是 HTML 字符串，没有 per-row 绑定，委托是唯一入口
+- `wire.openExternalUrl` 再校验一次协议后发 `system.open_url`；`gateway/rpc/misc.py` 第三次校验，
+  Windows 用 `os.startfile`、其他平台 `webbrowser.open`
+- 锚点保留 `target="_blank"`：万一委托漏掉一次点击，Tauri 会拒绝新窗口，而不是让 WebView 把应用页面
+  导航成外站
+- `orbit.css` 冻结，用户气泡的链接样式写在 `app.css`（气泡是反色，主题色对比度不够，改用 `inherit`
+  + 下划线）
+- 验证：`tests/test_render_html.mjs` 59 → 67 项（新增裸地址、尾部标点、括号平衡、非 http 拒绝、
+  `renderPlain` / `renderUserBubble` 链接），单跑 `PASS=67 FAIL=0`；`python tests\run_all.py`
+  `ALL PASSED: 38 tests`；`npx vue-tsc --noEmit` 无输出；`npx vite build` 7.64s 成功；浏览器实测
+  light 链接 `rgb(31,122,110)`、dark `rgb(95,211,196)`，点击 `defaultPrevented: true` 且地址栏不变
+## 链接渲染 review：两处边界缺陷
+
+- `escapeAndLink`（`renderPlain` 与用户气泡）原先只做裸地址链化，`[label](url)https://b` 会把
+  `)https://b` 吞进第一个地址，生成一个打不开的 href。现在与 `inline()` 一样先用占位符收走
+  markdown 链接，裸地址只会碰到真正的裸地址
+- `autolink` 的前导字符集合补上 `)` 与占位符：markdown 链接紧贴的下一个地址不再漏检
+- `openExternalUrl` 的 catch 不再一律报 "did not answer"——离线 / 超时 / 网关拒绝分开说，
+  否则点不动链接时用户分不清是后端没起来还是被拒绝了
+- 验证：新增 2 条断言（markdown 链接后的地址、`renderPlain` 不吞地址），`test_render_html.mjs`
+  67 → 69 项 `PASS=69 FAIL=0`；`python tests\run_all.py` `ALL PASSED: 38 tests`；
+  `npx vue-tsc --noEmit` 无输出；`npx vite build` 7.88s
+- 未修（记录在案）：`renderPlain` 目前没有任何生产调用者——`blocks.ts` 用 `renderMarkdown(tail, streaming)`
+  处理未完成段落，这个导出的快路径只剩测试在用；markdown 链接的正则从 `[^)]+` 收紧到 `[^)\s]+` 后，
+  含空格的 URL 不再识别（畸形输入，接受）
+## 第二次 review：ASCII 边界与双重转义
+
+- 上一版的裸地址正则用 `[^\s<>"'`]+`，在中文里是错的：`https://x.com。` 会把句号吃进 href，
+  `https://x.com，然后` 会把整个中文短语吃进去，而 `参考https://x.com`、`（https://x.com）`、
+  `"https://x.com"` 则完全不识别。改为两侧都以 ASCII 为界——地址 `[!-~]+`，前导任意非字母数字字符
+- `autolink` 返回的 tail 曾被 `escapeHtml` 处理，随后 `inline()` 又整体 escape 一次，
+  `"https://x.com"` 的收尾引号因此变成 `&amp;quot;`。tail 现在原样返回，由调用方统一转义
+- `URL_TAIL` 去掉 `]`：`https://x/a[1]` 是完整地址，而 `[label](url)` 的 `]` 到不了这一步
+- 验证：新增 4 条断言（中文标点、无空格中文前缀与全角括号、引号只转义一次、方括号路径），
+  `test_render_html.mjs` 69 → 73 项 `PASS=73 FAIL=0`；`python tests\run_all.py` `ALL PASSED: 38 tests`；
+  `npx vue-tsc --noEmit` 无输出；`npx vite build` 8.20s；浏览器注入中文段落实测 7 个链接的
+  `data-href` 全部不含汉字或全角标点，点击 `defaultPrevented: true` 且地址栏不变，
+  旧 backend 回 `Method not found: system.open_url` 时 toast 如实显示该原因
+## 用户消息的复制/删除按钮点了没反应
+
+- 根因不在按钮，在 id。`sendPrompt` 先画一条 `pending-N` 的行，按钮把 `data-item-id="pending-N"`
+  写进了 HTML 字符串；`user_message.saved` 到达后只把 `item.id` 改成服务端数字，那一串标记仍是旧值。
+  `MessageStream` 的委托按 `data-item-id` 查行，查不到就直接 `return`，于是复制和删除都静默失效。
+  agent 行不受影响，因为它的按钮走 Vue 的 `@click`，拿的是 `props.item` 引用
+- 现在 adopt 时同步重写 `innerHTML` 里的 `data-item-id`，并在 `user_message.saved` 的另一条分支
+  （没有 pending 行可接管时）补上 `itemId`，那一行此前连按钮都不会生成
+- `copyMessage` 补齐反馈：空内容提示 `Nothing to copy`；`navigator.clipboard.writeText` 返回的
+  Promise 之前被 `void` 丢弃，失败时仍会打印 "Copied"，现在 `.then/.catch` 落到 textarea 兜底
+- `MessageStream` 查不到行时提示 `Row not found`，不再无声返回
+- `renderPlain` 只加注释，说明它是没有生产调用者的历史快路径，避免下次误判成活跃代码
+- 验证（浏览器实测，`http://localhost:5180` 连真实 gateway）：pending 行点复制出现 `Copied`；
+  手动执行 adopt（`pending-9001` → `42`）后 DOM 无残留旧 id，点复制仍出现 `Copied`；
+  历史用户消息（id 58755）复制出现 `Copied`；agent 行 `Copy` 出现 `Copied`；
+  live 行 `Delete` 让行消失并提示 `Removed locally`；伪数字 id 删除走真实 RPC 并提示
+  `Delete failed`、随后 `loadSession` 用服务器数据恢复（行数 1 → 18）
+- `npx vue-tsc --noEmit` 无输出；`npx vite build` 成功；`python tests\run_all.py` `ALL PASSED: 38 tests`；
+  `tests/test_render_html.mjs` `PASS=73 FAIL=0`

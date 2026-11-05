@@ -126,18 +126,85 @@ export function renderCodeBlock(lang: string, code: string): string {
 
 /* ---- markdown ---- */
 
-function inline(text: string): string {
-  const codes: string[] = []
-  let s = text.replace(/`([^`]+)`/g, (_all, code) => {
-    codes.push('<code>' + escapeHtml(code) + '</code>')
-    return '\u0000' + (codes.length - 1) + '\u0000'
+/* ---- links ----
+   Only http and https ever leave this module as an address the shell may hand
+   to the OS. Everything else (file:, javascript:, data:) stays plain text, so
+   a reply cannot turn into an instruction the shell is willing to execute. */
+
+const LINK_PROTOCOL = /^https?:\/\//i
+
+/* Punctuation that follows an address rather than belonging to it. `]` is not
+   in the set: `https://x/a[1]` is a whole address, while the `]` that closes
+   `[label](url)` never reaches here. */
+const URL_TAIL = /[.,;:!?'"]+$/
+
+function linkTag(href: string, label: string): string {
+  const safe = escapeHtml(href)
+  // target is kept on purpose: if the delegated handler ever misses a click,
+  // the WebView opens a popup Tauri refuses instead of replacing the app shell.
+  return '<a class="md-link" href="' + safe + '" data-href="' + safe + '" target="_blank" rel="noreferrer">' + label + '</a>'
+}
+
+/** Rewrites bare addresses as link markup. Each one is held aside so the later
+    escape pass cannot touch the quotes that sit inside the tag.
+
+    Both boundaries are ASCII on purpose. The address itself is `[!-~]+`, so an
+    address that ends mid-sentence in Chinese keeps its `。`, `，` or `的` outside
+    the href instead of swallowing them; the leading side is any non-alphanumeric
+    character, which covers whitespace, brackets, quotes, CJK and the hold
+    placeholder `[label](url)` leaves behind. */
+function autolink(src: string, hold: (html: string) => string): string {
+  return src.replace(/(^|[^A-Za-z0-9])(https?:\/\/[!-~]+)/gi, (all, lead: string, raw: string) => {
+    let url = raw
+    let tail = ''
+    const m = URL_TAIL.exec(url)
+    if (m) {
+      tail = m[0]
+      url = url.slice(0, url.length - tail.length)
+    }
+    // `.../a_(b)` keeps its closing paren; `.../a)` does not.
+    while (url.endsWith(')') && url.split(')').length > url.split('(').length) {
+      tail = ')' + tail
+      url = url.slice(0, -1)
+    }
+    if (!LINK_PROTOCOL.test(url) || url.length < 9) return all
+    // The tail is raw here: both callers run escapeHtml over the whole string
+    // afterwards, and escaping it twice turned `"` into `&amp;quot;`.
+    return lead + hold(linkTag(url, escapeHtml(url))) + tail
   })
+}
+
+function inline(text: string): string {
+  const stash: string[] = []
+  const hold = (html: string) => '\u0000' + (stash.push(html) - 1) + '\u0000'
+
+  // Code first, so a backtick span is never rewritten by the rules below.
+  let s = text.replace(/`([^`]+)`/g, (_all, code) => hold('<code>' + escapeHtml(code) + '</code>'))
+
+  // Markdown links before autolink: the address inside [label](url) would
+  // otherwise be claimed by the bare-URL pass and the label left dangling.
+  s = s.replace(/\[([^\]\n]+)\]\(([^)\s]+)\)/g, (all, label: string, href: string) =>
+    LINK_PROTOCOL.test(href) ? hold(linkTag(href, escapeHtml(label))) : all)
+
+  s = autolink(s, hold)
   s = escapeHtml(s)
   s = s.replace(/\*\*([^*]+)\*\*/g, '<strong>$1</strong>')
   s = s.replace(/(^|[\s(])\*([^*]+)\*/g, '$1<em>$2</em>')
-  s = s.replace(/\[([^\]]+)\]\(([^)]+)\)/g, '<a href="$2" target="_blank" rel="noreferrer">$1</a>')
-  s = s.replace(/\u0000(\d+)\u0000/g, (_all, i) => codes[Number(i)] || '')
+  s = s.replace(/\u0000(\d+)\u0000/g, (_all, i) => stash[Number(i)] || '')
   return s
+}
+
+/** Escaping plus address linking, for the rows that render as plain text.
+
+    The markdown-link pass mirrors `inline()` on purpose: an unfinished paragraph
+    can already hold `[label](https://...)`, and without the hold the bare pass
+    would swallow whatever follows the closing paren into the address. */
+function escapeAndLink(text: string): string {
+  const stash: string[] = []
+  const hold = (html: string) => '\u0000' + (stash.push(html) - 1) + '\u0000'
+  const s = text.replace(/\[([^\]\n]+)\]\(([^)\s]+)\)/g, (all, label: string, href: string) =>
+    LINK_PROTOCOL.test(href) ? hold(linkTag(href, escapeHtml(label))) : all)
+  return escapeHtml(autolink(s, hold)).replace(/\u0000(\d+)\u0000/g, (_all, i) => stash[Number(i)] || '')
 }
 
 /** Renders the inside of a .md container: paragraphs, h4, ul/ol lists. */
@@ -244,7 +311,7 @@ export function renderUserBubble(text: string, attachments: AttachmentView[], ti
   return (
     '<div class="bubble">' +
     renderAttachments(attachments) +
-    '<div class="bubble-text">' + escapeHtml(text) + '</div>' +
+    '<div class="bubble-text">' + escapeAndLink(text) + '</div>' +
     '<div class="bubble-foot"><span>' + escapeHtml(time) + '</span><span>·</span><span>' +
     (tokens ? tokens + ' tokens' : 'sent') + '</span></div>' +
     '</div>' + actions
@@ -256,12 +323,19 @@ export function renderUserBubble(text: string, attachments: AttachmentView[], ti
     A full markdown pass on every delta re-parses the whole growing answer,
     which is quadratic in the reply length and rebuilds the DOM subtree dozens
     of times per second. The settled text is rendered properly once, on
-    message.complete. */
+    message.complete.
+
+    NOTE: no production code calls this any more. `blocks.ts` routes the open
+    tail through `renderMarkdown(text, streaming)` and the caret comes from that
+    flag, so this export survives only for its tests in
+    `tests/test_render_html.mjs`. It is kept rather than deleted in case the
+    cheap path is wanted again; treat it as inactive when changing the live
+    renderers, and do not assume a fix here reaches the transcript. */
 export function renderPlain(text: string, streaming: boolean): string {
   const blocks = text.split(/\n{2,}/)
   const out: string[] = []
   for (let i = 0; i < blocks.length; i++) {
-    const body = escapeHtml(blocks[i]).replace(/\n/g, '<br>')
+    const body = escapeAndLink(blocks[i]).replace(/\n/g, '<br>')
     if (!body && i < blocks.length - 1) continue
     const last = i === blocks.length - 1
     out.push('<p>' + body + (streaming && last ? CARET : '') + '</p>')

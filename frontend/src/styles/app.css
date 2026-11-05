@@ -768,3 +768,18 @@ input.attach-input[type="file"] {
   box-shadow: 0 4px 12px -5px var(--err);
 }
 .btn-danger:hover { filter: brightness(1.06); }
+
+
+/* ---- message links ----
+
+   orbit.css is frozen, so the user-bubble link rule lives here. The bubble is
+   inverted (ink background, bg text) and the themed link colour drops below
+   readable contrast on it, so the address keeps the bubble colour and is
+   marked with an underline instead. Assistant rows use the prototype .md a. */
+
+.msg.user .bubble-text a {
+  text-decoration: underline;
+  text-underline-offset: 2px;
+  cursor: pointer;
+}
+.msg.user .bubble-text a:hover { text-decoration-thickness: 2px; }

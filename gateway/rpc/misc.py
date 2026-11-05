@@ -1,6 +1,8 @@
 """Agent, note, message, export, and completion RPCs."""
 
 import logging
+import os
+import sys
 
 logger = logging.getLogger(__name__)
 
@@ -186,6 +188,30 @@ def handle(ctx, method):
         srv._save_notebook(entries)
         # 回读一次，前端拿到的是清理过的表（空条目已丢弃、缺 id 已补）
         return {"id": rid, "result": {"success": True, "entries": srv._load_notebook()}}
+
+    # ==================== 外部链接 ====================
+
+    if method == "system.open_url":
+        url = params.get("url")
+        if not isinstance(url, str):
+            return {"id": rid, "error": {"code": -32000, "message": "url required"}}
+        url = url.strip()
+        # 只放行 http/https。file:、javascript:、data: 交给系统启动，等于把任意
+        # 本地可执行目标递给了 shell，而链接来自模型输出，不能当可信输入。
+        if not url.lower().startswith(("http://", "https://")):
+            return {"id": rid, "error": {"code": -32000, "message": "only http and https links can be opened"}}
+        if len(url) > 2048 or any(ch in url for ch in ("\x00", "\n", "\r")):
+            return {"id": rid, "error": {"code": -32000, "message": "url rejected"}}
+        try:
+            if sys.platform == "win32":
+                os.startfile(url)
+            else:
+                import webbrowser
+                webbrowser.open(url, new=2)
+        except Exception as e:
+            logger.warning(f"[Server] Failed to open url: {e}")
+            return {"id": rid, "error": {"code": -32000, "message": "could not open the link"}}
+        return {"id": rid, "result": {"success": True}}
 
     # ==================== 文件变更面板 (File Changes) ====================
 

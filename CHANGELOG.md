@@ -7,6 +7,12 @@ which is what the in-app update sheet shows before installing. Add the section
 before running `npm run release`; the release stops if it is missing, because a
 feed with empty notes tells the user nothing.
 
+## 1.1.6
+
+- Links in the transcript are clickable. An address written as `[label](url)` or pasted bare turns into a themed anchor, and a click hands it to the OS default browser through a new `system.open_url` RPC instead of navigating the app window. Only `http` and `https` ever reach the shell — `file:`, `javascript:` and `data:` stay plain text, because the link text comes from model output. The address stops where the ASCII text stops, so a Chinese sentence keeps its `。` and `，` outside the href and `参考https://x` is detected without a space in front of it.
+- Copy and Delete on a user message work again. Sending a prompt drew a `pending-N` row whose buttons carried that id inside the markup; when the server confirmed the message the row adopted the stored id but the markup kept the old one, so the click handler looked up a row that no longer answered to that name and returned silently. The markup is rewritten with the adopted id now, and the branch that draws a row for a prompt this client never queued emits the buttons at all.
+- Copy reports every outcome. An empty row says `Nothing to copy`, a refused clipboard write retries through a scratch textarea, and that fallback checks whether the copy actually happened instead of printing `Copied` over a refusal.
+
 ## 1.1.5
 
 - The MCP panel stopped putting a token field on every server. Only a server whose env carries a credential gets one now, and it writes into the variable that server actually reads (`GITHUB_PERSONAL_ACCESS_TOKEN`); before this every entry showed "paste token…" and the secret went to a fixed `MCP_TOKEN` key that github never looks at.
