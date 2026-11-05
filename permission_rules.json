@@ -1,5 +1,5 @@
 {
-  "mode": "auto",
+  "mode": "manual",
   "allow": [
     "read_file",
     "list_directory",
@@ -34,7 +34,30 @@
     "execute_shell:node --version",
     "execute_shell:npm --version"
   ],
-  "deny": [],
+  "deny": [
+    "execute_shell:npm run tauri build*",
+    "execute_shell:npm run build*",
+    "execute_shell:npm run release*",
+    "execute_shell:npm run publish*",
+    "execute_shell:npx tauri build*",
+    "execute_shell:npx vite build*",
+    "execute_shell:vite build*",
+    "execute_shell:cargo tauri build*",
+    "execute_shell:pnpm build*",
+    "execute_shell:yarn build*",
+    "execute_shell:*yinstaller*",
+    "powershell:npm run tauri build*",
+    "powershell:npm run build*",
+    "powershell:npm run release*",
+    "powershell:npm run publish*",
+    "powershell:npx tauri build*",
+    "powershell:npx vite build*",
+    "powershell:vite build*",
+    "powershell:cargo tauri build*",
+    "powershell:pnpm build*",
+    "powershell:yarn build*",
+    "powershell:*yinstaller*"
+  ],
   "ask": [
     "execute_shell:rm *",
     "execute_shell:del *",

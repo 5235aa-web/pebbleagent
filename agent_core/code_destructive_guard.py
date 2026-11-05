@@ -37,6 +37,11 @@ _DESTRUCTIVE_PATTERNS: List[Tuple[str, str]] = [
     # PowerShell 磁盘命令（经代码字符串调用）
     (r'\b(Format-Volume|Clear-Disk|Initialize-Disk)\b', "PS disk command"),
     (r'\b(vssadmin|wbadmin)\b[^\r\n]*\bdelete\b', "backup delete"),
+    # 构建/打包命令（代码里以字符串或 argv 形式调用）
+    (r'\btauri\s+build\b', "tauri build"),
+    (r'\bnpm\s+run\s+(?:build|release|publish)\b', "npm run build/release/publish"),
+    (r'\b(?:npx\s+)?(?:tauri|vite)\s+build\b', "tauri/vite build"),
+    (r'\bpyinstaller\b', "PyInstaller"),
 ]
 
 

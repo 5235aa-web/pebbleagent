@@ -43,13 +43,13 @@ def main() -> int:
     from gateway.server import handle_request
 
     resp = handle_request("path_whitelist.save", {"paths": ["C:\\"]}, "1")
-    check("7b: drive root rejected", "error" in resp and "too broad" in resp["error"]["message"],
+    check("7b: drive root rejected", "error" in resp and "drive or filesystem root" in resp["error"]["message"],
           f"got {resp}")
     resp = handle_request("path_whitelist.save", {"paths": ["relative/path"]}, "1")
     check("7b: relative path rejected", "error" in resp and "absolute" in resp["error"]["message"],
           f"got {resp}")
     resp = handle_request("path_whitelist.save", {"paths": ["", "x"]}, "1")
-    check("7b: empty entry rejected", "error" in resp and "non-empty" in resp["error"]["message"],
+    check("7b: empty entry rejected", "error" in resp and "empty or not a string" in resp["error"]["message"],
           f"got {resp}")
     resp = handle_request("path_whitelist.save", {"paths": ["a", "b", "c", "d", "e", "f"]}, "1")
     check("7b: >5 entries rejected", "error" in resp and "maximum 5" in resp["error"]["message"],

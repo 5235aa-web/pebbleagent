@@ -64,6 +64,16 @@ class PowerShellValidator:
         (r'\bformat\s+[A-Za-z]:', "格式化驱动器 (format X:)"),
         (r'\bdd\s+if=[^\r\n]*\bof=/dev/', "直接写入磁盘设备 (dd of=/dev/)"),
         (r'\bshutdown\b[^\r\n]*\b(/s|/r|/p)\b', "系统关机/重启 (shutdown)"),
+
+        # 构建与打包：产物覆盖正在运行的 exe / 安装包，只能由用户自己执行。
+        (r'\btauri\s+build\b', "禁止打包应用 (tauri build)，打包由用户自行执行"),
+        (r'\bnpm\s+run\s+(?:build|release|publish)\b', "禁止前端构建/发布 (npm run build|release|publish)"),
+        (r'\bnpx\s+(?:tauri|vite)\s+build\b', "禁止前端构建 (npx tauri/vite build)"),
+        (r'\bvite\s+build\b', "禁止前端构建 (vite build)"),
+        (r'\bpnpm\s+(?:run\s+)?(?:build|release|publish)\b', "禁止前端构建/发布 (pnpm build)"),
+        (r'\byarn\s+(?:run\s+)?(?:build|release|publish)\b', "禁止前端构建/发布 (yarn build)"),
+        (r'\bpyinstaller\b', "禁止打包 Python 后端 (PyInstaller)"),
+        (r'\bpython\S*\s+-m\s+pyinstaller\b', "禁止打包 Python 后端 (python -m PyInstaller)"),
     ]
 
     # 警告但允许（🟡）
