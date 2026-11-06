@@ -1,6 +1,6 @@
 # PebbleAgent — Version Notes
 
-> Last updated: 2026-11-04
+> Last updated: 2026-11-06
 
 ## Platform
 
@@ -1704,3 +1704,179 @@
 
 Recorded because the knowledge base is read before edits: a stale file size makes
 a normal-sized module look like the project's worst hotspot.
+
+## 右侧 dock 的 tab 栏能装下任意多个 tab
+
+- `.dr-tabs` 在 orbit.css 里本来就是 `flex: 1 1 auto; min-width: 0; overflow-x: auto`，
+  加第六个 tab 不会推挤右侧两个图标按钮。缺的是溢出之后的三件事，现在都补在
+  `app.css` 和 `DockHead.vue`，冻结的 orbit.css 与 runtime.js 零改动
+- 全局 8px 滚动条会吃掉 28px 高 tab 的四分之一，还把 `bottom: -1px` 的选中下划线裁掉：
+  滚动条隐藏（`scrollbar-width: none` 加 `::-webkit-scrollbar { display: none }`），
+  改由滚轮驱动
+- 纵向滚轮在横向滚动容器上什么都不做（overflow-y 计算为 auto、内容不可滚，事件直接冒泡过去）：
+  DockHead 用 `passive: false` 手工绑定 wheel，把 deltaY 映射到 scrollLeft；
+  触控板横滑（deltaX 占优）和已无溢出的情况一律放行，页面滚动不受影响
+- `selectTab` 只 toggle class，从命令面板切到视野外的 tab 不会有任何提示：
+  MutationObserver 盯 `on` class 变化后把该 tab 滚进来，留 20px（渐隐宽度 +2）余量，
+  否则几何上可见的 tab 仍会落在渐隐区里发灰
+- 溢出状态由 ResizeObserver 重算，覆盖窗口跨过 1380px 断点（`--right-w` 384 变 348）的场景；
+  箭头和渐隐从同一个 `scrollable` / `fade-l` / `fade-r` class 派生，`:disabled` 隐藏但保留占位，
+  避免点击过程中条带重排
+- tab 仍然是手写按钮，绝不能用 v-for：节点重建会按模板重置 class，把 runtime 拥有的 `on` 冲掉
+- 验证（浏览器实测 `http://localhost:5180`，注入假 tab 制造溢出）：5 个 tab 时 249px / 294px 不溢出、
+  箭头隐藏；注入后 scrollWidth 409 大于 clientWidth 309、`scrollable` 出现、右箭头可点、右渐隐出现；
+  deltaY 60 的 wheel 事件让 scrollLeft 0 变 60 且 `defaultPrevented` 为 true；`__pebbleNav.tab('test2')`
+  让 scrollLeft 0 变 100、目标完全可见、到末尾时右箭头自动隐藏；1300px 窗口下 `--right-w` 348px、
+  加第六个 tab 溢出 38px 并正确进入滚动；移除假 tab 后状态完整回落（`dr-tabwrap`、两个箭头 opacity 0）
+- `npx vue-tsc --noEmit` 无输出；浏览器控制台无 error / warn
+
+## GitHub 仓库面板
+
+- 新增 `gateway/rpc/github.py`（status / repos / repo / contents / commits / issues / pulls），
+  在 `gateway/rpc/__init__.py` 注册 `github` 域。所有方法进线程池：`ws_server.py` 原来只把
+  四个硬编码方法丢给 `asyncio.to_thread`，现在 `github.*` 走同一分支——REST 往返 100ms–2s，
+  同步执行会冻住整个事件循环，流式回复和权限弹窗一起卡
+- token 从用户级 `.mcp.json` 的 github 条目读，只认 `GITHUB_*` 变量，bundled 的 `ghp_xxxx`
+  占位符直接拒绝。凭证不下发渲染进程，`status` 只回 login / avatar / 配额。响应按 ETag 缓存，
+  304 直接回放；每个回复带 `rate`，面板据此画配额
+- `repo` 只接受 `owner/name`，`contents` 拒绝 `..` 段；401 / 403 / 404 / 限流都映射成可读消息
+- 新增 `frontend/src/data/github.ts` 与 `components/GithubPane.vue`：身份条（octocat 在
+  accent 光环里）、可过滤的仓库架（语言色脊、stars/forks、相对时间、topics）、详情四视图
+  （语言占比条 / README / 文件树 / 提交轨 / Activity）
+- `cleanReadme` 在交给共享的 `renderMarkdown` 之前清掉 badge 行和 `>` 引用：transcript 的
+  markdown 子集没有 `<img>` 也没有 blockquote，原样渲染会让整行 badge 塌成一串空链接，
+  引用行前面还挂着字面的 `>`
+- `DockHead` 的 GitHub tab 是纯图标（13px octocat，`aria-label` 兜底），六个 tab 实测
+  294/294 不溢出，滚动箭头保持隐藏；`RightDock` 挂载面板，命令面板加一项
+- 修掉三个实测暴露的问题：`loadStatus` 失败时没置 `ready`，面板永远停在骨架屏；`ready`
+  的守卫把连接后的重试吞掉，改成按成功而非标志判断；`openRepo` 没有加载根目录，Files
+  视图恒空
+- 实测（`http://localhost:5180` 连源码后端）：`@5235aa-web` / 1 repository / 4971 of 5000；
+  `pebbleagent` 语言条 6 段 Python 64% Vue 10% TypeScript 10% CSS 10% JS 4% 其他 1%；
+  README 9429 字符清洗后无空链接、无 `>` 标记、可滚动；Files 39 项；Commits 12 行；
+  Activity 空态文案正确；搜索 `peb` 命中 1、`zzzz` 走空态、清空恢复；浅色与深色主题
+  卡片/文字/边框对比正常
+- `npx vue-tsc --noEmit` 无输出；浏览器控制台无 error / warn
+
+## GitHub 面板补上文件查看，ETag 缓存加锁
+
+- `github.file` 走 `Accept: application/vnd.github.raw` 拿原始字节，省掉 base64 往返。
+  三种情况直接拒绝而不是让面板渲染乱码：超过 `_MAX_FILE_BYTES`、路径里带 `..` 段、
+  前 8 KB 出现 NUL 字节（标 `binary: true`，text 留空）。超限时 GitHub 回 403 且
+  响应体里写着 1 MB 限制，这条分支排在通用解释器前面——否则会被判成 scope 问题，
+  把人赶去重发一个本来好好的 token
+- 前端文件视图：面包屑加大小在头部，正文用 `renderCodeBlock`（和对话里代码块同一个
+  高亮器），二进制回占位卡片。`openFile` 自带序列号，`gh.file` 在文本到达前保持 null，
+  所以视图画的是加载态而不是上一个文件的内容
+- 缓存加固：`_CACHE` 和 `_CACHE_ORDER` 会被线程池里的多个 `github.*` 同时碰。
+  CPython 的 dict 操作不会崩，但并发 miss 同一个 URL 会把同一个 key 追加两次，淘汰顺序
+  就脏了。加了 `threading.Lock`，只在 dict 操作前后持锁、绝不跨过 HTTP 请求
+- 验证（真实仓库 `5235aa-web/pebbleagent`）：`github.file` 直接调用返回 README.md 194 行、
+  logo.png 判为二进制且 text 为空、`../../etc/passwd` 回 `invalid path`；浏览器里
+  Files 39 项 → 点 README.md 渲染 194 行行号、9.2 KB；返回后回到 39 项、面包屑
+  `pebbleagent`；进 `assets` 后 6 项、面包屑 `pebbleagent / assets`；点 logo.png 显示
+  `Binary file · 457.1 KB` 且不出代码；点 png1.png（1.0 MB）显示
+  `File is larger than 1 MB; open it on GitHub instead`；点面包屑 `pebbleagent` 回根目录 39 项
+- 线程安全压测：20 线程并发 `_fetch` 同一 URL，0 错误，缓存 1 条、淘汰队列无重复键
+- 事件循环验证（两条连接）：A 连发 12 个 `github.contents` 耗时 7995ms 的同时，
+  B 的 `session.list` 11ms、`usage.stats` 9ms 返回。`to_thread` 只保证事件循环不被占，
+  同一连接内的请求仍然串行，这是 `async for` 逐条处理的既有架构
+- `npx vue-tsc --noEmit` 无输出；`python -m py_compile gateway/rpc/github.py` 通过
+
+## GitHub 面板接上对话、当前仓库、热力图和 PR diff
+
+- 带进对话：文件视图的 Ask 按钮、issue 与 PR 卡片右侧的对话图标，把选中的东西写进
+  `#composerTa` 并 dispatch `input`。这是面板唯一的写路径，走的是运行时自己的发送流程，
+  效果和用户手打一样。文件属于当前项目对应的仓库时写 `@pebble-file: 路径`，
+  否则写 GitHub URL——给 agent 一个它读不到的本地路径没有意义
+- 当前仓库：`github.local` 读 `.git/config` 的 origin 和 `.git/HEAD` 的分支，两者都不 spawn
+  git，解析一行 ini 的面比执行进程小得多。只有 `ahead` 会真的执行
+  `git rev-list --count HEAD --not --remotes`，只读、`GIT_TERMINAL_PROMPT=0`、3 秒超时、
+  失败回 0。前端除了首个 status 回答之外还 watch 了 `projects.active`——项目注册表在 socket
+  连上之后才到，否则徽章会一直空着（实测就是这个问题）
+- 热力图：`/stats/commit_activity` 的 52x7 矩阵，4px 方块 2px 间隙。GitHub 第一次请求回 202
+  （现场计算），后端原样透传 `pending` 而不是假装仓库没有提交，前端等 5 秒重试两次。
+  分档是绝对的，不按仓库自身最大值缩放，否则一周一次提交也会显示成满格
+- PR diff：点击卡片原地展开，按文件列 `+/-` 和 unified diff，每页 100 个文件封顶。
+  `truncated` 同时覆盖两种情况——撞上 100 上限，或任一文件没有 patch（GitHub 对二进制和
+  超大文件就是这样表达的）——命中时底部显示 "Some changes are not shown"
+- 验证（真实仓库加临时打开 vuejs/core）：`5235aa-web/pebbleagent` 列表出现 `current` 徽章；
+  详情页本地条 `main · in sync`；热力图 52 列 364 个方块、总计 111 次提交；
+  文件视图 Ask 插入 `@pebble-file: README.md` 并聚焦输入框；vuejs/core 的 issue Ask 插入
+  `GitHub issue #9145 in vuejs/core: Dependency Dashboard` 加链接；PR #16161 展开 2 个文件、
+  patch 15 行、`@@ -7,6 +7,7 @@` 头正确；运行时置 `truncated` 后提示文案如期出现
+- `npx vue-tsc --noEmit` 无输出；`python -m py_compile gateway/rpc/github.py` 通过
+
+## 文件视图的 Ask 提到主操作位，未推送状态改为整条警示
+
+- `.gh-ask` 原来是 `--surface-2` 底加 `--muted` 字，9px 灰色小按钮，和文件名并排时读起来像一个标签。
+  它是文件视图里唯一的动作，也是从面板进入对话的唯一入口，现在改成 accent 描边加 `--accent-soft` 底、
+  带对话气泡图标、hover 填充成 accent 实底配 `--accent-ink` 字，按下缩放 0.95
+- 未推送提交原来只把文字染成 `--warn`。现在 `ahead > 0` 时整条本地条变实线边框加 `--warn-soft` 底，
+  状态点同步换成 warn 色，隔着一个面板也能看出这个仓库有未推送的东西
+- 实测：Ask 49x21、accent 色 `rgb(62,107,47)`、带图标、文件栏无溢出、点击仍写入
+  `@pebble-file: README.md` 并聚焦；运行时把 `localAhead` 置 3 后本地条边框转 warn、文字变
+  `3 unpushed`，复位后恢复 `in sync`
+- `npx vue-tsc --noEmit` 无输出
+
+## 本地条只报 ahead，把十二个未提交的改动说成 in sync
+
+- 用户指出：改了这么多文件都没推送，面板却说同步。查下来 `git log origin/main..HEAD` 确实是空的，
+  本地没有未推送的 commit——但 `git status --porcelain` 有 12 行，全部是未提交的改动。
+  `ahead` 回答的是"我推了吗"，用户问的是"我的东西到 GitHub 了吗"，后者包含工作区
+- `github.local` 增加 `dirty`：`git status --porcelain` 的非空行数。和 `ahead` 一起抽到
+  `_git(root, args)` 辅助函数里，两条命令都是只读、`GIT_TERMINAL_PROMPT=0`、3 秒超时、
+  失败回 0。`GIT_TERMINAL_PROMPT` 是这次补的：原来的 `_ahead_count` 没带，
+  万一 git 要凭据会一直挂到超时
+- 前端本地条现在按三种组合显示：`3 unpushed · 12 changed`、`3 unpushed`、`12 changed`、
+  都为零时 `in sync`。任一非零就整条转 warn 实线加 warn-soft 底，状态点同步变色
+- 验证：后端直调 `{"ahead": 0, "dirty": 12}`，与 `git status --porcelain` 的 12 行一致；
+  运行时注入三种组合，文字依次是 `main 12 changed`、`main 3 unpushed 12 changed`、
+  `main in sync`，边框在有待推送内容时为 `rgb(232,177,85)` 实线
+- `npx vue-tsc --noEmit` 无输出；`python -m py_compile gateway/rpc/github.py` 通过
+
+## 仓库列表分页与详情页刷新
+
+- 仓库列表原来只拉一页，`hasMore` 被前端丢掉，仓库超过 100 个时第 101 个永远看不到。
+  现在 `loadRepos(more)` 追加而不是替换，按 `fullName` 去重（两次请求之间有人推了新仓库会
+  让分页窗口错位），底部出现虚线 `Load more`，加载中禁用并改文案
+- 详情页头部加刷新按钮。`refreshRepo` 用 `force` 重新打开当前仓库，然后恢复 `view` 和
+  `dirPath`，刷新不会把人踢回 README
+- 后端 `force` 走 `threading.local`：`handle` 开头按 `params["force"]` 设置，
+  `_fetch` 读到就跳过 ETag。做成线程局部而不是参数，是因为一次刷新要覆盖 metadata、
+  README、languages、目录树和三个列表，给八个函数各加一个参数只为服务一个按钮不值得。
+  线程池复用线程时 `handle` 每次覆盖，不会继承上一个请求的值
+- 验证：Python 层打桩 `_request` 观察条件头，冷请求无 `If-None-Match`、缓存请求带、
+  force 请求不带、force 之后再请求又恢复带，说明 force 只影响单次且不污染缓存；
+  浏览器里 `Load more` 注入 `hasMore` 后出现，358x26 虚线边框、文字 `Load more`、
+  清除标志后消失；详情页头部两个 22px 图标，`Refresh` 和 `Open on GitHub`
+- `npx vue-tsc --noEmit` 无输出；`python -m py_compile gateway/rpc/github.py` 通过
+
+## 提交能展开看 diff 了
+
+- 新增 `github.commit`：`GET /repos/{repo}/commits/{sha}`，返回 `stats` 加逐文件 patch。
+  只接受 7 到 40 位的十六进制 sha——GitHub 在这个位置也认分支名和 tag，那是这个面板不该去解析的 ref
+- `_commit_brief` 的 `sha` 改成完整 40 位，另给 `shortSha` 供显示。列表项原来存的是截断到 7 位的值，
+  拿它去请求详情有前缀歧义的风险。前端 `:key` 用完整值，行内打印用 `shortSha || sha`——
+  这个降级让前端在旧后端上也不会显示空白
+- 提交行从 `div` 变成 `button`，展开区复用 PR 那套 `.gh-diff-*` 样式，顶部多一行
+  `+397 -79 17 files` 的总计。列表接口不返回 stats 和 patch，所以这行数字只在你点开之后才存在，
+  这正是"只在展开后显示"的代价与收益
+- `toggleCommit` 按 sha 缓存，重复展开零请求；`openRepo` 会清空展开状态和缓存
+- 验证（真实仓库）：列表项返回 `sha=fcc198e706...` 加 `shortSha=fcc198e`；
+  详情返回 `stats {397, 79, 476}`、17 个文件、首个文件 `CHANGELOG.md +7/-0` 14 行 patch；
+  `../../x` 和 `main` 都被 `commit sha required` 拒绝
+- `npx vue-tsc --noEmit` 无输出；`python -m py_compile gateway/rpc/github.py` 通过
+
+## 面板内的滚动条换成 thinking 那套 4px 样式
+
+- 根因是 `scrollbar-width: thin`：任何非 auto 值都会让 Chromium 丢掉
+  `::-webkit-scrollbar` 规则、改画自己的灰条。README 和 diff 当初图省事写了 `thin`，
+  于是 4px 样式再怎么加也不会生效
+- 去掉 `.gh-md` 和 `.gh-diff-body` 的 `scrollbar-width`，把 thinking 区域那套规则
+  抄给三个滚动容器（README、diff、文件内容）：4px、透明轨道、`--line-strong` 滑块、
+  hover 转 `--faint`、拖动时转 `--accent`，另加透明 `scrollbar-corner` 避免两轴交汇处
+  出现亮色块
+- 验证：`getComputedStyle` 读到 `scrollbarWidth: auto`（说明 thin 已移除），
+  CSSOM 里能查到 `.gh-diff-body::-webkit-scrollbar` 规则，提交展开仍是
+  `+397 -79 17 files`、17 个文件、patch 14 行

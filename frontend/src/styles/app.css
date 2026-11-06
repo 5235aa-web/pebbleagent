@@ -783,3 +783,1669 @@ input.attach-input[type="file"] {
   cursor: pointer;
 }
 .msg.user .bubble-text a:hover { text-decoration-thickness: 2px; }
+
+/* ---- dock tab strip overflow ----
+
+   The strip already scrolled: `flex: 1 1 auto; min-width: 0; overflow-x: auto`
+   in orbit.css is what keeps a sixth tab from pushing the two header buttons
+   off the edge. Three things were missing once it actually overflowed, and all
+   three belong here rather than in the frozen prototype sheet.
+
+   1. The global 8px scrollbar ate a quarter of the 28px tab and clipped the
+      active underline, which sits at `bottom: -1px`. The bar is hidden and the
+      strip is driven by the wheel instead.
+   2. A vertical wheel over a horizontally scrolling box does nothing: overflow-y
+      computes to auto, the content cannot scroll that way, and the event bubbles
+      straight past the strip. DockHead maps deltaY onto scrollLeft.
+   3. Nothing said the strip continued. The mask fades whichever end still has
+      tabs behind it and costs no layout width; the arrows give that cue a
+      target. */
+
+.dr-tabwrap {
+  position: relative;
+  display: flex;
+  align-items: center;
+  flex: 1 1 auto;
+  min-width: 0;
+}
+
+.dr-tabwrap .dr-tabs {
+  flex: 1 1 auto;
+  min-width: 0;
+  /* The active underline hangs 1px below its tab, which is enough to put a
+     vertical scrollbar inside a 28px strip. Pinning overflow-y closes that. */
+  overflow-y: hidden;
+  scrollbar-width: none;
+}
+
+.dr-tabwrap .dr-tabs::-webkit-scrollbar {
+  display: none;
+}
+
+/* 18px is the fade width, mirrored by the arrow's own width. Changing one
+   without the others leaves a visible seam. */
+.dr-tabwrap .dr-tabs.fade-l {
+  mask-image: linear-gradient(to right, transparent, #000 18px);
+  -webkit-mask-image: linear-gradient(to right, transparent, #000 18px);
+}
+
+.dr-tabwrap .dr-tabs.fade-r {
+  mask-image: linear-gradient(to right, #000 calc(100% - 18px), transparent);
+  -webkit-mask-image: linear-gradient(to right, #000 calc(100% - 18px), transparent);
+}
+
+.dr-tabwrap .dr-tabs.fade-l.fade-r {
+  mask-image: linear-gradient(to right, transparent, #000 18px, #000 calc(100% - 18px), transparent);
+  -webkit-mask-image: linear-gradient(to right, transparent, #000 18px, #000 calc(100% - 18px), transparent);
+}
+
+.dr-tabwrap .dr-nav {
+  position: absolute;
+  top: 50%;
+  transform: translateY(-50%);
+  z-index: 2;
+  display: none;
+  place-items: center;
+  width: 18px;
+  height: 20px;
+  padding: 0;
+  border: 1px solid var(--line);
+  border-radius: 5px;
+  background: var(--surface-2);
+  color: var(--muted);
+  box-shadow: var(--shadow-1);
+  cursor: pointer;
+  transition: color .16s var(--ease), background .16s var(--ease), opacity .16s var(--ease);
+}
+
+.dr-tabwrap.scrollable .dr-nav {
+  display: grid;
+}
+
+.dr-tabwrap .dr-nav:hover {
+  color: var(--ink);
+  background: var(--surface-3);
+}
+
+/* Reachability, not presence: the arrow with nothing left to reveal keeps its
+   slot, so the strip never resizes under the cursor mid-click. */
+.dr-tabwrap .dr-nav:disabled {
+  opacity: 0;
+  pointer-events: none;
+}
+
+.dr-tabwrap .dr-nav.prev {
+  left: 1px;
+}
+
+.dr-tabwrap .dr-nav.next {
+  right: 1px;
+}
+
+/* ---- GitHub repository panel ----
+
+   A repository rack at 384px wide has no room for a file-tree-plus-diff
+   layout, so the panel is built around three things instead: the language
+   colour that identifies a repository at a glance, the recency of its last
+   push, and the one number that says how alive it is. Everything else is
+   folded behind the view switch.
+
+   The orbit motif is deliberate: the octocat sits inside a faint ring, and the
+   commit rail carries a lit node per entry. It reads as the same product as the
+   rest of the surface without copying any other pane's skeleton.
+
+   All colour comes from theme variables except the language swatches, which are
+   data: a Python bar is blue because Python is blue, not because the theme
+   asked for it. */
+
+.dr-pane.gh.on {
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+}
+
+/* ---- identity strip ---- */
+
+.gh-id {
+  position: relative;
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  padding: 9px 10px;
+  border-radius: 12px;
+  border: 1px solid var(--line);
+  background: var(--surface-2);
+  overflow: hidden;
+}
+
+.gh-id::before {
+  content: "";
+  position: absolute;
+  inset: -60% -20% auto -20%;
+  height: 140%;
+  background: radial-gradient(ellipse at 14% 0%, var(--accent-soft), transparent 62%);
+  pointer-events: none;
+}
+
+.gh-mark {
+  position: relative;
+  display: grid;
+  place-items: center;
+  width: 30px;
+  height: 30px;
+  flex: 0 0 30px;
+  border-radius: 10px;
+  color: var(--accent);
+  background: var(--accent-soft);
+  box-shadow: inset 0 0 0 1px var(--line-2);
+}
+
+/* The ring is the orbit cue, and it has to sit behind the glyph rather than
+   around it, or the octocat reads as a button with a border. */
+.gh-mark::after {
+  content: "";
+  position: absolute;
+  inset: -5px;
+  border-radius: 15px;
+  border: 1px solid var(--accent);
+  opacity: .14;
+  pointer-events: none;
+}
+
+.gh-intro .gh-mark {
+  width: 44px;
+  height: 44px;
+  flex-basis: 44px;
+  border-radius: 14px;
+}
+
+.gh-intro .gh-mark::after {
+  inset: -8px;
+  border-radius: 22px;
+  opacity: .18;
+}
+
+.gh-id-main {
+  display: flex;
+  flex-direction: column;
+  gap: 1px;
+  min-width: 0;
+}
+
+.gh-id-main b {
+  font-size: 11.5px;
+  font-weight: 650;
+  color: var(--ink);
+  letter-spacing: -.01em;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.gh-id-main span {
+  font-size: 9.5px;
+  color: var(--muted);
+}
+
+.gh-rate {
+  margin-left: auto;
+  text-align: right;
+  font-family: var(--font-mono);
+  line-height: 1.1;
+}
+
+.gh-rate-n {
+  display: block;
+  font-size: 13px;
+  font-weight: 600;
+  color: var(--ink);
+  letter-spacing: -.02em;
+}
+
+.gh-rate-l {
+  display: block;
+  font-size: 8px;
+  color: var(--faint);
+}
+
+.gh-rate.low .gh-rate-n {
+  color: var(--warn);
+}
+
+/* ---- filter ---- */
+
+.gh-search {
+  display: flex;
+  align-items: center;
+  gap: 7px;
+  height: 30px;
+  padding: 0 9px;
+  border-radius: 9px;
+  border: 1px solid var(--line);
+  background: var(--surface-2);
+  color: var(--faint);
+  transition: border-color .18s var(--ease), background .18s var(--ease);
+}
+
+.gh-search:focus-within {
+  border-color: var(--accent);
+  background: var(--surface);
+  color: var(--muted);
+}
+
+.gh-search input {
+  flex: 1 1 auto;
+  min-width: 0;
+  height: 100%;
+  border: 0;
+  outline: none;
+  background: transparent;
+  font-size: 11px;
+  color: var(--ink);
+}
+
+.gh-search input::placeholder {
+  color: var(--faint);
+}
+
+.gh-search-x {
+  width: 16px;
+  height: 16px;
+  border-radius: 5px;
+  font-size: 12px;
+  line-height: 1;
+  color: var(--faint);
+}
+
+.gh-search-x:hover {
+  color: var(--ink);
+  background: var(--surface-3);
+}
+
+/* ---- repository rack ---- */
+
+.gh-rack {
+  display: flex;
+  flex-direction: column;
+  gap: 7px;
+}
+
+.gh-card {
+  position: relative;
+  padding: 10px 11px 10px 14px;
+  border-radius: 12px;
+  border: 1px solid var(--line);
+  background: var(--surface);
+  cursor: pointer;
+  overflow: hidden;
+  animation: gh-in .34s var(--ease-out) backwards;
+  animation-delay: calc(var(--i, 0) * 26ms);
+  transition: border-color .2s var(--ease), transform .2s var(--ease),
+              box-shadow .3s var(--ease), background .2s var(--ease);
+}
+
+.gh-card:hover,
+.gh-card:focus-visible {
+  border-color: var(--line-strong);
+  background: var(--surface-2);
+  transform: translateY(-1px);
+  box-shadow: var(--shadow-1);
+  outline: none;
+}
+
+/* The edge is the language, drawn as a spine rather than a dot: at this size a
+   7px dot next to a long name is invisible, a 2px spine is not. It grows into
+   the card on hover so the whole row picks up the repository's colour. */
+.gh-card-edge {
+  position: absolute;
+  left: 0;
+  top: 10px;
+  bottom: 10px;
+  width: 2px;
+  border-radius: 0 2px 2px 0;
+  opacity: .7;
+  transition: width .2s var(--ease), opacity .2s var(--ease),
+              top .2s var(--ease), bottom .2s var(--ease);
+}
+
+.gh-card:hover .gh-card-edge,
+.gh-card:focus-visible .gh-card-edge {
+  width: 3px;
+  top: 4px;
+  bottom: 4px;
+  opacity: 1;
+}
+
+@keyframes gh-in {
+  from { opacity: 0; transform: translateY(7px) scale(.985); }
+  to { opacity: 1; transform: none; }
+}
+
+.gh-card-top {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  min-width: 0;
+}
+
+.gh-card-name {
+  font-size: 12px;
+  font-weight: 650;
+  letter-spacing: -.012em;
+  color: var(--ink);
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  transition: color .18s var(--ease);
+}
+
+.gh-card:hover .gh-card-name {
+  color: var(--accent);
+}
+
+.gh-tag {
+  flex: 0 0 auto;
+  font-family: var(--font-mono);
+  font-size: 7.5px;
+  letter-spacing: .08em;
+  text-transform: uppercase;
+  padding: 1px 4px;
+  border-radius: 4px;
+  color: var(--warn);
+  background: var(--warn-soft);
+}
+
+.gh-card-desc {
+  margin: 4px 0 8px;
+  font-size: 10.5px;
+  line-height: 1.5;
+  color: var(--muted);
+  display: -webkit-box;
+  -webkit-line-clamp: 2;
+  -webkit-box-orient: vertical;
+  overflow: hidden;
+}
+
+.gh-card-meta {
+  display: flex;
+  align-items: center;
+  gap: 11px;
+  font-family: var(--font-mono);
+  font-size: 9px;
+  color: var(--faint);
+}
+
+.gh-lang {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  color: var(--ink-2);
+  min-width: 0;
+}
+
+.gh-lang i,
+.gh-langitem i {
+  width: 7px;
+  height: 7px;
+  flex: 0 0 7px;
+  border-radius: 50%;
+  display: inline-block;
+}
+
+.gh-num {
+  display: inline-flex;
+  align-items: center;
+  gap: 3px;
+}
+
+.gh-when {
+  margin-left: auto;
+}
+
+.gh-topics {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 4px;
+  margin-top: 8px;
+}
+
+.gh-topic {
+  font-family: var(--font-mono);
+  font-size: 8px;
+  padding: 1px 5px;
+  border-radius: 4px;
+  color: var(--muted);
+  background: var(--surface-3);
+}
+
+/* ---- detail header ---- */
+
+.gh-back {
+  align-self: flex-start;
+  display: inline-flex;
+  align-items: center;
+  gap: 3px;
+  height: 20px;
+  padding: 0 6px 0 3px;
+  margin-left: -3px;
+  border-radius: 6px;
+  font-size: 9.5px;
+  font-weight: 550;
+  color: var(--muted);
+  transition: color .16s var(--ease), background .16s var(--ease);
+}
+
+.gh-back:hover {
+  color: var(--accent);
+  background: var(--accent-soft);
+}
+
+.gh-head {
+  display: flex;
+  flex-direction: column;
+  gap: 7px;
+}
+
+.gh-head-top {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+}
+
+.gh-title {
+  margin: 0;
+  font-size: 14.5px;
+  font-weight: 680;
+  letter-spacing: -.02em;
+  color: var(--ink);
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.gh-icon {
+  margin-left: auto;
+  flex: 0 0 auto;
+  display: grid;
+  place-items: center;
+  width: 22px;
+  height: 22px;
+  border-radius: 7px;
+  color: var(--faint);
+  transition: color .16s var(--ease), background .16s var(--ease);
+}
+
+.gh-icon:hover {
+  color: var(--accent);
+  background: var(--accent-soft);
+}
+
+.gh-sub {
+  margin: 0;
+  font-size: 10.5px;
+  line-height: 1.55;
+  color: var(--muted);
+}
+
+/* The stacked bar is the panel's signature: five colours, no gaps, each
+   segment growing from the left on arrival. */
+.gh-langbar {
+  display: flex;
+  height: 6px;
+  border-radius: 3px;
+  overflow: hidden;
+  background: var(--surface-3);
+}
+
+.gh-langbar span {
+  display: block;
+  height: 100%;
+  transform-origin: left center;
+  animation: gh-grow .55s var(--ease-out) backwards;
+  transition: filter .18s var(--ease);
+}
+
+.gh-langbar span:hover {
+  filter: brightness(1.3);
+}
+
+@keyframes gh-grow {
+  from { transform: scaleX(.15); opacity: 0; }
+  to { transform: none; opacity: 1; }
+}
+
+.gh-langlist {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 4px 10px;
+  font-family: var(--font-mono);
+  font-size: 8.5px;
+  color: var(--ink-2);
+}
+
+.gh-langitem {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+}
+
+.gh-langitem em {
+  font-style: normal;
+  color: var(--faint);
+}
+
+.gh-facts {
+  display: flex;
+  gap: 14px;
+  padding-top: 2px;
+  font-family: var(--font-mono);
+  font-size: 8px;
+  color: var(--faint);
+}
+
+.gh-fact {
+  display: flex;
+  flex-direction: column;
+  gap: 1px;
+}
+
+.gh-fact b {
+  font-size: 11.5px;
+  font-weight: 600;
+  color: var(--ink);
+  letter-spacing: -.02em;
+}
+
+/* ---- view switch ---- */
+
+.gh-views {
+  display: flex;
+  gap: 2px;
+  padding: 2px;
+  border-radius: 9px;
+  border: 1px solid var(--line);
+  background: var(--surface-2);
+}
+
+.gh-view {
+  flex: 1 1 0;
+  min-width: 0;
+  height: 23px;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  gap: 3px;
+  border-radius: 7px;
+  font-size: 9.5px;
+  font-weight: 600;
+  color: var(--muted);
+  white-space: nowrap;
+  transition: color .18s var(--ease), background .18s var(--ease);
+}
+
+.gh-view:hover {
+  color: var(--ink);
+  background: var(--surface-3);
+}
+
+/* The selected view is the accent fill, so it follows the theme rather than
+   pinning a colour of its own. */
+.gh-view.on {
+  color: var(--accent-ink);
+  background: var(--accent);
+}
+
+.gh-view.on:hover {
+  color: var(--accent-ink);
+  background: var(--accent);
+  filter: brightness(1.05);
+}
+
+.gh-view em {
+  font-family: var(--font-mono);
+  font-size: 8px;
+  font-style: normal;
+  opacity: .72;
+}
+
+/* ---- README ---- */
+
+.gh-readme {
+  display: flex;
+  flex-direction: column;
+  gap: 9px;
+}
+
+.gh-md {
+  font-size: 11px;
+  line-height: 1.62;
+  color: var(--ink-2);
+  /* Scrolls rather than fading: a README is the reason someone opens the
+     repository, and the mask made the last third of every one unreadable. */
+  max-height: 320px;
+  overflow-y: auto;
+  overscroll-behavior: contain;
+  padding-right: 2px;
+}
+
+.gh-md h1,
+.gh-md h2,
+.gh-md h3,
+.gh-md h4 {
+  margin: 12px 0 5px;
+  font-size: 12.5px;
+  font-weight: 650;
+  letter-spacing: -.01em;
+  color: var(--ink);
+}
+
+.gh-md h1:first-child,
+.gh-md h2:first-child,
+.gh-md p:first-child {
+  margin-top: 0;
+}
+
+.gh-md p {
+  margin: 0 0 8px;
+}
+
+.gh-md ul,
+.gh-md ol {
+  margin: 0 0 8px;
+  padding-left: 17px;
+}
+
+.gh-md li {
+  margin-bottom: 3px;
+}
+
+.gh-md code {
+  font-family: var(--font-mono);
+  font-size: 9.5px;
+  padding: 1px 4px;
+  border-radius: 4px;
+  background: var(--surface-3);
+  color: var(--ink);
+}
+
+.gh-md pre {
+  margin: 0 0 8px;
+  padding: 8px 9px;
+  border-radius: 8px;
+  border: 1px solid var(--line);
+  background: var(--surface-2);
+  overflow-x: auto;
+}
+
+.gh-md pre code {
+  background: transparent;
+  padding: 0;
+  font-size: 9px;
+}
+
+.gh-md a {
+  color: var(--accent);
+  text-decoration: none;
+}
+
+.gh-md a:hover {
+  text-decoration: underline;
+}
+
+.gh-md blockquote {
+  margin: 0 0 8px;
+  padding-left: 9px;
+  border-left: 2px solid var(--line-strong);
+  color: var(--muted);
+}
+
+.gh-md hr {
+  border: 0;
+  border-top: 1px solid var(--line);
+  margin: 10px 0;
+}
+
+/* Images and tables are wider than the dock can carry; hiding them keeps the
+   prose readable instead of letting one banner push the text off screen. */
+.gh-md img,
+.gh-md table {
+  display: none;
+}
+
+.gh-more {
+  align-self: stretch;
+  height: 28px;
+  border-radius: 8px;
+  border: 1px dashed var(--line-strong);
+  font-size: 9.5px;
+  font-weight: 550;
+  color: var(--muted);
+  transition: color .16s var(--ease), border-color .16s var(--ease), background .16s var(--ease);
+}
+
+.gh-more:hover {
+  color: var(--accent);
+  border-color: var(--accent);
+  background: var(--accent-soft);
+}
+
+/* ---- file tree ---- */
+
+.gh-files {
+  display: flex;
+  flex-direction: column;
+  gap: 1px;
+}
+
+.gh-crumbs {
+  display: flex;
+  align-items: center;
+  flex-wrap: wrap;
+  gap: 1px;
+  margin-bottom: 5px;
+}
+
+.gh-crumb {
+  font-family: var(--font-mono);
+  font-size: 9px;
+  padding: 1px 3px;
+  border-radius: 4px;
+  color: var(--muted);
+  transition: color .16s var(--ease), background .16s var(--ease);
+}
+
+.gh-crumb:hover {
+  color: var(--accent);
+  background: var(--accent-soft);
+}
+
+.gh-crumb-sep {
+  font-family: var(--font-mono);
+  font-size: 9px;
+  color: var(--faint);
+}
+
+.gh-entry {
+  display: flex;
+  align-items: center;
+  gap: 7px;
+  height: 27px;
+  padding: 0 7px;
+  border-radius: 7px;
+  text-align: left;
+  font-size: 10.5px;
+  color: var(--ink-2);
+  transition: background .16s var(--ease), color .16s var(--ease);
+}
+
+.gh-entry:hover {
+  background: var(--surface-2);
+  color: var(--ink);
+}
+
+.gh-entry-ico {
+  display: grid;
+  place-items: center;
+  width: 12px;
+  flex: 0 0 12px;
+  color: var(--faint);
+}
+
+.gh-entry.dir .gh-entry-ico {
+  color: var(--accent);
+}
+
+.gh-entry-name {
+  flex: 1 1 auto;
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.gh-entry-size {
+  font-family: var(--font-mono);
+  font-size: 8.5px;
+  color: var(--faint);
+}
+
+/* ---- commit rail ---- */
+
+.gh-timeline {
+  position: relative;
+  display: flex;
+  flex-direction: column;
+  padding-left: 14px;
+}
+
+.gh-timeline::before {
+  content: "";
+  position: absolute;
+  left: 3px;
+  top: 8px;
+  bottom: 8px;
+  width: 1px;
+  background: linear-gradient(to bottom, var(--line-strong), var(--line), transparent);
+}
+
+.gh-commit {
+  position: relative;
+  display: flex;
+  gap: 7px;
+  padding: 5px 0;
+}
+
+/* A lit node rather than a plain dot: the glow is what makes the rail read as
+   an orbit instead of a bulleted list. */
+.gh-commit-dot {
+  position: absolute;
+  left: -13px;
+  top: 9px;
+  width: 5px;
+  height: 5px;
+  border-radius: 50%;
+  background: var(--accent);
+  box-shadow: 0 0 0 2px var(--surface), 0 0 8px var(--accent);
+}
+
+.gh-avatar {
+  width: 18px;
+  height: 18px;
+  flex: 0 0 18px;
+  border-radius: 50%;
+  border: 1px solid var(--line);
+  object-fit: cover;
+}
+
+.gh-commit-main {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+  min-width: 0;
+  flex: 1 1 auto;
+}
+
+.gh-commit-msg {
+  font-size: 10.5px;
+  line-height: 1.4;
+  color: var(--ink);
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.gh-commit-meta {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  font-family: var(--font-mono);
+  font-size: 8.5px;
+  color: var(--faint);
+  min-width: 0;
+}
+
+.gh-commit-meta code {
+  font-size: 8.5px;
+  padding: 0 3px;
+  border-radius: 3px;
+  color: var(--accent);
+  background: var(--accent-soft);
+}
+
+/* ---- activity ---- */
+
+.gh-activity {
+  display: flex;
+  flex-direction: column;
+  gap: 15px;
+}
+
+.gh-sec {
+  display: flex;
+  flex-direction: column;
+  gap: 1px;
+}
+
+.gh-sec-h {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  margin-bottom: 4px;
+  font-family: var(--font-mono);
+  font-size: 8.5px;
+  letter-spacing: .12em;
+  text-transform: uppercase;
+  color: var(--faint);
+}
+
+.gh-sec-h em {
+  font-style: normal;
+  color: var(--accent);
+}
+
+.gh-item {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+  padding: 6px 8px;
+  border-radius: 8px;
+  border: 1px solid transparent;
+  text-align: left;
+  transition: background .16s var(--ease), border-color .16s var(--ease);
+}
+
+.gh-item:hover {
+  background: var(--surface-2);
+  border-color: var(--line);
+}
+
+.gh-item-num {
+  font-family: var(--font-mono);
+  font-size: 8.5px;
+  color: var(--accent);
+}
+
+.gh-item-title {
+  font-size: 10.5px;
+  line-height: 1.45;
+  color: var(--ink);
+  display: -webkit-box;
+  -webkit-line-clamp: 2;
+  -webkit-box-orient: vertical;
+  overflow: hidden;
+}
+
+.gh-item-meta {
+  font-family: var(--font-mono);
+  font-size: 8.5px;
+  color: var(--faint);
+}
+
+.gh-item-labels {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 3px;
+  margin: 2px 0;
+}
+
+.gh-label {
+  font-family: var(--font-mono);
+  font-size: 7.5px;
+  padding: 1px 5px;
+  border-radius: 4px;
+  color: var(--lab);
+  background: color-mix(in srgb, var(--lab) 16%, transparent);
+  border: 1px solid color-mix(in srgb, var(--lab) 34%, transparent);
+}
+
+/* ---- states ---- */
+
+.gh-intro,
+.gh-fail {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 9px;
+  padding: 26px 16px;
+  text-align: center;
+  border-radius: 13px;
+  border: 1px dashed var(--line-strong);
+  background: var(--surface-2);
+}
+
+.gh-intro-t,
+.gh-fail-t {
+  font-size: 12px;
+  font-weight: 650;
+  letter-spacing: -.01em;
+  color: var(--ink);
+}
+
+.gh-fail-t {
+  color: var(--err);
+}
+
+.gh-intro-p,
+.gh-fail-p {
+  margin: 0;
+  font-size: 10.5px;
+  line-height: 1.62;
+  color: var(--muted);
+}
+
+.gh-intro code {
+  font-family: var(--font-mono);
+  font-size: 9px;
+  padding: 1px 4px;
+  border-radius: 4px;
+  color: var(--accent);
+  background: var(--accent-soft);
+  word-break: break-all;
+}
+
+.gh-cta {
+  height: 27px;
+  padding: 0 13px;
+  border-radius: 8px;
+  font-size: 10px;
+  font-weight: 600;
+  color: var(--accent-ink);
+  background: var(--accent);
+  transition: transform .16s var(--ease), filter .16s var(--ease);
+}
+
+.gh-cta:hover {
+  filter: brightness(1.06);
+  transform: translateY(-1px);
+}
+
+.gh-cta:active {
+  transform: none;
+}
+
+.gh-none {
+  margin: 0;
+  padding: 16px 0;
+  text-align: center;
+  font-size: 10.5px;
+  color: var(--faint);
+}
+
+/* ---- skeleton ---- */
+
+.gh-skel {
+  display: flex;
+  flex-direction: column;
+  gap: 7px;
+}
+
+.gh-skel-id {
+  height: 48px;
+  border-radius: 12px;
+}
+
+.gh-skel-card {
+  height: 78px;
+  border-radius: 12px;
+}
+
+.gh-skel-id,
+.gh-skel-card {
+  background: linear-gradient(100deg, var(--surface-2) 22%, var(--surface-3) 44%, var(--surface-2) 66%);
+  background-size: 220% 100%;
+  animation: gh-shimmer 1.5s var(--ease) infinite;
+}
+
+@keyframes gh-shimmer {
+  from { background-position: 160% 0; }
+  to { background-position: -60% 0; }
+}
+
+/* The icon-only tab keeps the strip under its width at every breakpoint. It
+   still needs the tab's own height and radius so the active underline lands
+   where the word tabs put theirs. */
+.dr-tab-ico {
+  display: grid;
+  place-items: center;
+  padding: 0 8px;
+}
+
+.dr-tab-ico svg {
+  display: block;
+  transition: transform .2s var(--ease-spring);
+}
+
+.dr-tab-ico:hover svg {
+  transform: scale(1.08);
+}
+
+.dr-tab-ico.on svg {
+  color: var(--accent);
+}
+
+/* ---- file viewer ----
+
+   The body is the transcript's own code block, so the gutter, the highlight and
+   the copy button all come for free. What changes is the measure: 11px type and
+   14px padding were sized for a 700px message column, and at 358px they push
+   every line past the edge. Both axes scroll rather than widening the dock. */
+
+.gh-file {
+  display: flex;
+  flex-direction: column;
+  gap: 9px;
+}
+
+.gh-file-bar {
+  display: flex;
+  align-items: center;
+  gap: 7px;
+  padding: 6px 8px;
+  border-radius: 9px;
+  border: 1px solid var(--line);
+  background: var(--surface-2);
+}
+
+.gh-file-back {
+  display: inline-flex;
+  align-items: center;
+  gap: 3px;
+  flex: 0 0 auto;
+  padding: 2px 6px 2px 4px;
+  border-radius: 5px;
+  font-size: 9.5px;
+  font-weight: 600;
+  color: var(--muted);
+  background: transparent;
+  transition: color .16s var(--ease), background .16s var(--ease);
+}
+
+.gh-file-back:hover {
+  color: var(--accent);
+  background: var(--accent-soft);
+}
+
+.gh-file-name {
+  flex: 1 1 auto;
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  font-family: var(--font-mono);
+  font-size: 10px;
+  color: var(--ink);
+}
+
+.gh-file-meta {
+  flex: 0 0 auto;
+  font-family: var(--font-mono);
+  font-size: 8.5px;
+  color: var(--faint);
+}
+
+.gh-code .code {
+  margin: 0;
+  border-radius: 10px;
+}
+
+.gh-code .code-hdr {
+  gap: 6px;
+  padding: 5px 8px;
+}
+
+.gh-code .code-body {
+  max-height: 420px;
+  overflow-y: auto;
+  overscroll-behavior: contain;
+  padding: 7px 0;
+  font-size: 9.5px;
+  line-height: 1.62;
+}
+
+.gh-code .gutter {
+  padding: 0 6px 0 8px;
+  font-size: 8.5px;
+}
+
+.gh-code .code-pre {
+  padding-right: 10px;
+  font-size: 9.5px;
+}
+
+/* A binary file gets a card rather than a page of replacement characters. */
+
+.gh-file-bin {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 9px;
+  padding: 26px 16px;
+  border-radius: 12px;
+  border: 1px dashed var(--line-strong);
+  background: var(--surface-2);
+  text-align: center;
+}
+
+.gh-file-bin-ico {
+  display: grid;
+  place-items: center;
+  width: 38px;
+  height: 38px;
+  border-radius: 11px;
+  color: var(--faint);
+  background: var(--surface-3);
+}
+
+.gh-file-bin-p {
+  margin: 0;
+  font-size: 10px;
+  color: var(--muted);
+}
+
+/* ---- the checkout behind the active project ---- */
+
+.gh-tag-cur {
+  color: var(--accent);
+  background: var(--accent-soft);
+  letter-spacing: .04em;
+}
+
+.gh-local {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  margin-top: 8px;
+  padding: 5px 8px;
+  border-radius: 7px;
+  border: 1px dashed var(--line-2);
+  font-family: var(--font-mono);
+  font-size: 8.5px;
+  color: var(--muted);
+}
+
+/* A lit dot rather than a word: the badge has to read as "this is your working
+   copy" at a glance, next to the branch name it belongs to. */
+.gh-local-dot {
+  width: 5px;
+  height: 5px;
+  border-radius: 50%;
+  background: var(--ok);
+  box-shadow: 0 0 0 3px var(--ok-soft);
+  flex: 0 0 auto;
+}
+
+.gh-local-branch {
+  margin-right: auto;
+  color: var(--ink-2);
+  font-weight: 600;
+}
+
+.gh-local-ahead {
+  color: var(--warn);
+}
+
+/* Uncommitted work is the other half of "not on GitHub yet": a branch that is
+   level with origin can still hold a dozen edited files. */
+.gh-local-dirty {
+  color: var(--warn);
+  opacity: .82;
+}
+
+/* Either kind of pending work interrupts: the border and fill change, not just
+   the text colour, so the row reads as a warning from across the panel. */
+.gh-local.has-pending {
+  border-style: solid;
+  border-color: var(--warn);
+  background: var(--warn-soft);
+}
+
+.gh-local.has-pending .gh-local-dot {
+  background: var(--warn);
+  box-shadow: 0 0 0 3px var(--warn-soft);
+}
+
+.gh-local-sync {
+  color: var(--faint);
+}
+
+/* ---- commit activity ----
+
+   52 columns of 7 days at 4px plus a 2px gap lands inside the 358px pane with
+   room to spare. This is the one place in the panel where a colour ramp earns
+   its ink: it says "alive" or "dormant" before any number does. */
+
+.gh-heat {
+  margin-top: 10px;
+}
+
+.gh-heat-h {
+  display: flex;
+  align-items: baseline;
+  gap: 5px;
+  font-family: var(--font-mono);
+  font-size: 8px;
+  letter-spacing: .1em;
+  text-transform: uppercase;
+  color: var(--faint);
+}
+
+.gh-heat-h em {
+  margin-left: auto;
+  font-style: normal;
+  font-size: 9px;
+  letter-spacing: 0;
+  text-transform: none;
+  color: var(--ink-2);
+}
+
+.gh-heat-grid {
+  display: flex;
+  gap: 2px;
+  margin-top: 5px;
+}
+
+.gh-heat-col {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+}
+
+.gh-heat-col i {
+  width: 4px;
+  height: 4px;
+  border-radius: 1px;
+  background: var(--surface-3);
+}
+
+.gh-heat-col i.l1 { background: color-mix(in srgb, var(--accent) 22%, transparent); }
+.gh-heat-col i.l2 { background: color-mix(in srgb, var(--accent) 42%, transparent); }
+.gh-heat-col i.l3 { background: color-mix(in srgb, var(--accent) 68%, transparent); }
+.gh-heat-col i.l4 { background: var(--accent); }
+
+.gh-heat-pending {
+  margin: 10px 0 0;
+  font-size: 9px;
+  line-height: 1.5;
+  color: var(--faint);
+}
+
+/* ---- ask the agent ---- */
+
+/* The one action in the file view, so it carries the accent rather than the
+   muted treatment a secondary control would get: a grey 9px word next to the
+   filename reads as a label, and this is the only way into the conversation
+   from here. */
+.gh-ask {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  margin-left: auto;
+  height: 21px;
+  padding: 0 9px;
+  border-radius: 6px;
+  border: 1px solid var(--accent);
+  background: var(--accent-soft);
+  font-size: 9px;
+  font-weight: 650;
+  letter-spacing: .02em;
+  color: var(--accent);
+  transition: color .16s var(--ease), border-color .16s var(--ease),
+    background .16s var(--ease), transform .16s var(--ease);
+}
+
+.gh-ask:hover {
+  background: var(--accent);
+  border-color: var(--accent);
+  color: var(--accent-ink);
+}
+
+.gh-ask:active {
+  transform: scale(.95);
+}
+
+.gh-ask svg {
+  flex: 0 0 auto;
+}
+
+.gh-item-wrap {
+  position: relative;
+}
+
+/* The action rail sits over the card's right edge and only appears on hover, so
+   the row keeps its full width for the title most of the time. */
+.gh-item-acts {
+  position: absolute;
+  top: 5px;
+  right: 5px;
+  display: flex;
+  gap: 3px;
+  opacity: 0;
+  transition: opacity .16s var(--ease);
+}
+
+.gh-item-wrap:hover .gh-item-acts,
+.gh-item-wrap:focus-within .gh-item-acts {
+  opacity: 1;
+}
+
+.gh-ask-ico {
+  display: grid;
+  place-items: center;
+  width: 18px;
+  height: 18px;
+  border-radius: 5px;
+  border: 1px solid var(--line-2);
+  background: var(--surface-2);
+  color: var(--muted);
+  transition: color .16s var(--ease), border-color .16s var(--ease);
+}
+
+.gh-ask-ico:hover {
+  color: var(--accent);
+  border-color: var(--accent);
+}
+
+/* ---- pull request diff ---- */
+
+.gh-diff {
+  margin: 2px 0 8px;
+  padding: 6px 7px;
+  border-radius: 8px;
+  border: 1px solid var(--line-2);
+  background: var(--surface-2);
+}
+
+.gh-diff-p {
+  margin: 0;
+  font-size: 9px;
+  color: var(--faint);
+}
+
+.gh-diff-p.err {
+  color: var(--err);
+}
+
+.gh-diff-file + .gh-diff-file {
+  margin-top: 7px;
+  padding-top: 7px;
+  border-top: 1px solid var(--line-2);
+}
+
+.gh-diff-head {
+  display: flex;
+  align-items: baseline;
+  gap: 6px;
+}
+
+.gh-diff-name {
+  flex: 1 1 auto;
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  font-family: var(--font-mono);
+  font-size: 8.5px;
+  color: var(--ink-2);
+}
+
+.gh-diff-stat {
+  flex: 0 0 auto;
+  font-family: var(--font-mono);
+  font-size: 8px;
+}
+
+.gh-diff-stat b { color: var(--ok); font-weight: 600; }
+.gh-diff-stat i { color: var(--err); font-style: normal; margin-left: 4px; }
+
+.gh-diff-body {
+  margin: 4px 0 0;
+  max-height: 220px;
+  overflow: auto;
+  font-family: var(--font-mono);
+  font-size: 8px;
+  line-height: 1.5;
+  color: var(--muted);
+  white-space: pre;
+}
+
+.gh-diff-none {
+  margin: 4px 0 0;
+  font-size: 8.5px;
+  color: var(--faint);
+}
+
+/* The truncation notice is the point of this block: a diff list that silently
+   stops short reads as a complete review. */
+.gh-diff-note {
+  margin: 7px 0 0;
+  padding-top: 6px;
+  border-top: 1px dashed var(--line-2);
+  font-size: 8.5px;
+  line-height: 1.5;
+  color: var(--warn);
+}
+
+/* ---- repository listing pagination ---- */
+
+/* Dashed rather than solid: it is the end of the list, not an action that
+   belongs to any one repository. */
+.gh-more {
+  width: 100%;
+  margin-top: 2px;
+  height: 26px;
+  border-radius: 8px;
+  border: 1px dashed var(--line-2);
+  background: transparent;
+  font-size: 9px;
+  font-weight: 600;
+  letter-spacing: .02em;
+  color: var(--muted);
+  transition: color .16s var(--ease), border-color .16s var(--ease), background .16s var(--ease);
+}
+
+.gh-more:hover:not(:disabled) {
+  border-color: var(--accent);
+  color: var(--accent);
+  background: var(--accent-soft);
+}
+
+.gh-more:disabled {
+  opacity: .5;
+  cursor: default;
+}
+
+/* ---- commit rows as buttons ----
+
+   The row was a div in the first pass and became a button when the diff moved
+   behind it, so the prototype's defaults have to be undone: a button centres
+   its text, paints a border and ignores the flex column it sits in. */
+
+.gh-commit-wrap {
+  position: relative;
+}
+
+.gh-commit {
+  position: relative;
+  display: flex;
+  gap: 7px;
+  width: 100%;
+  padding: 5px 6px 5px 0;
+  border: none;
+  border-radius: 7px;
+  background: transparent;
+  text-align: left;
+  cursor: pointer;
+  transition: background .16s var(--ease);
+}
+
+.gh-commit:hover,
+.gh-commit.open {
+  background: var(--surface-2);
+}
+
+.gh-commit.open .gh-commit-dot {
+  box-shadow: 0 0 0 2px var(--surface), 0 0 12px var(--accent);
+}
+
+/* The total only exists once the row is opened: the listing endpoint carries no
+   stats, so this line is the answer to a request the user asked for by
+   clicking. */
+.gh-commit-sum {
+  display: flex;
+  align-items: baseline;
+  gap: 6px;
+  padding: 2px 0 7px;
+  font-family: var(--font-mono);
+  font-size: 9px;
+}
+
+.gh-commit-sum b {
+  color: var(--ok);
+  font-weight: 600;
+}
+
+.gh-commit-sum i {
+  color: var(--err);
+  font-style: normal;
+  font-weight: 600;
+}
+
+.gh-commit-sum span {
+  margin-left: auto;
+  color: var(--faint);
+}
+
+/* ---- scrollbars inside the panel ----
+
+   The shared 8px bar is sized for the transcript, where a scroll area is a
+   whole column. Inside a 384px pane it reads as a slab next to 8px diff text,
+   so every scroller here takes the 4px treatment the reasoning block already
+   uses: nearly invisible at rest, firmer on hover, accent while dragged.
+
+   `scrollbar-width` must stay unset on these elements. Any non-auto value makes
+   Chromium drop the ::-webkit-scrollbar rules below and paint its own grey bar
+   instead, which is exactly why the diff and the README still showed the
+   default after the first pass set `thin`. */
+
+.gh-md::-webkit-scrollbar,
+.gh-diff-body::-webkit-scrollbar,
+.gh-code .code-body::-webkit-scrollbar {
+  width: 4px;
+  height: 4px;
+}
+
+.gh-md::-webkit-scrollbar-track,
+.gh-diff-body::-webkit-scrollbar-track,
+.gh-code .code-body::-webkit-scrollbar-track {
+  background: transparent;
+}
+
+.gh-md::-webkit-scrollbar-thumb,
+.gh-diff-body::-webkit-scrollbar-thumb,
+.gh-code .code-body::-webkit-scrollbar-thumb {
+  background: var(--line-strong);
+  border: 0;
+  border-radius: 4px;
+  background-clip: border-box;
+}
+
+.gh-md:hover::-webkit-scrollbar-thumb,
+.gh-diff-body:hover::-webkit-scrollbar-thumb,
+.gh-code .code-body:hover::-webkit-scrollbar-thumb {
+  background: var(--faint);
+}
+
+.gh-md::-webkit-scrollbar-thumb:hover,
+.gh-md::-webkit-scrollbar-thumb:active,
+.gh-diff-body::-webkit-scrollbar-thumb:hover,
+.gh-diff-body::-webkit-scrollbar-thumb:active,
+.gh-code .code-body::-webkit-scrollbar-thumb:hover,
+.gh-code .code-body::-webkit-scrollbar-thumb:active {
+  background: var(--accent);
+}
+
+/* The corner where the two bars meet is painted by the track; leaving it
+   transparent keeps a light patch from appearing under a dark diff. */
+.gh-diff-body::-webkit-scrollbar-corner {
+  background: transparent;
+}

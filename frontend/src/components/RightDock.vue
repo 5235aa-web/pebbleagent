@@ -22,6 +22,9 @@
         <!-- NOTES -->
       <NotesPane />
 
+        <!-- GITHUB -->
+      <GithubPane />
+
       </div>
     </aside>
 </template>
@@ -33,4 +36,5 @@ import UsagePane from './UsagePane.vue'
 import ContextPane from './ContextPane.vue'
 import LlmPane from './LlmPane.vue'
 import NotesPane from './NotesPane.vue'
+import GithubPane from './GithubPane.vue'
 </script>
