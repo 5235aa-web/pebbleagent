@@ -22,6 +22,8 @@ import json
 import logging
 import os
 import re
+import sys
+import tempfile
 import threading
 from pathlib import Path
 from typing import Dict, List, Optional, Tuple, Any
@@ -53,6 +55,53 @@ DEFAULT_MCP_CONFIG_FILE = "mcp_config.json"
 
 TRUST_STORE_PATH = os.path.join(DEFAULT_USER_CONFIG_DIR, "mcp_trusted.json")
 
+# A PyInstaller onefile build unpacks the bundle into a fresh _MEIxxxx
+# directory on every launch; only sys._MEIPASS identifies that root reliably.
+_PYINSTALLER_TEMP_DIR = re.compile(r"^_MEI\d+$")
+
+
+def _bundle_root() -> Optional[str]:
+    """Root of the unpacked onefile bundle, or None when running from source."""
+    root = getattr(sys, "_MEIPASS", None)
+    if not root:
+        return None
+    try:
+        return os.path.realpath(root)
+    except OSError:
+        return None
+
+
+def _is_bundled_mcp_config(path: str) -> bool:
+    """True for the .mcp.json that ships inside the packaged backend.
+
+    Its directory changes on every launch, so a path-bound approval could
+    never survive a restart. The file belongs to the program itself rather
+    than to whoever owns the current directory, so it does not need its own
+    approval prompt.
+    """
+    root = _bundle_root()
+    if not root:
+        return False
+    try:
+        target = os.path.realpath(path)
+    except OSError:
+        return False
+    if target == root:
+        return False
+    return os.path.normcase(target).startswith(os.path.normcase(root) + os.sep)
+
+
+def _is_transient_bundle_path(path: str) -> bool:
+    """True when a path sits inside a onefile unpack directory under temp."""
+    try:
+        parent = os.path.realpath(os.path.dirname(path))
+        temp = os.path.realpath(tempfile.gettempdir())
+    except OSError:
+        return False
+    if not _PYINSTALLER_TEMP_DIR.match(os.path.basename(parent)):
+        return False
+    return os.path.normcase(parent).startswith(os.path.normcase(temp) + os.sep)
+
 
 def _mcp_json_fingerprint(path: str) -> str:
     """计算 .mcp.json 的信任指纹（绝对路径 + 文件内容 sha256）"""
@@ -76,6 +125,8 @@ def _load_trust_store() -> dict:
 
 def is_project_mcp_trusted(path: str) -> bool:
     """检查某个项目级 .mcp.json（按当前内容指纹）是否已被批准"""
+    if _is_bundled_mcp_config(path):
+        return True
     try:
         fp = _mcp_json_fingerprint(path)
     except Exception:
@@ -85,6 +136,8 @@ def is_project_mcp_trusted(path: str) -> bool:
 
 def trust_project_mcp(path: str) -> bool:
     """批准某个项目级 .mcp.json（记录当前内容指纹；内容变化后需重新批准）"""
+    if _is_bundled_mcp_config(path):
+        return True
     try:
         fp = _mcp_json_fingerprint(path)
     except Exception as e:
@@ -807,6 +860,56 @@ def _save_trust_store(store: dict) -> bool:
         return False
 
 
+def _dir_gone_for_good(path: str) -> bool:
+    """True when the file's directory is gone and its volume is still mounted.
+
+    A missing directory on an unmounted drive is not evidence of deletion, so
+    an approval for a project on a detached disk survives until the disk is
+    back and the directory is really absent.
+    """
+    parent = os.path.dirname(path)
+    if os.path.isdir(parent):
+        return False
+    drive, _ = os.path.splitdrive(parent)
+    if drive and not os.path.exists(drive + os.sep):
+        return False
+    return True
+
+
+def prune_trust_store() -> int:
+    """Drop approvals that can never match again.
+
+    Each onefile launch used to leave one transient `_MEIxxxx|sha` entry
+    behind, and a deleted project left its entry too. Left alone they fill the
+    200-entry cap and push out approvals for projects that still exist.
+    Approvals whose directory is still there are kept untouched.
+    """
+    store = _load_trust_store()
+    trusted = store.get("trusted")
+    if not isinstance(trusted, list):
+        return 0
+
+    kept: List[str] = []
+    seen = set()
+    for entry in trusted:
+        if not isinstance(entry, str) or entry in seen:
+            continue
+        path = entry.rsplit("|", 1)[0]
+        if _is_transient_bundle_path(path) or _dir_gone_for_good(path):
+            continue
+        seen.add(entry)
+        kept.append(entry)
+
+    removed = len(trusted) - len(kept)
+    if removed <= 0:
+        return 0
+    store["trusted"] = kept
+    if not _save_trust_store(store):
+        return 0
+    logger.info(f"[MCP Trust] Pruned {removed} stale approval(s)")
+    return removed
+
+
 def _approved_user_entries() -> set:
     """Approved fingerprints, seeding the file once after an upgrade.
 
@@ -938,13 +1041,24 @@ def sync_user_overrides(force: bool = False) -> Tuple[bool, List[str]]:
 # ==================== 全局实例 ====================
 
 _config_manager: Optional[McpConfigManager] = None
+_trust_pruned = False
+_trust_prune_lock = threading.Lock()
 
 
 def get_mcp_config_manager() -> McpConfigManager:
     """获取全局 MCP 配置管理器"""
-    global _config_manager
+    global _config_manager, _trust_pruned
     if _config_manager is None:
         _config_manager = McpConfigManager()
+    # Once per process, before anything reads the store.
+    if not _trust_pruned:
+        with _trust_prune_lock:
+            if not _trust_pruned:
+                _trust_pruned = True
+                try:
+                    prune_trust_store()
+                except Exception as e:
+                    logger.warning(f"[MCP Trust] Prune failed: {e}")
     return _config_manager
 
 

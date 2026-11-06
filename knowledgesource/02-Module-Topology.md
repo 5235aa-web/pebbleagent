@@ -8,12 +8,12 @@
 [Data]        gateway/session.py (sessions.db), agent_core/agent_chat_history.py (agent_chat.db)
               agent_core/transcript_manager.py (JSONL transcript archive), gateway/permission_audit.py (audit DB)
                  ↑ read/write
-[Tools]       agent_core/tool_definitions.py (47 schemas) + agent_core/tool_impl/ (dispatch + handlers)
+[Tools]       agent_core/tool_definitions.py (45 schemas) + agent_core/tool_impl/ (dispatch + handlers)
               agent_core/extensions/, agent_core/mcp/, agent_core/state/ (todo + question managers)
               Tool infrastructure: bash_validator (6-layer command validation) / little_guard (3 runtime limiters, per-session counters)
               / lsp_client (backend of 9 LSP tools)
                  ↑ call
-[Services]    agent_core/agent_chat_service_v2.py (🔴core 117KB)
+[Services]    agent_core/agent_chat_service_v2.py (🔴core 74KB, 1588 lines)
               agent_core/agent_loader.py, agent_core/context_compressor.py
               agent_core/tool_orchestrator.py, agent_core/tool_executor_impl.py
               agent_core/query_state_machine.py, agent_core/memory/, agent_core/snapshot/

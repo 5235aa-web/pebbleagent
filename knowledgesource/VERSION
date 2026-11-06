@@ -84,6 +84,8 @@
 
 ## Changes
 
+- 2026-11-06 MCP project-level approval no longer fires once per launch in a packaged build. The bundled `.mcp.json` is unpacked under `sys._MEIPASS` (a fresh `_MEIxxxx` directory per start), so its path-bound fingerprint could never match twice; `_is_bundled_mcp_config()` now treats a file under the bundle root as part of the program, answers trusted, and records nothing, while every other project-level file keeps the fingerprint gate unchanged. `prune_trust_store()` runs once per process from the first `get_mcp_config_manager()` and removes onefile temp entries, duplicate approvals, and approvals whose directory is gone; an unmounted drive is not counted as a deletion, so a project on a detached disk keeps its approval. The per-entry approval for `~/.pebble/.mcp.json` (agent-written servers wait for the panel) is untouched.
+
 - 2026-11-04 `_validate_project_dir` returns the path in the form the user wrote it (expanded and normalised) instead of the realpath form. On Windows realpath also resolves the 8.3 short name, so a project added under a directory that has one (`C:\Users\RUNNER~1\...`) was stored in a spelling every other path comparison disagreed with. The realpath still runs for the is-directory and drive-root checks, so symlinks and junctions are validated against their target.
 
 - 2026-11-04 `tests/run_all.py` captures each child's output, reprints it, and repeats the last 25 lines of every failing test next to the summary, because a CI log is read from the bottom and the failing assertion was never visible there. It also caps a child at 600s and reconfigures its own stdout to UTF-8: reprinting a decoded payload on a locale-encoded console killed the runner itself.
@@ -1678,3 +1680,15 @@
   `Delete failed`、随后 `loadSession` 用服务器数据恢复（行数 1 → 18）
 - `npx vue-tsc --noEmit` 无输出；`npx vite build` 成功；`python tests\run_all.py` `ALL PASSED: 38 tests`；
   `tests/test_render_html.mjs` `PASS=73 FAIL=0`
+## Module facts corrected against the tree
+
+- `agent_chat_service_v2.py` is 74KB / 1588 lines, not the 117KB the topology
+  chapter had carried since before the service was split. `context_compressor.py`
+  is the larger file now at 76.5KB / 2128 lines, which the index never said.
+- Tool schema count is 45, and 44 away from Windows where `_PLATFORM_ONLY` drops
+  `powershell`. Both the index and the topology chapter said 46/45 and 47.
+- `bash_validator.py` lives in `agent_core/`, not `agent_core/tool_impl/`, and is
+  23.2KB against the 19.5KB the tool chapter recorded.
+
+Recorded because the knowledge base is read before edits: a stale file size makes
+a normal-sized module look like the project's worst hotspot.
