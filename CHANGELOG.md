@@ -7,6 +7,10 @@ which is what the in-app update sheet shows before installing. Add the section
 before running `npm run release`; the release stops if it is missing, because a
 feed with empty notes tells the user nothing.
 
+## 1.1.8
+
+- The MCP panel no longer sits on "idle" after a cold start. The backend was already pushing `mcp.state_changed` as each server connected, but the frontend had no branch for that event and dropped it, so the rack kept whatever a `mcp.list` answered before the servers were up. The event now triggers a re-read, coalesced over 250 ms so a burst of six servers costs one request.
+
 ## 1.1.7
 
 - The MCP panel no longer asks for the same approval on every launch of a packaged build. The bundled `.mcp.json` is unpacked into a fresh `_MEIxxxx` temp directory at each start, so a fingerprint bound to that path could never match twice and the banner came back every time. A file under the bundle root is now treated as part of the program and loads without a prompt, while every other project-level `.mcp.json` keeps the content-fingerprint gate.

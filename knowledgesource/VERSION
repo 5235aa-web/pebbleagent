@@ -84,6 +84,8 @@
 
 ## Changes
 
+- 2026-11-06 The MCP rack no longer stalls on `idle` after a cold start: the gateway broadcast `mcp.state_changed` as each server connected, but no `onEvent` branch existed for it, so the panel kept the `mcp.list` answer that arrived before the servers were up. The event now schedules `refreshMcp()` through a 250 ms coalescer, one request per burst instead of one per server.
+
 - 2026-11-06 MCP project-level approval no longer fires once per launch in a packaged build. The bundled `.mcp.json` is unpacked under `sys._MEIPASS` (a fresh `_MEIxxxx` directory per start), so its path-bound fingerprint could never match twice; `_is_bundled_mcp_config()` now treats a file under the bundle root as part of the program, answers trusted, and records nothing, while every other project-level file keeps the fingerprint gate unchanged. `prune_trust_store()` runs once per process from the first `get_mcp_config_manager()` and removes onefile temp entries, duplicate approvals, and approvals whose directory is gone; an unmounted drive is not counted as a deletion, so a project on a detached disk keeps its approval. The per-entry approval for `~/.pebble/.mcp.json` (agent-written servers wait for the panel) is untouched.
 
 - 2026-11-04 `_validate_project_dir` returns the path in the form the user wrote it (expanded and normalised) instead of the realpath form. On Windows realpath also resolves the 8.3 short name, so a project added under a directory that has one (`C:\Users\RUNNER~1\...`) was stored in a spelling every other path comparison disagreed with. The realpath still runs for the is-directory and drive-root checks, so symlinks and junctions are validated against their target.

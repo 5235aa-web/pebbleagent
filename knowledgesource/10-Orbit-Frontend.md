@@ -225,6 +225,8 @@ Events handled (`onEvent` switch): `user_message.saved`, `message.delta`, `think
 `todos.update`, `session.created`, `session.updated`, `permission.request`,
 `permission.resolved`, `clarify.request`, `clarify.resolved`, `file.change`,
 `files.accepted`, `files.reverted`, `prompt.rejected`, `error`, `gateway.ready`.
+`mcp.state_changed` re-reads the rack instead of patching rows from the delta, coalesced
+over 250 ms because a cold start pushes once per server.
 
 Still unconnected, in rough priority order: status-bar counters, model panel
 (`model.options` / `model.switch` / `model.params.set` / `model.provider.*`), MCP panel

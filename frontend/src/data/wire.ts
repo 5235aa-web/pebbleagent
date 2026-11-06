@@ -711,6 +711,14 @@ function onEvent(ev: GatewayEvent) {
       return
     }
 
+    case 'mcp.state_changed': {
+      /* The payload carries only per-server state; the rack is re-read so the
+         counts, tool badges and error text come from one answer instead of
+         being patched from a delta that may arrive out of order. */
+      scheduleMcpRefresh()
+      return
+    }
+
     case 'gateway.ready': {
       const model = String(p.model ?? '')
       if (model) streamState.model = model
@@ -1893,6 +1901,19 @@ export async function refreshMcp(): Promise<void> {
       missing: Array.isArray(a.missing) ? (a.missing as string[]) : []
     }))
   } catch { /* keep prototype numbers */ }
+}
+
+/* The backend pushes one event per server as it connects or drops, so a cold
+   start arrives as a burst of three to six. Coalescing keeps the panel honest
+   without firing one mcp.list per server. */
+let mcpRefreshTimer = 0
+
+function scheduleMcpRefresh(): void {
+  if (mcpRefreshTimer) return
+  mcpRefreshTimer = window.setTimeout(() => {
+    mcpRefreshTimer = 0
+    void refreshMcp()
+  }, 250)
 }
 
 /** Flips one server. The switch moves at once and rolls back when the gateway
