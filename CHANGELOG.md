@@ -7,6 +7,11 @@ which is what the in-app update sheet shows before installing. Add the section
 before running `npm run release`; the release stops if it is missing, because a
 feed with empty notes tells the user nothing.
 
+## 1.1.7
+
+- The MCP panel no longer asks for the same approval on every launch of a packaged build. The bundled `.mcp.json` is unpacked into a fresh `_MEIxxxx` temp directory at each start, so a fingerprint bound to that path could never match twice and the banner came back every time. A file under the bundle root is now treated as part of the program and loads without a prompt, while every other project-level `.mcp.json` keeps the content-fingerprint gate.
+- Stale MCP approvals are pruned at startup. Each packaged launch used to add one temp-path fingerprint to `mcp_trusted.json`, and a removed project left its entry behind; left alone they fill the 200-entry cap and push out approvals for projects that still exist. The store is now cleaned once per process — onefile temp entries, duplicates and entries whose directory is gone are dropped, and a project on an unmounted drive keeps its approval.
+
 ## 1.1.6
 
 - Links in the transcript are clickable. An address written as `[label](url)` or pasted bare turns into a themed anchor, and a click hands it to the OS default browser through a new `system.open_url` RPC instead of navigating the app window. Only `http` and `https` ever reach the shell — `file:`, `javascript:` and `data:` stay plain text, because the link text comes from model output. The address stops where the ASCII text stops, so a Chinese sentence keeps its `。` and `，` outside the href and `参考https://x` is detected without a space in front of it.
