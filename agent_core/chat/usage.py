@@ -8,6 +8,28 @@ from typing import Any, Callable, Dict, Optional
 logger = logging.getLogger(__name__)
 
 
+def cached_prompt_tokens(usage: Any) -> int:
+    """Cached prompt tokens, reading both field conventions.
+
+    DeepSeek reports the private `prompt_cache_hit_tokens`; OpenAI-compatible
+    gateways report the standard `prompt_tokens_details.cached_tokens`. This is
+    the single reader for both the billed and the unpriced path: two copies had
+    drifted apart, and the billing one silently ignored every gateway that used
+    the standard field, charging a cached prompt at full price.
+    """
+    try:
+        hit = getattr(usage, "prompt_cache_hit_tokens", 0) or 0
+        if hit:
+            return max(0, int(hit))
+        details = getattr(usage, "prompt_tokens_details", None)
+        cached = getattr(details, "cached_tokens", 0) if details is not None else 0
+        return max(0, int(cached or 0))
+    except (TypeError, ValueError):
+        # A provider that reports something unparsable is treated as reporting
+        # no cache rather than failing the whole call's accounting.
+        return 0
+
+
 class UsageTracker:
     """Pricing table, per-call cost and per-session accumulation."""
 
@@ -62,13 +84,15 @@ class UsageTracker:
         self.ensure_fresh()
 
         pricing_data = self.pricing.get("models", {}).get(model)
-        if not pricing_data:
+        # A row may carry only a context window (subscription providers bill
+        # nothing per token); that is not a price entry, so it stays unpriced.
+        if not pricing_data or not pricing_data.get("pricing"):
             return None
 
         pricing = pricing_data.get("pricing", {})
         period = None
 
-        prompt_tokens = getattr(usage, "prompt_tokens", 0)
+        prompt_tokens = int(getattr(usage, "prompt_tokens", 0) or 0)
         tier = pricing_data.get("pricing_tier_high")
         if tier and prompt_tokens > tier.get("threshold_tokens", 256000):
             pricing = tier
@@ -79,19 +103,12 @@ class UsageTracker:
                 period = self.period_fn()
                 pricing = peak if period == "peak" else offpeak
 
-        cache_hit = getattr(usage, "prompt_cache_hit_tokens", 0)
-        cache_miss = prompt_tokens - cache_hit if cache_hit > 0 else prompt_tokens
-        completion = getattr(usage, "completion_tokens", 0)
+        cache_hit = max(0, min(cached_prompt_tokens(usage), prompt_tokens))
+        cache_miss = prompt_tokens - cache_hit
+        completion = int(getattr(usage, "completion_tokens", 0) or 0)
 
-        if cache_hit > 0:
-            input_cost = (cache_miss / 1_000_000) * pricing.get("input_per_million", 0)
-            cache_cost = (cache_hit / 1_000_000) * pricing.get("cache_hit_per_million", 0)
-        else:
-            input_cost = (prompt_tokens / 1_000_000) * pricing.get("input_per_million", 0)
-            cache_cost = 0.0
-            cache_hit = 0
-            cache_miss = prompt_tokens
-
+        input_cost = (cache_miss / 1_000_000) * pricing.get("input_per_million", 0)
+        cache_cost = (cache_hit / 1_000_000) * pricing.get("cache_hit_per_million", 0)
         output_cost = (completion / 1_000_000) * pricing.get("output_per_million", 0)
 
         return {

@@ -24,12 +24,15 @@
           </div>
           <div class="section-sub" v-if="!hasUserSkills">no user skills · ask the agent to add one to ~/.pebble/skills</div>
 
-          <div class="section-h">tools this turn</div>
-          <div class="change-row" v-for="(t, i) in tools" :key="i">
+          <div class="section-h">tool · tokens this turn</div>
+          <div class="change-row" v-for="(t, i) in visibleTools" :key="i">
             <span class="ch-ico" :class="t.ico">{{ t.mark }}</span>
             <span class="ch-path">{{ t.text }}</span>
             <span class="ch-num">{{ t.time }}</span>
           </div>
+          <button v-if="hiddenToolCount" class="ch-more" @click="toolsExpanded = !toolsExpanded">
+            {{ toolsExpanded ? 'collapse' : `+${hiddenToolCount} more` }}
+          </button>
 
           <div class="section-h">memory</div>
           <div class="snap" style="cursor:default">
@@ -45,8 +48,8 @@
 </template>
 
 <script setup lang="ts">
-import { computed } from 'vue'
-import { context, ledger, llm, usage } from '../data/panels'
+import { computed, ref, watch } from 'vue'
+import { context, ledger, llm, usage, fmtTokens } from '../data/panels'
 import { catalog } from '../data/store'
 import { streamState } from '../data/stream'
 import { turnSkills } from '../data/wire'
@@ -72,10 +75,10 @@ const windowSize = computed(() => {
   return 1_000_000
 })
 
-/* The gateway measures the agent prompt, the preloaded skill block and the tool
-   schemas on every call. The conversation share is what the provider's
-   prompt_tokens leaves after those three, so the segments describe the request
-   that was actually billed instead of proportional guesses. */
+/* The gateway estimates four parts locally on every call: the agent prompt, the
+   preloaded skill block, the tool schemas and the conversation itself. The pane
+   scales all four against the provider's measured prompt_tokens, so their sum
+   equals what was actually billed. */
 const split = computed(() => {
   const limit = windowSize.value
   if (!limit) return null
@@ -87,14 +90,36 @@ const split = computed(() => {
   let base = usage.contextBase
   let skills = usage.contextSkills
   let tool = usage.contextTools
+  const conv = usage.contextConv
   /* An older gateway reports no breakdown. Show the request as conversation
      rather than inventing a split. */
-  if (!base && !skills && !tool) {
+  if (!base && !skills && !tool && !conv) {
     return { base: 0, skills: 0, conv: used, tool: 0, free: Math.max(0, limit - used), limit }
   }
-  /* Tokenizer estimates can overshoot the provider's own count on a short
-     request; scale them down rather than let the conversation share go
-     negative. */
+  /* All four parts are local tokenizer estimates while `prompt` is the
+     provider's measured count. Scaling them by one factor keeps their sum equal
+     to that measurement, so the difference between tokenizers is shared instead
+     of being charged to the conversation alone. The ratio stays near 1 in
+     practice; a wild one means the estimate missed something (an attachment, an
+     image) and subtraction is the safer answer. */
+  const localTotal = base + skills + tool + conv
+  /* `conv` is only present when the gateway sends a message estimate. Without
+     it the four-part split would scale the three prompt parts up to cover a
+     conversation that is not in their sum, so the old subtraction stays. */
+  if (conv > 0 && localTotal > 0 && prompt > 0) {
+    const scale = prompt / localTotal
+    if (scale >= 0.2 && scale <= 3) {
+      base = Math.round(base * scale)
+      skills = Math.round(skills * scale)
+      tool = Math.round(tool * scale)
+      /* The completion is not part of the prompt estimate, so it is added back
+         to the conversation share rather than scaled with it. */
+      const convInput = Math.round(conv * scale)
+      const convTotal = Math.max(0, Math.min(convInput + Math.max(0, used - prompt), used - base - skills - tool))
+      return { base, skills, conv: convTotal, tool, free: Math.max(0, limit - used), limit }
+    }
+  }
+  /* Fallback: no message estimate, or a ratio too far off to trust. */
   const known = base + skills + tool
   if (known > prompt && known > 0) {
     const scale = prompt / known
@@ -102,8 +127,8 @@ const split = computed(() => {
     skills = Math.round(skills * scale)
     tool = Math.round(tool * scale)
   }
-  const conv = Math.max(0, used - base - skills - tool)
-  return { base, skills, conv, tool, free: Math.max(0, limit - used), limit }
+  const convFallback = Math.max(0, used - base - skills - tool)
+  return { base, skills, conv: convFallback, tool, free: Math.max(0, limit - used), limit }
 })
 
 const segments = computed(() => {
@@ -153,7 +178,21 @@ const hasUserSkills = computed(() => catalog.skillGroups.some(g => g.name === 'U
 /* Tool rows for the current turn are read off the transcript: the newest agent
    row carries its tool blocks in order. Before any block exists the list stays
    empty — the prototype's three sample rows are gone. */
-const tools = computed(() => {
+const toolsExpanded = ref(false)
+
+/* The gateway reports what each tool's output cost this turn, which is the part
+   worth seeing in a coding session: the file read that filled the window, not
+   just the fact that a tool ran. Rows arrive largest first. */
+const toolRows = computed(() => {
+  if (usage.toolResults.length) {
+    return usage.toolResults.map(r => ({
+      ico: 'mod',
+      mark: '→',
+      text: r.calls > 1 ? `${r.name} ×${r.calls}` : r.name,
+      time: fmtTokens(r.tokens)
+    }))
+  }
+  /* Older gateway: names only, read off the transcript's tool blocks. */
   for (let i = streamState.items.length - 1; i >= 0; i--) {
     const item = streamState.items[i]
     if (!item.blocks) continue
@@ -169,6 +208,14 @@ const tools = computed(() => {
   }
   return []
 })
+
+/* Detail, not the main readout: five rows stay visible and the rest fold away so
+   a long turn cannot push the sections below off screen. */
+const visibleTools = computed(() => (toolsExpanded.value ? toolRows.value : toolRows.value.slice(0, 5)))
+const hiddenToolCount = computed(() => Math.max(0, toolRows.value.length - 5))
+
+/* A new turn starts folded again. */
+watch(toolRows, () => { toolsExpanded.value = false })
 
 const ledgerSub = computed(() => {
   const by: Record<string, number> = {}

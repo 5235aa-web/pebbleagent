@@ -28,6 +28,7 @@ import logging
 import json
 import uuid
 import os
+import threading
 from datetime import datetime, timezone, timedelta
 from typing import List, Dict, Any, Optional, AsyncGenerator
 from openai import AsyncOpenAI
@@ -54,7 +55,7 @@ from .tool_executor_impl import AgentToolExecutorImpl
 # MCP 管理器（延迟导入，避免循环依赖）
 _mcp_manager = None
 
-from .chat.usage import UsageTracker
+from .chat.usage import UsageTracker, cached_prompt_tokens
 from .chat.stream_client import StreamConsumer, open_stream
 from .chat.tool_cycle import ToolCycle
 from .chat.turn_executor import TurnState, prepare_turn
@@ -75,9 +76,65 @@ MODEL_CONTEXT_LIMITS = {
     'gemini': 1_000_000,
 }
 
+# Cached copy of the user-supplied windows, guarded because usage events can
+# arrive from the agent thread and the RPC thread at once.
+_pricing_limit_cache: Dict[str, Any] = {"path": "", "mtime": 0.0, "limits": {}}
+_pricing_limit_lock = threading.Lock()
+
+
+def _pricing_limit_paths() -> List[str]:
+    """model_pricing.json, data directory first then the bundled copy."""
+    home = os.environ.get("PEBBLE_HOME") or os.path.join(os.path.expanduser("~"), ".pebble")
+    here = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
+    return [os.path.join(home, "model_pricing.json"), os.path.join(here, "model_pricing.json")]
+
+
+def _pricing_context_limits() -> Dict[str, int]:
+    """Windows typed into the pricing table, keyed by model name.
+
+    Read once per file change: the table is small but this runs on every usage
+    event, and a stat call is cheaper than parsing the JSON each time.
+    """
+    path = ""
+    mtime = 0.0
+    for candidate in _pricing_limit_paths():
+        try:
+            if os.path.exists(candidate):
+                path, mtime = candidate, os.path.getmtime(candidate)
+                break
+        except OSError:
+            continue
+
+    with _pricing_limit_lock:
+        if path == _pricing_limit_cache["path"] and mtime == _pricing_limit_cache["mtime"]:
+            return _pricing_limit_cache["limits"]
+        limits: Dict[str, int] = {}
+        if path:
+            try:
+                with open(path, "r", encoding="utf-8") as f:
+                    data = json.load(f)
+                for name, entry in (data.get("models") or {}).items():
+                    value = entry.get("context_limit") if isinstance(entry, dict) else None
+                    if isinstance(value, (int, float)) and value > 0:
+                        limits[str(name)] = int(value)
+            except Exception as e:
+                logger.warning(f"[Context] Failed to read pricing windows: {e}")
+        _pricing_limit_cache.update(path=path, mtime=mtime, limits=limits)
+        return limits
+
+
 def get_model_context_limit(model_name: str) -> int:
-    """根据模型名称获取上下文限制 token 数"""
-    name = model_name.lower().replace(' ', '')
+    """根据模型名称获取上下文限制 token 数
+
+    价格表里手工填写的窗口优先，其次按名称匹配，最后落到保守默认值。
+    名字匹配只能覆盖有限的几个关键词，所以新模型一律按 128K 处理，除非
+    用户在计费面板里填了真实窗口。
+    """
+    if model_name:
+        override = _pricing_context_limits().get(model_name)
+        if override:
+            return override
+    name = (model_name or "").lower().replace(' ', '')
     for key, limit in MODEL_CONTEXT_LIMITS.items():
         if key in name:
             return limit
@@ -105,6 +162,76 @@ def count_tokens_for_full_context(
         tools_json = json.dumps(tools_definitions, ensure_ascii=False)
         total += count_tokens(tools_json)
     return total
+
+
+def count_messages_tokens(messages: list) -> int:
+    """Local estimate of the conversation share.
+
+    The pane used to derive this by subtracting the three prompt segments from
+    the measured prompt, which charged every tokenizer difference to the
+    conversation. Measuring it here lets all four segments be scaled together.
+    """
+    total = 0
+    for msg in messages or []:
+        if not isinstance(msg, dict):
+            continue
+        # The system prompt is counted separately as `system_base` and it is the
+        # first message in the list; counting it here too would inflate the local
+        # total and shrink every segment once the pane scales them.
+        if msg.get("role") == "system":
+            continue
+        content = msg.get("content")
+        if isinstance(content, str):
+            total += count_tokens(content)
+        elif isinstance(content, list):
+            for part in content:
+                if isinstance(part, dict) and isinstance(part.get("text"), str):
+                    total += count_tokens(part["text"])
+        calls = msg.get("tool_calls")
+        if calls:
+            try:
+                total += count_tokens(json.dumps(calls, ensure_ascii=False))
+            except (TypeError, ValueError):
+                pass
+    return total
+
+
+def summarize_tool_results(messages: list, start: int = 0) -> List[dict]:
+    """Per-tool output size for the current turn, largest first.
+
+    The conversation segment already contains these tokens, so this is detail for
+    the pane rather than a separate part of the split.
+    """
+    names: Dict[str, str] = {}
+    rows: Dict[str, dict] = {}
+    for msg in messages[start:]:
+        if not isinstance(msg, dict):
+            continue
+        for call in msg.get("tool_calls") or []:
+            if not isinstance(call, dict):
+                continue
+            cid = call.get("id")
+            fn = call.get("function") or {}
+            name = fn.get("name") if isinstance(fn, dict) else None
+            if cid and name:
+                names[str(cid)] = str(name)
+        if msg.get("role") != "tool":
+            continue
+        name = msg.get("name") or names.get(str(msg.get("tool_call_id") or ""), "tool")
+        content = msg.get("content")
+        if isinstance(content, str):
+            text = content
+        elif content is None:
+            text = ""
+        else:
+            try:
+                text = json.dumps(content, ensure_ascii=False)
+            except (TypeError, ValueError):
+                text = ""
+        row = rows.setdefault(str(name), {"name": str(name), "calls": 0, "tokens": 0})
+        row["calls"] += 1
+        row["tokens"] += count_tokens(text)
+    return sorted(rows.values(), key=lambda r: r["tokens"], reverse=True)
 
 
 def _is_suspicious_stream_end(finish_reason: Optional[str], response_text: str) -> bool:
@@ -431,17 +558,8 @@ class AgentChatServiceV2:
 
     @staticmethod
     def _cache_hit_tokens(usage) -> int:
-        """缓存命中 token：兼容两种字段约定。
-
-        DeepSeek 用私有字段 prompt_cache_hit_tokens；OpenAI 兼容网关
-        （OpenCode Go 等）用标准字段 prompt_tokens_details.cached_tokens。
-        """
-        hit = getattr(usage, "prompt_cache_hit_tokens", 0) or 0
-        if hit:
-            return int(hit)
-        details = getattr(usage, "prompt_tokens_details", None)
-        cached = getattr(details, "cached_tokens", 0) if details is not None else 0
-        return int(cached or 0)
+        """缓存命中 token：与计费路径共用同一实现，避免两处口径分叉"""
+        return cached_prompt_tokens(usage)
 
     def _unpriced_cost_info(self, usage) -> dict:
         """无价格条目的模型（订阅制 provider）：上报真实用量，费用恒为 0。
@@ -449,8 +567,8 @@ class AgentChatServiceV2:
         返回结构与 UsageTracker.calculate_cost 一致，使累计、持久化和前端
         展示走同一条路径；token 数为 API 原始值，上下文占用由此恢复。
         """
-        prompt = getattr(usage, "prompt_tokens", 0) or 0
-        completion = getattr(usage, "completion_tokens", 0) or 0
+        prompt = int(getattr(usage, "prompt_tokens", 0) or 0)
+        completion = int(getattr(usage, "completion_tokens", 0) or 0)
         cache_hit = min(self._cache_hit_tokens(usage), prompt)
         return {
             "input_tokens": prompt - cache_hit,
@@ -1058,6 +1176,9 @@ class AgentChatServiceV2:
         agent_def = state.agent_def
         conversation_id = state.conversation_id
         messages = state.messages
+        # Tool output added from here on belongs to this turn; the pane shows a
+        # per-tool breakdown that must not accumulate across turns.
+        turn_start = len(messages)
         use_model = state.use_model
         final_temperature = state.final_temperature
         final_top_p = state.final_top_p
@@ -1237,13 +1358,17 @@ class AgentChatServiceV2:
                             "latest_output_tokens": cost_info.get("output_tokens", 0),
                             "model_context_limit": get_model_context_limit(use_model),
                             "period": cost_info.get("period"),  # 本次计费时段 peak/offpeak（分时模型）
-                            # 上下文分项：提示词（含经验/项目/备注）、预加载技能、工具 schema。
-                            # 会话历史由前端用 prompt_tokens 减去这三项得到，四项之和恒等于真实占用。
+                            # 上下文分项：提示词（含经验/项目/备注）、预加载技能、工具 schema、
+                            # 会话历史。四项都是本地估算，前端按实测 prompt_tokens 统一缩放，
+                            # 四项之和恒等于真实占用，误差均摊而不是全压到会话上。
                             "context_breakdown": {
                                 "system_base": state.prompt_base_tokens,
                                 "skills": state.prompt_skills_tokens,
                                 "tools": state.tools_tokens,
+                                "messages": count_messages_tokens(messages),
                             },
+                            # 本轮每个工具的输出占用（明细，不是分项；已含在 messages 里）
+                            "tool_results": summarize_tool_results(messages, turn_start),
                             "this_call": {**cost_info, "model": use_model}
                         }
                     except Exception as e:

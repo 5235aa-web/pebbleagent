@@ -246,6 +246,10 @@ def handle(ctx, method):
                         "input": p.get("input_per_million"),
                         "cache_hit": p.get("cache_hit_per_million"),
                         "output": p.get("output_per_million"),
+                        # A row exists for every table entry, including one that
+                        # only holds a context window. Without this flag the pane
+                        # would call that model priced at zero.
+                        "priced": bool(p),
                     }
                     # Only models with a second tier carry a threshold; the pane
                     # needs it to tell "standard tier" from "high tier" instead

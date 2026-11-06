@@ -54,13 +54,18 @@ export const usage = reactive({
   /* Output tokens of the latest call, kept out of `tokensOut` for the same reason. */
   contextOut: 0,
   /* Real prompt parts measured by the gateway: the agent prompt (experience,
-     project path and user note included), the preloaded SKILL.md block, and the
-     tool schemas. The conversation share is what the provider's prompt_tokens
-     leaves after these three, so the split always adds up to the real total
-     instead of being a scaled guess. */
+     project path and user note included), the preloaded SKILL.md block, the
+     tool schemas, and the conversation itself. All four are local tokenizer
+     estimates; the pane scales them together against the provider's measured
+     prompt_tokens, so their sum equals the real total and the tokenizer
+     difference is shared instead of landing on the conversation alone. */
   contextBase: 0,
   contextSkills: 0,
   contextTools: 0,
+  contextConv: 0,
+  /* Per-tool output size for the current turn, largest first. Detail only: those
+     tokens are already counted inside `contextConv`. */
+  toolResults: [] as Array<{ name: string; calls: number; tokens: number }>,
   costToday: 0,
   /* Rolling windows over the same table, filled by `refreshPanes`. */
   cost7d: 0,
@@ -368,7 +373,7 @@ export const llm = reactive({
   model: '',
   provider: '',
   currency: 'CNY',
-  pricing: {} as Record<string, { input?: number; cache_hit?: number; output?: number; tier_threshold?: number }>,
+  pricing: {} as Record<string, { input?: number; cache_hit?: number; output?: number; tier_threshold?: number; priced?: boolean }>,
   temperature: 1,
   topP: 1,
   reasoningEffort: 'high',

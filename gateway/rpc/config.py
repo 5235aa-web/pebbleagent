@@ -76,11 +76,31 @@ def handle(ctx, method):
                 return {"id": rid, "result": {"ok": False, "error": "invalid model name"}}
             if not isinstance(entry, dict):
                 return {"id": rid, "result": {"ok": False, "error": f"{name}: entry must be an object"}}
-            ok, err = srv._validate_pricing_block(entry.get("pricing"))
-            if not ok:
-                return {"id": rid, "result": {"ok": False, "error": f"{name}: {err}"}}
             clean = dict(entry)
-            clean["pricing"] = {k: float(entry["pricing"][k]) for k in srv._PRICING_KEYS}
+            # A row may exist only to hold a context window: a subscription
+            # provider bills nothing per token, and forcing a price block would
+            # write a fake zero rate into the cost table.
+            pricing = entry.get("pricing")
+            if pricing is None:
+                clean.pop("pricing", None)
+            else:
+                ok, err = srv._validate_pricing_block(pricing)
+                if not ok:
+                    return {"id": rid, "result": {"ok": False, "error": f"{name}: {err}"}}
+                clean["pricing"] = {k: float(pricing[k]) for k in srv._PRICING_KEYS}
+            limit = entry.get("context_limit")
+            if limit is None or (isinstance(limit, str) and not limit.strip()):
+                clean.pop("context_limit", None)
+            else:
+                try:
+                    window = int(limit)
+                except (TypeError, ValueError):
+                    return {"id": rid, "result": {"ok": False, "error": f"{name}: context_limit must be a whole number"}}
+                if window <= 0:
+                    return {"id": rid, "result": {"ok": False, "error": f"{name}: context_limit must be positive"}}
+                clean["context_limit"] = window
+            if "pricing" not in clean and "context_limit" not in clean:
+                return {"id": rid, "result": {"ok": False, "error": f"{name}: entry needs pricing or context_limit"}}
             for bk in ("pricing_peak", "pricing_offpeak", "pricing_tier_high"):
                 blk = entry.get(bk)
                 if blk is None:

@@ -1179,7 +1179,7 @@ def handle_prompt_submit(
                 elif event_type == "title_updated":
                     write_event("session.updated", {"title": event.get("title", ""), "session_id": sid})
                 elif event_type == "usage":
-                    write_event("message.usage", {"model": event.get("model", ""), "session_cost_cny": event.get("session_cost_cny", 0), "latest_input_tokens": event.get("latest_input_tokens", 0), "latest_output_tokens": event.get("latest_output_tokens", 0), "model_context_limit": event.get("model_context_limit", 0), "period": event.get("period"), "context_breakdown": event.get("context_breakdown"), "this_call": event.get("this_call")})
+                    write_event("message.usage", {"model": event.get("model", ""), "session_cost_cny": event.get("session_cost_cny", 0), "latest_input_tokens": event.get("latest_input_tokens", 0), "latest_output_tokens": event.get("latest_output_tokens", 0), "model_context_limit": event.get("model_context_limit", 0), "period": event.get("period"), "context_breakdown": event.get("context_breakdown"), "tool_results": event.get("tool_results"), "this_call": event.get("this_call")})
                 elif event_type == "chat_completed":
                     chat_completed_data = event
                     break

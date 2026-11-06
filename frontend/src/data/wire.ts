@@ -1564,14 +1564,31 @@ function syncUsage(p: Record<string, unknown>): void {
      feeds the window occupancy. */
   if (Number.isFinite(tin)) usage.contextTokens = tin
   if (Number.isFinite(tout)) usage.contextOut = tout
-  /* Real prompt parts from the gateway. The panel subtracts them from
-     `contextTokens` to get the conversation share, so no part is a guess. */
+  /* Real prompt parts from the gateway. The panel scales all four against
+     `contextTokens`, so their sum matches the measured prompt instead of leaving
+     the conversation as the remainder. */
   const breakdown = p.context_breakdown
   if (breakdown && typeof breakdown === 'object') {
     const parts = breakdown as Record<string, unknown>
     usage.contextBase = Math.max(0, Number(parts.system_base) || 0)
     usage.contextSkills = Math.max(0, Number(parts.skills) || 0)
     usage.contextTools = Math.max(0, Number(parts.tools) || 0)
+    usage.contextConv = Math.max(0, Number(parts.messages) || 0)
+  }
+  /* Per-tool output size for the current turn. Rows are already sorted by the
+     gateway; the pane only folds the tail. */
+  const toolResults = p.tool_results
+  if (Array.isArray(toolResults)) {
+    usage.toolResults = toolResults
+      .filter((r) => r && typeof r === 'object')
+      .map((r) => {
+        const row = r as Record<string, unknown>
+        return {
+          name: String(row.name ?? 'tool'),
+          calls: Math.max(0, Number(row.calls) || 0),
+          tokens: Math.max(0, Number(row.tokens) || 0)
+        }
+      })
   }
   const cache = Number(p.cache_hit_tokens ?? NaN)
   if (Number.isFinite(cache)) usage.cacheHit = cache

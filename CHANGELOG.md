@@ -7,6 +7,13 @@ which is what the in-app update sheet shows before installing. Add the section
 before running `npm run release`; the release stops if it is missing, because a
 feed with empty notes tells the user nothing.
 
+## 1.1.9
+
+- Each row in the pricing table gains a `ctx` field for the model's context window, stored as `context_limit` and read ahead of the name-based heuristics, so a model that matches no keyword is no longer measured against the 128K default. Subscription models belong in the table as well: enter the model name and its window, leave the rates empty, and the row stays unpriced. Windows are keyed by model name, so a model already listed needs no second entry.
+- Cached prompt tokens are now read by one function on both the billing and the unpriced path. Billing had read only DeepSeek's private `prompt_cache_hit_tokens`, so a priced model behind an OpenAI-compatible gateway that reports `prompt_tokens_details.cached_tokens` was charged the full input rate for its cached prompt and showed a 0% hit rate. Values are floored at zero and clamped to the prompt size.
+- The context pane splits the window across four estimated parts instead of three plus a remainder. The gateway now estimates the conversation itself and the pane scales all four by the measured `prompt_tokens`, so tokenizer differences are shared rather than charged entirely to the conversation. The system message is skipped in that estimate because the base prompt already counts it.
+- The `tool tokens this turn` list now reports what each tool's output cost, largest first, instead of names alone. Five rows stay visible and the rest fold behind a counter, so a long turn cannot push the rest of the pane off screen. Those tokens are detail, not a fifth part of the split: they are already inside the conversation segment.
+
 ## 1.1.8
 
 - The MCP panel no longer sits on "idle" after a cold start. The backend was already pushing `mcp.state_changed` as each server connected, but the frontend had no branch for that event and dropped it, so the rack kept whatever a `mcp.list` answered before the servers were up. The event now triggers a re-read, coalesced over 250 ms so a burst of six servers costs one request.

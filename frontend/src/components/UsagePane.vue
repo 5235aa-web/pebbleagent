@@ -49,8 +49,8 @@
             <span class="bill-cost">{{ fmtMoney(row.cost) }}</span>
           </div>
 
-          <div class="section-h">pricing · per 1M tokens
-            <span class="sh-note" id="pxCur">{{ pricingData.default_currency.toUpperCase() }}</span>
+          <div class="section-h">models · rates &amp; windows
+            <span class="sh-note" id="pxCur">{{ pricingData.default_currency.toUpperCase() }} · per 1M</span>
           </div>
 
           <div class="px-bar">
@@ -79,6 +79,17 @@
                   @keydown.enter.prevent="onNameEnter($event)"
                 />
                 <span class="px-prov">{{ row.vendor }}</span>
+                <label class="px-ctx">
+                  <span>ctx</span>
+                  <input
+                    type="number"
+                    min="1"
+                    step="1000"
+                    placeholder="—"
+                    :value="row.contextLimit"
+                    @change="setContextLimit(row.name, $event)"
+                  />
+                </label>
                 <button class="px-del" data-tip="Delete" @click="dropModel(row.name)">&#215;</button>
               </header>
               <div v-if="row.block" class="px-cells">
@@ -87,7 +98,7 @@
                 <label class="px-cell"><span>output</span><input :value="row.block.output" @change="setRate(row.name, 'output', $event)" /></label>
               </div>
               <div v-else class="px-cells">
-                <span class="px-norate">no {{ pricingPeriod }} rate</span>
+                <button class="px-addrate" @click="addRate(row.name)">+ {{ pricingPeriod }} rate</button>
               </div>
             </article>
             <div v-if="!pricingRows.length" class="px-norate px-empty">no models in the pricing table</div>
@@ -140,10 +151,18 @@ const cacheRate = computed(() => {
    with a second tier reports the tier this request actually bills at, judged by
    the prompt size against the threshold the gateway sent. */
 const pricingOf = computed(() => {
-  const table = llm.pricing as Record<string, { tier_threshold?: number }> | undefined
+  const table = llm.pricing as
+    | Record<string, { input?: number; cache_hit?: number; output?: number; tier_threshold?: number; priced?: boolean }>
+    | undefined
   const name = streamState.model || llm.model || ''
   const entry = name && table ? table[name] : undefined
-  return { known: Boolean(entry), threshold: Number(entry?.tier_threshold ?? 0) }
+  /* A row exists for every entry in the price table, including one that only
+     holds a context window, so presence is not proof of a rate. Older backends
+     send no flag, hence the null check on the three rates. */
+  const known = Boolean(
+    entry && (entry.priced ?? (entry.input != null || entry.cache_hit != null || entry.output != null))
+  )
+  return { known, threshold: Number(entry?.tier_threshold ?? 0) }
 })
 const priced = computed(() => pricingOf.value.known)
 const tier = computed(() => {
@@ -174,6 +193,10 @@ type PricingEntry = {
   pricing_peak?: RateBlock
   pricing_offpeak?: RateBlock
   pricing_tier_high?: RateBlock
+  /* Window size in tokens, typed by hand. Kept beside the rates because this
+     table is the one place that lists models, but it is not a price: a row with
+     only this field bills nothing and stays unpriced. */
+  context_limit?: number
   provider?: string
   vendor?: string
 }
@@ -212,6 +235,7 @@ const pricingRows = computed(() =>
       name,
       vendor: String(entry.provider || entry.vendor || ''),
       tint: TINTS[i % TINTS.length],
+      contextLimit: entry.context_limit ?? '',
       block: block
         ? {
             input: Number(block.input_per_million ?? 0).toFixed(2),
@@ -292,6 +316,37 @@ function setRate(name: string, key: 'input' | 'cache_hit' | 'output', ev: Event)
   blockOf(entry)[(key + '_per_million') as keyof RateBlock] = Number.isFinite(value) ? value : 0
 }
 
+/** Creates the rate block for the period on screen. Kept behind a click so a row
+    that only holds a window never gains a zero rate by accident. */
+function addRate(name: string): void {
+  const entry = pricingData.value.models[name]
+  if (!entry) return
+  blockOf(entry)
+  pricingHint.value = `set the ${pricingPeriod.value} rates, then save`
+}
+
+/** Window size belongs to the model, not to a billing period. Clearing the field
+    drops the override so the backend falls back to its name heuristics instead
+    of treating an empty box as a zero-token window. */
+function setContextLimit(name: string, ev: Event): void {
+  const entry = pricingData.value.models[name]
+  if (!entry) return
+  const input = ev.target as HTMLInputElement
+  const raw = input.value.trim()
+  if (!raw) {
+    delete entry.context_limit
+    return
+  }
+  const value = Math.round(Number(raw))
+  if (!Number.isFinite(value) || value <= 0) {
+    delete entry.context_limit
+    input.value = ''
+    pricingHint.value = 'window must be a positive number of tokens'
+    return
+  }
+  entry.context_limit = value
+}
+
 /** Enter commits the name the same way leaving the field does. */
 function onNameEnter(ev: KeyboardEvent): void {
   ;(ev.target as HTMLInputElement).blur()
@@ -326,11 +381,12 @@ function addModel(): void {
   let n = 1
   while (pricingData.value.models['new-model-' + n]) n++
   const name = 'new-model-' + n
-  pricingData.value.models[name] = {
-    pricing: { input_per_million: 0, cache_hit_per_million: 0, output_per_million: 0 }
-  }
+  /* No price block by default. A row may exist only to hold a window, and a
+     zero rate would read as "priced at zero" instead of "unpriced"; the block
+     appears the moment a rate is typed. */
+  pricingData.value.models[name] = {}
   newModels.add(name)
-  pricingHint.value = `added ${name} · set its rates, then save`
+  pricingHint.value = `added ${name} · set its rates or window, then save`
 }
 
 /** Removing a stored model edits the table that gets written on Save, so it asks
