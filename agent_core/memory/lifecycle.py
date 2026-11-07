@@ -9,7 +9,7 @@ from typing import Any, Dict, Optional
 from .schema import LedgerDatabase, build_fts_query
 
 SIMILARITY_THRESHOLD = 0.72
-STALE_DAYS = 180
+STALE_DAYS = 90
 
 
 def _normalize(text: str) -> str:

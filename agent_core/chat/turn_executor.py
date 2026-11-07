@@ -1,11 +1,9 @@
 """Turn preparation for the chat loop."""
 
 import asyncio
-import json
 import logging
-import re
 from dataclasses import dataclass, field
-from typing import Any, AsyncIterator, Dict, List, Optional, Tuple
+from typing import Any, AsyncIterator, Dict, List, Optional
 
 from openai import AsyncOpenAI
 
@@ -17,34 +15,6 @@ from .prompt import compose_system_prompt
 logger = logging.getLogger(__name__)
 
 IMAGE_EXT = {'.png': 'image/png', '.jpg': 'image/jpeg', '.jpeg': 'image/jpeg', '.gif': 'image/gif', '.webp': 'image/webp', '.bmp': 'image/bmp'}
-
-_FILE_PATTERN = re.compile(
-    r"[\w./\\-]+\.(?:py|ts|tsx|js|jsx|vue|json|md|yaml|yml|toml|css|scss|html|java|go|rs|cpp|c|h|sql)\b"
-)
-
-
-def _recent_context(messages: List[dict], limit: int = 8) -> Tuple[List[str], List[str]]:
-    """收集最近消息里的工具名与文件路径，用于经验检索加权。"""
-    tools: List[str] = []
-    paths: List[str] = []
-    for msg in messages[-limit:]:
-        calls = msg.get("tool_calls") or []
-        if isinstance(calls, str):
-            try:
-                calls = json.loads(calls)
-            except (TypeError, ValueError):
-                calls = []
-        for call in calls:
-            name = (call.get("function") or {}).get("name") if isinstance(call, dict) else None
-            if name and name not in tools:
-                tools.append(name)
-        content = msg.get("content")
-        if isinstance(content, str):
-            for match in _FILE_PATTERN.finditer(content):
-                candidate = match.group(0)
-                if candidate not in paths:
-                    paths.append(candidate)
-    return tools[:10], paths[:10]
 
 
 @dataclass
@@ -192,11 +162,7 @@ async def prepare_turn(service, params: Dict[str, Any], state: TurnState) -> Asy
     try:
         ledger = service._ledger
         ledger.set_project(project_path or service._current_project_path)
-        recent_tools, recent_paths = _recent_context(state.context_messages)
-        experience_prompt, exp_cached = ledger.build_prompt_with_status(
-            query=full_message or message,
-            tools=recent_tools,
-            paths=recent_paths,
+        experience_prompt, exp_cached = ledger.build_block_with_status(
             agent_type=agent_name,
         )
         if experience_prompt:

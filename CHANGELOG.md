@@ -7,6 +7,15 @@ which is what the in-app update sheet shows before installing. Add the section
 before running `npm run release`; the release stops if it is missing, because a
 feed with empty notes tells the user nothing.
 
+## 1.2.3
+
+- Lessons remembered from earlier conversations are now a fixed set of the ten most recent, instead of being re-picked for every message. Switching topics no longer re-bills the whole conversation, so cache hits are back around 99% rather than the low nineties. The trade-off: the set is no longer filtered for relevance to what you just asked.
+- Lessons are now learned from English as well. Before this, only Chinese phrasings like 不对 / 必须 / 记住 registered, so an English conversation recorded almost nothing. English corrections, constraints, preferences and confirmations all count now, and English sentences are split correctly, so numbers like 3.14 are no longer treated as sentence breaks.
+- New lessons are written in the language of the conversation that produced them, rather than always in Chinese. The block that carries them is bilingual, so it reads naturally either way and never shifts on its own.
+- Old lessons that were never actually used are cleaned up at startup: anything created more than 90 days ago, never shown in the prompt, and low on confidence gets retired. Only lessons that were outside the prompt anyway are touched, so cleanup does not cost any cache hits.
+- Worth knowing: some actions still cost one full re-read of the conversation, because they change the instructions sent ahead of it. Those are switching projects, editing the user note or the agent note, adding or changing a lesson, changing an agent prompt, a skill, the tool list or the MCP servers, and switching agents. Compaction counts too, since it rewrites the history, and so does a long gap between messages, because the provider's cache expires on its own.These are all normal.
+- Everything else is free: a new topic, a new session, coming back to an old one, or restarting the app all keep the cache intact. Working normally in one project should sit around 99%.
+
 ## 1.2.2
 
 - The Files tab in the right dock showed a literal `7` from the prototype: nothing in the codebase wrote to that node, so every session displayed it, even one that had edited nothing, and accepting or reverting never moved it. It now reads `files.totalFiles`, the `total_files` from `session.file_changes` (one entry per changed path, reverted snapshots excluded), the same figure the pane's `files changed` header prints, and shows nothing at zero. The binding sits on `span.cnt`, not the button, because `orbit/runtime.js` owns the `on` class it binds once per tab.

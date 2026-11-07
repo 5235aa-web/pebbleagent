@@ -99,10 +99,10 @@ def handle(ctx, method):
 
     if method == "memory.prompt":
         agent_name = params.get("agent_name", None)
-        query = params.get("query", "")
         try:
-            prompt = srv._ledger().build_prompt(
-                query=query, agent_type=agent_name, use_cache=False
+            # 经验块与 query 无关：返回的是当前项目 + agent 会注入的固定块。
+            prompt = srv._ledger().build_block(
+                agent_type=agent_name, use_cache=False
             )
             return {"id": rid, "result": {
             "success": True,

@@ -10,8 +10,11 @@ MAX_PROMPT_CHARS = 2000
 
 _HEADER = (
     "<experience-ledger>\n"
-    "以下条目来自此前会话中你被纠正或确认过的做法，按相关性排序。"
+    "以下条目来自此前会话中你被纠正或确认过的做法，最新的在前。"
     "它们是历史结论，若与当前代码冲突，以代码为准。\n"
+    "Lessons below come from earlier sessions where you were corrected or the user "
+    "confirmed a rule, newest first. They are historical conclusions: if they "
+    "conflict with the current code, trust the code.\n"
 )
 
 
@@ -46,6 +49,20 @@ def _evidence_line(evidence: List[Dict[str, Any]]) -> str:
     return f"{label}（{when}）" if when else label
 
 
+def _confidence_label(value: float) -> str:
+    """把置信度压成三档。
+
+    渲染里放精确值会让 boost_recent 的每次 +0.05 都改写这一行，进而让整块
+    经验在 system prompt 里变化，模型侧的前缀缓存随之失效。三档保留"这条
+    有多可靠"的信息，同时让大多数加权落在同一档内。
+    """
+    if value >= 0.9:
+        return "high"
+    if value >= 0.75:
+        return "medium"
+    return "low"
+
+
 def render_entries(entries: List[Dict[str, Any]], max_chars: int = MAX_PROMPT_CHARS) -> str:
     if not entries:
         return ""
@@ -61,7 +78,7 @@ def render_entries(entries: List[Dict[str, Any]], max_chars: int = MAX_PROMPT_CH
             continue
         if len(statement) > 240:
             statement = statement[:240].rstrip() + "…"
-        block = [f"- [{kind} · {confidence:.2f}] {statement}"]
+        block = [f"- [{kind} · {_confidence_label(confidence)}] {statement}"]
         scope = _scope_line(applies_to)
         if scope:
             block.append(f"  适用: {scope}")

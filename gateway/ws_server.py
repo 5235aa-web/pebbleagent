@@ -266,6 +266,23 @@ async def _verify_audit_integrity_background():
     except Exception as e:
         logger.warning(f"[WS] Audit integrity check skipped: {e}")
 
+async def _expire_stale_experiences_background():
+    """启动时后台清理长期未用的经验条目。
+
+    The condition is `hits = 0`, which means the entry was never rendered into
+    the system prompt: anything inside the injection window is marked on every
+    render. Retiring an entry that was never rendered therefore leaves the
+    experience block byte-identical, so the prompt prefix and its cache survive.
+    """
+    try:
+        from agent_core.memory import get_ledger
+        from agent_core.memory.lifecycle import expire_stale
+        retired = await asyncio.to_thread(expire_stale, get_ledger().db)
+        if retired:
+            logger.info(f"[WS] Retired {retired} stale experience entries")
+    except Exception as e:
+        logger.warning(f"[WS] Experience expiry skipped: {e}")
+
 def _prompt_worker(sid: str, text: str, writer: WebSocketWriter, attachments: list | None = None, project_path: str | None = None):
     """Run handle_prompt_submit in a thread, using the writer for events."""
     import threading
@@ -677,6 +694,9 @@ async def main(host: str = "127.0.0.1", port: int = 19876):
 
     # 后台校验审计日志完整性（启动时一次）
     asyncio.create_task(_verify_audit_integrity_background())
+
+    # 后台清理长期未用的经验条目（启动时一次；只碰注入窗口之外的，块不变）
+    asyncio.create_task(_expire_stale_experiences_background())
 
     # max_size: allow large prompt.submit messages with base64 image attachments
     # (websockets default 1 MiB rejects them with close code 1009); the real

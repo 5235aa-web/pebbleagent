@@ -14,7 +14,7 @@
 6. Inside chat_stream:
    a. get_cached_agent → load YAML agent → agent_loader.py
    b. get_agent_prompt_parts → agent prompt md + preloaded skills (section cached by skill names)
-   c. ledger.build_prompt_with_status → experience block (recalled entries + agent note). Cached per (project_id, agent_type) and re-rendered only when the entry set or the agent note changes; the recall query is the current user message, so an uncached block would differ every turn.
+   c. ledger.build_block_with_status → experience block (deterministically selected entries + agent note), no recall query. Cached per (project_id, agent_type, limit) and re-rendered only when the entry set or the agent note changes; the same entry set always renders byte-identical text, restart included.
    d. compose_system_prompt → base + project_path_instruction + usernote + experience block. The experience block is last on purpose: it is the only section that can change, and the provider caches the prompt by prefix.
    e. get_agent_chat_messages_for_context → agent_chat.db
    f. _sanitize_messages → repair orphan tool messages

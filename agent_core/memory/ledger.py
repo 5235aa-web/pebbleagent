@@ -274,40 +274,60 @@ class ExperienceLedger:
 
     def build_prompt(
         self,
-        query: str,
+        query: Optional[str] = None,
         tools: Optional[Sequence[str]] = None,
         paths: Optional[Sequence[str]] = None,
         agent_type: Optional[str] = None,
-        limit: int = 5,
+        limit: int = 10,
         use_cache: bool = True,
     ) -> str:
-        text, _ = self.build_prompt_with_status(
-            query, tools=tools, paths=paths, agent_type=agent_type,
-            limit=limit, use_cache=use_cache,
-        )
-        return text
+        """兼容包装：query / tools / paths 已不参与选取，保留只为旧调用方。"""
+        return self.build_block(agent_type=agent_type, limit=limit, use_cache=use_cache)
 
     def build_prompt_with_status(
         self,
-        query: str,
+        query: Optional[str] = None,
         tools: Optional[Sequence[str]] = None,
         paths: Optional[Sequence[str]] = None,
         agent_type: Optional[str] = None,
-        limit: int = 5,
+        limit: int = 10,
+        use_cache: bool = True,
+    ) -> Tuple[str, bool]:
+        """兼容包装，见 build_block_with_status。"""
+        return self.build_block_with_status(
+            agent_type=agent_type, limit=limit, use_cache=use_cache
+        )
+
+    def build_block(
+        self, agent_type: Optional[str] = None, limit: int = 10, use_cache: bool = True
+    ) -> str:
+        text, _ = self.build_block_with_status(
+            agent_type=agent_type, limit=limit, use_cache=use_cache
+        )
+        return text
+
+    def build_block_with_status(
+        self,
+        agent_type: Optional[str] = None,
+        limit: int = 10,
         use_cache: bool = True,
     ) -> Tuple[str, bool]:
         """渲染经验块，返回 (文本, 是否命中缓存)。
 
-        缓存键是 (project_id, agent_type, limit)，只有经验条目集合或其可见属性
-        发生变化时才会重新召回。召回本身以 query 为输入，而 query 就是当前
-        用户消息，所以不做缓存的话每一轮都会得到不同的块，system prompt 随之
-        整体失效。
+        选取与 query 无关。经验条目是跨会话的长期约束，不按当前这句话做相关性
+        过滤：按 query 召回会让块随每轮对话漂移，而块位于 system prompt 内，
+        模型侧的前缀缓存会因此整段失效（进程重启后的第一次渲染尤其明显，召回
+        组合变了，整段历史跟着重新计费）。现在同一项目、同一 agent 在同一批
+        条目下永远得到相同的文本，重启和换话题都不再影响它。
 
-        use_cache=False 用于"预览某条 query 会注入什么"这类只读调用：既不读
-        缓存也不写缓存，避免预览把结果带进正式请求。
+        缓存键是 (project_id, agent_type, limit)，指纹覆盖条目集合与可见属性，
+        条目或 agent note 真正变化时才重新渲染。
+
+        use_cache=False 供预览类只读调用使用：既不读缓存也不写缓存，避免预览
+        把结果带进正式请求。
 
         project_id 在入口处取一次快照：set_project 是共享状态，并发会话可能
-        在渲染途中切换它，键、指纹与召回必须基于同一个项目才自洽。
+        在渲染途中切换它，键、指纹与选取必须基于同一个项目才自洽。
         """
         project_id = self._project_id
         key = (project_id, agent_type or "", limit)
@@ -321,7 +341,7 @@ class ExperienceLedger:
                 self._safe_mark_hits(cached[2])
                 return cached[1], True
 
-        text, ids = self._render_prompt(query, tools, paths, agent_type, limit, project_id)
+        text, ids = self._render_block(agent_type, limit, project_id)
         if use_cache:
             with self._prompt_lock:
                 if len(self._prompt_cache) >= PROMPT_CACHE_LIMIT:
@@ -329,18 +349,35 @@ class ExperienceLedger:
                 self._prompt_cache[key] = (fingerprint, text, ids)
         return text, False
 
-    def _render_prompt(
+    def _select_entries(
+        self, project_id: Optional[str], limit: int
+    ) -> List[Dict[str, Any]]:
+        """确定性地选取要注入的条目，不经过相关性打分。
+
+        排序是 created_at DESC, id ASC：新条目优先进入预算，同一批条目每次
+        得到完全相同的顺序。刻意避开 updated_at 与 confidence —— 它们会被
+        boost_recent / _reinforce 改写，一旦参与排序，同一批条目的顺序就会在
+        某个时刻翻转，经验块随之变化。
+        """
+        conn = self.db.connection()
+        rows = conn.execute(
+            """
+            SELECT * FROM experiences
+            WHERE status = 'active' AND (scope = 'global' OR project_id = ?)
+            ORDER BY created_at DESC, id ASC
+            LIMIT ?
+            """,
+            (project_id or "", max(1, int(limit or 5))),
+        ).fetchall()
+        return [self._row_to_dict(row) for row in rows]
+
+    def _render_block(
         self,
-        query: str,
-        tools: Optional[Sequence[str]] = None,
-        paths: Optional[Sequence[str]] = None,
         agent_type: Optional[str] = None,
-        limit: int = 5,
+        limit: int = 10,
         project_id: Optional[str] = None,
     ) -> Tuple[str, List[str]]:
-        entries = recall_mod.recall(
-            self.db, query, project_id, tools=tools, paths=paths, limit=limit,
-        )
+        entries = self._select_entries(project_id, limit)
         ids = [e["id"] for e in entries]
         if ids:
             self._safe_mark_hits(ids)
@@ -422,7 +459,7 @@ class ExperienceLedger:
                 lifecycle.boost_recent(self.db)
 
             detected = signals.detect_user_signals(user_message, assistant_message)
-            detected.extend(signals.detect_tool_signals(tool_events or []))
+            detected.extend(signals.detect_tool_signals(tool_events or [], user_message))
 
             for signal in detected:
                 evidence = [{
