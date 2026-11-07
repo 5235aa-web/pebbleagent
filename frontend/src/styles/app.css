@@ -31,6 +31,26 @@
   line-height: 1.7;
 }
 
+/* ---- reasoning line: selectable ----
+
+   Nothing about the row said "text". The span took only its content width, so
+   every pixel of the flex row past the last word was a dead gap that showed the
+   default arrow, and the sheen band drawn by `::after` covers `inset: 0` as a
+   hit-testable child. The reasoning run is content, so the span takes the row's
+   spare width, states its own selection rules instead of inheriting whatever an
+   ancestor sets, and the decorative band leaves hit testing alone. */
+
+.th-text {
+  flex: 1 1 auto;
+  cursor: text;
+  user-select: text;
+  -webkit-user-select: text;
+}
+
+.th-text::after {
+  pointer-events: none;
+}
+
 /* ---- reasoning line: expandable ----
    Collapsed is the prototype row, untouched. Expanded lifts the single-line
    clip and lets the text wrap; the rail stays pinned to the first line, the
@@ -880,6 +900,40 @@ input.attach-input[type="file"] {
 
 .dr-tabwrap .dr-nav.next {
   right: 1px;
+}
+
+/* ---- dock scrollbars: hidden until the pointer is in the panel ----
+
+   Two containers draw a bar here. `.dr-content` is the column itself, so it
+   owns the vertical rail every pane shows plus the horizontal one a wide row
+   can add; `.chg-diff` scrolls sideways on its own once a diff is expanded,
+   which is the bar along the bottom of the Files pane. Both stay transparent
+   until `RightDock` sets `scroll-hot` on `.dr-content` at pointer enter and
+   clears it 500ms after leave.
+
+   Two things the obvious version gets wrong. `scrollbar-width: none` would hide
+   the rail but also make Chromium drop every `::-webkit-scrollbar` rule and
+   paint its own bar, so the thumb is hidden by colour instead. And every track
+   keeps its width: hiding it would widen the content on each enter and reflow
+   the pane under the cursor. */
+
+.dr-content::-webkit-scrollbar-thumb,
+.dr-content::-webkit-scrollbar-thumb:hover,
+.dr-content .chg-diff::-webkit-scrollbar-thumb,
+.dr-content .chg-diff::-webkit-scrollbar-thumb:hover {
+  background: transparent;
+}
+
+.dr-content.scroll-hot::-webkit-scrollbar-thumb,
+.dr-content.scroll-hot .chg-diff::-webkit-scrollbar-thumb {
+  background: var(--scroll);
+  background-clip: padding-box;
+}
+
+.dr-content.scroll-hot::-webkit-scrollbar-thumb:hover,
+.dr-content.scroll-hot .chg-diff::-webkit-scrollbar-thumb:hover {
+  background: var(--muted);
+  background-clip: padding-box;
 }
 
 /* ---- GitHub repository panel ----
@@ -2448,4 +2502,17 @@ input.attach-input[type="file"] {
    transparent keeps a light patch from appearing under a dark diff. */
 .gh-diff-body::-webkit-scrollbar-corner {
   background: transparent;
+}
+
+/* ---- live run equaliser: only while a turn is running ----
+
+   The five bars looped from the moment the shell mounted, so an idle session
+   showed a live waveform beside the words "Idle · last reply 73s". The loop now
+   runs only while `.island` carries `busy`, which is `streamState.streaming`:
+   set the instant a prompt is accepted, cleared on `message.complete`,
+   `prompt.rejected` and interrupt. Idle leaves the bars at their own heights, a
+   still glyph rather than a frame frozen at whatever phase the turn ended on. */
+
+.island:not(.busy) .eq i {
+  animation: none;
 }

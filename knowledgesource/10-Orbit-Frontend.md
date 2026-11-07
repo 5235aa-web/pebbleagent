@@ -43,7 +43,7 @@ Behaviour that needs new CSS goes into `styles/app.css`, never into `orbit.css`.
 | `ClarifyCard.vue` | Agent question card: prototype `.qcard` markup, per-question steps, single/multi select, a free-form field per question (typed text is always kept and submits alongside the picks; a single-choice click only swaps which preset is selected), and an answer payload that holds presets and typed text apart (`{picked, custom}`); `Submit` / `Skip`, `done` class drives the stamp | Core |
 | `StreamMessage.vue` | One agent row rendered from `Block[]` (markdown runs, code, mermaid cards, tool cards, thinking rows) | Core |
 | `GithubPane.vue` | Right-dock GitHub pane: identity strip (octocat in an accent ring, repository count, hourly quota), a filterable repository rack (language-coloured edge, stars/forks, relative push time, topics), and a detail view behind a four-way switch — stacked language bar, README, file tree, commit rail, activity list — plus a file reader reached by clicking an entry in the tree: breadcrumb and size in the header, `renderCodeBlock` for the body (the same highlighter the transcript uses), and a placeholder card instead of a code pane when the gateway reports `binary`. Loads through `gateway.onStatus` when the socket is not up yet: mounting alone rejected on every cold start and the failure then rendered as "no token", because that branch sits above the error branch in the template. The tab is icon-only so six tabs still fit the 294px strip without scrolling. Three additions ride on top of the rack: a `current` badge and a branch/sync strip for the checkout the active project points at; a 52x7 commit heat strip at 4px cells with a 2px gap, level thresholds absolute rather than scaled to the repository's own maximum so a quiet repository looks quiet; and a pull request that expands in place into its per-file diff, with the "Some changes are not shown" note tied to the gateway's `truncated` flag rather than to a guess about the diff size | Core |
-| `DockHead.vue` | Right-dock header: the tab strip (`data-tab` buttons the frozen runtime binds once by `querySelectorAll`, so tabs must be hand-written and never `v-for` — node reuse resets the `on` class the runtime owns) plus `Open preview stage` / `Collapse dock`. Owns the strip's overflow behaviour, since `.dr-tabs` already scrolls (`flex: 1 1 auto; min-width: 0; overflow-x: auto` in orbit.css) but nothing used it: wheel `deltaY` mapped onto `scrollLeft` through a `passive: false` listener (trackpad `deltaX` and a non-overflowing strip are left alone), a `MutationObserver` on the `on` class that scrolls a tab selected from the command palette into view with one fade width of margin (`selectTab` never scrolls), and a `ResizeObserver` re-running `sync` so the 1380px `--right-w` breakpoint is covered. Emits `scrollable` / `fade-l` / `fade-r`, which drive the arrows and the mask in `app.css` | Core |
+| `DockHead.vue` | Right-dock header: the tab strip (`data-tab` buttons the frozen runtime binds once by `querySelectorAll`, so tabs must be hand-written and never `v-for` — node reuse resets the `on` class the runtime owns) plus `Open preview stage` / `Collapse dock`. Owns the strip's overflow behaviour, since `.dr-tabs` already scrolls (`flex: 1 1 auto; min-width: 0; overflow-x: auto` in orbit.css) but nothing used it: wheel `deltaY` mapped onto `scrollLeft` through a `passive: false` listener (trackpad `deltaX` and a non-overflowing strip are left alone), a `MutationObserver` on the `on` class that scrolls a tab selected from the command palette into view with one fade width of margin (`selectTab` never scrolls), and a `ResizeObserver` re-running `sync` so the 1380px `--right-w` breakpoint is covered. Emits `scrollable` / `fade-l` / `fade-r`, which drive the arrows and the mask in `app.css`. The Files tab carries a `.cnt` badge fed by `files.totalFiles` — the count of paths the session changed, the same figure the pane's `files changed` header states — and renders nothing at zero; the span is the only reactive node in the strip, since a binding on the button itself would overwrite the `on` class the runtime owns, and a `watch` re-runs `sync` after the badge changes the strip's width | Core |
 | `MermaidCard.vue` | Mermaid diagram card: lazily imports `mermaid`, renders into a dotted stage with the live accent palette, streaming placeholder, parse-error surface, source toggle, copy and PNG export | Core |
 | `StreamTimeline.vue` | Right-edge rail: one mark per user row (`className === 'msg user'`), hover opens a teleported card with 120 characters of the message plus `YYYY-MM-DD HH:mm:ss`, click scrolls that row to the viewport centre, a passive scroll listener marks the row being read, `#tlBottom` returns to latest | Core |
 | `JumpToLatest.vue` | Bottom-right return button, mounted on `.stream` rather than inside the scroll container (an absolutely positioned child of a scroller travels with the content); passive scroll listener plus a `ResizeObserver` on `#streamInner` decide visibility, hidden within 80px of the end | Core |
@@ -140,6 +140,27 @@ hook, which appends the extensions the source omits from its relative imports.
 
 - `styles/orbit.css` is frozen. Every deviation from the prototype lives in `styles/app.css`
   and is commented with the reason.
+- The reasoning row is selectable through `app.css`, not the prototype sheet. `.th-text`
+  only ever took its content width inside the flex row, so every pixel past the last word
+  was a dead gap that showed the default arrow and refused a drag, and the sheen band
+  drawn by `.th-text::after` covers `inset: 0` as a hit-testable child. The span now takes
+  the row's spare width, carries `cursor: text` and an explicit `user-select: text`, and
+  the band is out of hit testing. The 84% fade mask moving to the row's edge rather than
+  the text's edge is a correction, not a side effect: on a short row it used to fade the
+  last few visible characters.
+- The dock's scrollbars are hidden by colour, not by `scrollbar-width`. Two containers
+  draw one: `.dr-content` itself (the vertical rail every pane shows, plus the horizontal
+  one `overflow-y: auto` implies on the other axis) and `.chg-diff`, which scrolls sideways
+  on an expanded diff and is the bar along the bottom of the Files pane. Both thumbs stay
+  transparent until `RightDock` puts `scroll-hot` on `.dr-content` at pointer enter and
+  clears it 500ms after leave, and every track keeps its width so the reveal never reflows
+  the pane. `scrollbar-width: none` is unusable here because any non-auto value makes
+  Chromium drop the `::-webkit-scrollbar` rules and draw its own bar instead.
+- The island equaliser loops only while `.island.busy` is set, and that class is
+  `streamState.streaming`: true from the moment a prompt is accepted, false on
+  `message.complete`, `prompt.rejected` and interrupt. Without the guard the five bars
+  animated from mount, so an idle session showed a live waveform beside "Idle · last
+  reply 73s".
 - `.stage:not(.open) * { pointer-events: none }` exists because `.stage-paper` sets
   `pointer-events: auto` and a child re-enables hit testing under a disabled parent — the
   invisible 820x475 sheet swallowed clicks across the right half of the transcript.

@@ -2,7 +2,7 @@
       <div class="dr-head">
         <div class="dr-tabwrap" ref="wrapEl">
           <div class="dr-tabs" ref="tabsEl">
-            <button class="dr-tab on" data-tab="files">Files <span class="cnt">7</span></button>
+            <button class="dr-tab on" data-tab="files">Files <span class="cnt" v-if="changedFiles">{{ changedFiles }}</span></button>
             <button class="dr-tab" data-tab="usage">Usage</button>
             <button class="dr-tab" data-tab="context">Context</button>
             <button class="dr-tab" data-tab="llm">LLM</button>
@@ -32,7 +32,8 @@
 </template>
 
 <script setup lang="ts">
-import { onBeforeUnmount, onMounted, ref } from 'vue'
+import { computed, nextTick, onBeforeUnmount, onMounted, ref, watch } from 'vue'
+import { files } from '../data/panels'
 
 const wrapEl = ref<HTMLElement | null>(null)
 const tabsEl = ref<HTMLElement | null>(null)
@@ -69,6 +70,19 @@ function sync(): void {
   if (prev) prev.disabled = !overflows || atStart
   if (next) next.disabled = !overflows || atEnd
 }
+
+/* How many paths the session has changed, the same figure the Files pane states
+   in its `files changed` header. The tab used to carry a literal 7 from the
+   prototype, so every session showed a count that belonged to none of them. */
+const changedFiles = computed(() => {
+  const n = files.totalFiles
+  return Number.isFinite(n) && n > 0 ? Math.trunc(n) : 0
+})
+
+/* The badge widens the strip, and `sync` owns the arrows and the edge masks
+   that depend on its width. The count arrives from a gateway read that lands
+   after mount, so the onMounted pass alone would leave a stale overflow state. */
+watch(changedFiles, () => { void nextTick(sync) })
 
 /* `selectTab` in orbit/runtime.js only toggles classes, so a tab reached from
    the command palette can land outside the visible strip with nothing to show

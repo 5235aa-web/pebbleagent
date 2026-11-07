@@ -1880,3 +1880,70 @@ a normal-sized module look like the project's worst hotspot.
 - 验证：`getComputedStyle` 读到 `scrollbarWidth: auto`（说明 thin 已移除），
   CSSOM 里能查到 `.gh-diff-body::-webkit-scrollbar` 规则，提交展开仍是
   `+397 -79 17 files`、17 个文件、patch 14 行
+
+## Files tab 的角标改读真实变更数
+
+- `DockHead.vue` 的 Files tab 上有一个原型留下的字面量 `<span class="cnt">7</span>`：
+  全项目只有这一处模板和 orbit.css 的两条样式提到 `.cnt`，没有任何代码写过该节点，
+  所以任何会话（包括一个文件都没改的新会话）都显示 7。上一轮清理 dock 面板假数据时
+  清的是面板内容，tab 条上的角标不在范围内
+- 现在由 `files.totalFiles` 驱动，即 `session.file_changes` 的 `total_files`
+  （按路径去重、已 revert 不计），与面板 `files changed N files` 同一口径；0 时 span 不渲染
+- button 的 class 保持静态：runtime 用 `querySelectorAll('.dr-tab')` 一次性绑定 click，
+  加 `:class` 会在每次 patch 覆盖 runtime 写入的 `on`，切 tab 高亮就坏。响应式只落在 span 上；
+  `v-if` 增删 span 不会惊动 `classObserver`，它只监听 class 属性、未开 childList
+- 角标会改变条带宽度，`watch(changedFiles)` 在 nextTick 里重跑 `sync`，
+  否则挂载之后才到达的计数会让溢出箭头和边缘渐隐停在旧状态
+- `changedFiles` 对 store 值做 `Number.isFinite` + `Math.trunc` 兜底，NaN、负数、小数都收敛
+- 验证：`vue-tsc --noEmit` 无输出；未启动前后端，运行时视觉未实测
+
+## thinking 行可以选中文字
+
+- `.th-text` 在 flex 行里只占内容宽度（短文本实测 55px，行宽 420px），文字右侧整段
+  是死区：鼠标落上去命中的是 `.thinking` 容器而不是文本节点，光标显示箭头，拖不出选区。
+  工具卡片内容区能选中，正是因为它的盒子撑满整行
+- 现在 `.th-text` 取 `flex: 1 1 auto` 吃掉行内余量，加 `cursor: text` 和显式
+  `user-select: text`；`.th-text::after` 那条 3.4s 扫过的白色高光带是 `inset: 0` 的
+  可命中子层，补 `pointer-events: none`
+- 顺带修正：`mask-image` 的 84% 渐隐原本按文本自身宽度算，短文本会把末尾几个字
+  一起渐隐；撑满后按行宽算，长文本表现不变，短文本不再被啃掉尾部
+- 验证（Chrome 里用同一套 CSS 复现）：修复前 `caretPositionFromPoint` 在文字右侧 60%
+  和行尾都落不到文本节点，修复后都返回 `#text` offset 5；`.th-text` 宽度 55 变 301，
+  `cursor` 由 `auto` 变 `text`
+- 未启动前后端，Tauri 内实测未做
+
+## dock 面板滚动条改为悬停显示
+
+- 右侧 dock 有两个容器会画出滑块：`.dr-content` 自身（所有 pane 共用的垂直轨，以及
+  `overflow-y: auto` 在另一轴上推导出的水平轨）和 `.chg-diff`（diff 展开后横向滚动，
+  就是 Files 底部那条）。Usage 的侧边滑块来自前者。两者都继承全局 8px 滚动条常驻显示，
+  在 348px 宽的面板边上就是一条轨
+- 现在 thumb 默认画成透明，`RightDock` 在 `mouseenter` 时给 `.dr-content` 挂 `scroll-hot`，
+  `mouseleave` 后 500ms 清除。延迟是为了让鼠标路过面板时不闪一下滚动条
+- 不用 `scrollbar-width: none`：任何非 auto 值都会让 Chromium 丢掉 `::-webkit-scrollbar`
+  规则改画自己的灰条（thinking 段落那次踩过）。轨道保留原宽度，所以显示 thumb 时内容
+  不会因为宽度变化而重排
+- specificity 排布：`.dr-content::-webkit-scrollbar-thumb` 与 `:hover`、以及
+  `.dr-content .chg-diff::-webkit-scrollbar-thumb` 与 `:hover` 一起置透明；`.scroll-hot`
+  前缀的对应选择器分别给 `--scroll` 和 `--muted`，逐级递增，hover 态不会被默认态盖回去
+- 影响范围是所有 pane（Files / Usage / Context / LLM / Notes），GitHub 面板内部的
+  4px 滚动条不动
+- 验证（Chrome 注入同一套规则读 `getComputedStyle(el, '::-webkit-scrollbar-thumb')`）：
+  `.dr-content` 与 `.chg-diff` 默认都是 `rgba(0,0,0,0)`，挂 `scroll-hot` 后都变成设定色
+  且 `background-clip` 回到 `padding-box`，移除后都回到透明；`getComputedStyle` 同时证实
+  `.dr-content` 的 `overflow-x` 计算为 auto、`.chg-diff` 为 auto；`vue-tsc --noEmit` 无输出
+- 未启动前后端，Tauri 内实测未做
+
+## live run 波形只在对话进行时跳动
+
+- 顶部胶囊的 `.eq` 五根竖条从挂载起一直循环动画，`Idle · last reply 73s` 旁边还挂着
+  一条跳动的波形，看起来像还在跑
+- 现在加 `.island:not(.busy) .eq i { animation: none }`。`.island.busy` 就是
+  `streamState.streaming`：`sendMessage` 成功即刻置 true，`message.complete`、
+  `prompt.rejected`、中断和切换会话时置 false，正好是一轮对话的边界
+- 静止时用 `animation: none` 而不是 `paused`：竖条回到各自声明的高度，是一个静态波形
+  图标；`paused` 会停在随机某一帧，每次结束的相位都不一样
+- 验证（Chrome 注入同一套规则读 computed style）：无 `busy` 时 `animationName` 为
+  `none`、`animationDuration` 为 `0s`；挂 `busy` 后为 `eq-bounce` / `1.05s`；移除后
+  回到 `none`
+- 未启动前后端，Tauri 内实测未做
