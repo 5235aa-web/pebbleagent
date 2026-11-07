@@ -7,6 +7,12 @@ which is what the in-app update sheet shows before installing. Add the section
 before running `npm run release`; the release stops if it is missing, because a
 feed with empty notes tells the user nothing.
 
+## 1.2.1
+
+- Prompt caching was silently broken on every turn. The experience block was rendered from a recall query that is the current user message, so it differed each turn, and it sat in the middle of the system prompt: everything after it, the tool schemas and the whole message history, was re-billed from scratch. On a 150k-token context the first request of each turn reported near-zero cache while the remaining iterations of the same turn hit normally, which is how the session average slid from 99% to 96% without the chat loop changing. The rendered block is now cached per `(project_id, agent_type)` and re-rendered only when a fingerprint changes: active entry count, `MAX(updated_at)`, `MAX(created_at)`, total statement length and summed confidence, plus the agent note's row count, `MAX(updated_at)` and content length. `hits` and `last_hit_at` are excluded on purpose — `mark_hits` rewrites them every turn, so including them would defeat the cache; hits are still recorded on a cache hit, keeping retirement accounting intact.
+- The experience block also moved to the end of the system prompt, after the project-path instruction and the user note. It is the only section that can change between turns, and the provider caches by prefix, so a refresh now costs its own 3-4k characters instead of invalidating everything that follows it.
+- The `memory.prompt` preview RPC passes `use_cache: false`. It exists to show what a given query would inject, and letting it write into the cache would push a preview block into the next real request.
+
 ## 1.2.0
 
 - A GitHub tab in the right dock, reachable from the octocat beside Notes or from the command palette. It is icon-only because a sixth word would have pushed the tab strip past its width on a 1280px window, and the strip now scrolls when it overflows: wheel deltas map onto horizontal scroll, arrows appear only on the edge that still hides a tab, and a fade mask marks the same edge.

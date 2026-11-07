@@ -101,7 +101,9 @@ def handle(ctx, method):
         agent_name = params.get("agent_name", None)
         query = params.get("query", "")
         try:
-            prompt = srv._ledger().build_prompt(query=query, agent_type=agent_name)
+            prompt = srv._ledger().build_prompt(
+                query=query, agent_type=agent_name, use_cache=False
+            )
             return {"id": rid, "result": {
             "success": True,
             "prompt": prompt,

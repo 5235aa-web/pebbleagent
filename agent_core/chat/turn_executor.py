@@ -193,14 +193,17 @@ async def prepare_turn(service, params: Dict[str, Any], state: TurnState) -> Asy
         ledger = service._ledger
         ledger.set_project(project_path or service._current_project_path)
         recent_tools, recent_paths = _recent_context(state.context_messages)
-        experience_prompt = ledger.build_prompt(
+        experience_prompt, exp_cached = ledger.build_prompt_with_status(
             query=full_message or message,
             tools=recent_tools,
             paths=recent_paths,
             agent_type=agent_name,
         )
         if experience_prompt:
-            logger.info(f"[Turn] Injected experience ledger ({len(experience_prompt)} chars)")
+            logger.info(
+                f"[Turn] Injected experience ledger ({len(experience_prompt)} chars, "
+                f"cached={exp_cached})"
+            )
     except Exception as e:
         logger.warning(f"[Turn] Failed to build experience prompt: {e}")
 

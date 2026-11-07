@@ -75,6 +75,14 @@ Severity wording: 13 headings carry the `[MUST]` suffix — CKB build-mode const
 
 `tests/test_code_agent_prompt_contract.py` pins the prompt to the runtime: required sections present, every tool named in the prompt granted by the YAML allowlist or owned by an MCP server in `.mcp.json`, no ghost entry in the allowlist, no forced single-language rule, no ambiguous severity marker, the `[MUST]` heading count fixed at 13, and the CKB exemptions / MCP fallback / retry budget still documented. The tool universe is the schema set in `agent_core/tool_definitions.py`, which the handler-side table in `agent_core/tool_impl/registry.py` mirrors exactly.
 
+### System prompt assembly and prefix stability
+
+`chat/prompt.py::compose_system_prompt` concatenates, in order: agent prompt + preloaded skills, project-path instruction, usernote, experience block. The experience block sits last because it is the only section that can change between turns — the provider caches prompts by prefix, so everything placed after a changing section is re-billed in full.
+
+`memory/ledger.py::build_prompt_with_status` renders that block from `recall(query=<current user message>)`, which by construction differs every turn. The rendered text is therefore cached per `(project_id, agent_type)` and re-rendered only when a fingerprint changes: active entry count, `MAX(updated_at)`, `MAX(created_at)`, summed statement length, summed confidence, plus agent-note row count / `MAX(updated_at)` / summed content length. `hits` and `last_hit_at` are excluded on purpose — `mark_hits` rewrites them every turn, and including them would keep the cache permanently cold. Cache hits still call `mark_hits` so retirement accounting keeps working. `use_cache=False` serves the `memory.prompt` preview RPC, which must neither read nor write the cache. The project id is snapshotted once per call because `set_project` is shared state that a concurrent session can change mid-render.
+
+Failure mode this prevents: every new turn's first request misses the whole prompt (a 150k-token context billed at ~0% cache) while the remaining iterations inside that same turn hit normally.
+
 ### Notes
 
 5. **Single-agent architecture — there is no sub-agent orchestration.** Agent switching is handled by the `_current_agent` global in server.py; there is no multi-agent routing or delegation layer

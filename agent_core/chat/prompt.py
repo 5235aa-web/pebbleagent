@@ -31,9 +31,13 @@ def render_usernote_prompt(content: str) -> str:
 
 
 def compose_system_prompt(base: str, experiences: str, project_path: str, usernote: str) -> str:
+    # The experience block goes last on purpose: it is the only section that can
+    # change between turns, and the provider caches the prompt by prefix. Placed
+    # earlier, every change would also invalidate the tool schemas and the whole
+    # message history that follow it.
     return (
         base
-        + (experiences or "")
         + render_project_path_instruction(project_path)
         + render_usernote_prompt(usernote)
+        + (f"\n\n{experiences}" if experiences else "")
     )

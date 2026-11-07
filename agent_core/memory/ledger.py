@@ -4,9 +4,10 @@ from __future__ import annotations
 
 import json
 import logging
+import threading
 import time
 import uuid
-from typing import Any, Dict, List, Optional, Sequence
+from typing import Any, Dict, List, Optional, Sequence, Tuple
 
 from . import lifecycle, recall as recall_mod, signals
 from .prompt import render_agent_note, render_entries
@@ -18,6 +19,10 @@ VALID_KINDS = ("correction", "constraint", "preference", "pitfall", "recipe", "r
 VALID_SCOPES = ("global", "project")
 AGENT_NOTE_SCOPES = ("user", "project")
 
+# 经验块缓存的条目上限。键是 (project_id, agent_type)，正常远小于此值；
+# 上限只用于兜住项目频繁切换的极端情况。
+PROMPT_CACHE_LIMIT = 64
+
 
 class ExperienceLedger:
     """单一经验账本，按 scope 区分全局与项目。"""
@@ -26,6 +31,13 @@ class ExperienceLedger:
         self.db = LedgerDatabase(db_path)
         self._project_path: Optional[str] = None
         self._project_id: Optional[str] = None
+        # 渲染结果按 (project_id, agent_type) 缓存：经验块位于 system prompt 里，
+        # 一旦内容随 turn 变化，模型侧的前缀缓存就整体失效。缓存命中时直接复用
+        # 上一次的文本，使同一项目内的 system prompt 跨 turn 保持稳定。
+        self._prompt_cache: Dict[
+            Tuple[Optional[str], str], Tuple[Tuple, str, List[str]]
+        ] = {}
+        self._prompt_lock = threading.Lock()
 
     # ---------- 作用域 ----------
 
@@ -267,18 +279,131 @@ class ExperienceLedger:
         paths: Optional[Sequence[str]] = None,
         agent_type: Optional[str] = None,
         limit: int = 5,
+        use_cache: bool = True,
     ) -> str:
-        entries = self.recall(query, tools=tools, paths=paths, limit=limit)
-        if entries:
-            recall_mod.mark_hits(self.db, [e["id"] for e in entries])
+        text, _ = self.build_prompt_with_status(
+            query, tools=tools, paths=paths, agent_type=agent_type,
+            limit=limit, use_cache=use_cache,
+        )
+        return text
+
+    def build_prompt_with_status(
+        self,
+        query: str,
+        tools: Optional[Sequence[str]] = None,
+        paths: Optional[Sequence[str]] = None,
+        agent_type: Optional[str] = None,
+        limit: int = 5,
+        use_cache: bool = True,
+    ) -> Tuple[str, bool]:
+        """渲染经验块，返回 (文本, 是否命中缓存)。
+
+        缓存键是 (project_id, agent_type, limit)，只有经验条目集合或其可见属性
+        发生变化时才会重新召回。召回本身以 query 为输入，而 query 就是当前
+        用户消息，所以不做缓存的话每一轮都会得到不同的块，system prompt 随之
+        整体失效。
+
+        use_cache=False 用于"预览某条 query 会注入什么"这类只读调用：既不读
+        缓存也不写缓存，避免预览把结果带进正式请求。
+
+        project_id 在入口处取一次快照：set_project 是共享状态，并发会话可能
+        在渲染途中切换它，键、指纹与召回必须基于同一个项目才自洽。
+        """
+        project_id = self._project_id
+        key = (project_id, agent_type or "", limit)
+        fingerprint = self._prompt_fingerprint(agent_type, project_id)
+        if use_cache:
+            with self._prompt_lock:
+                cached = self._prompt_cache.get(key)
+            if cached is not None and cached[0] == fingerprint:
+                # 复用文本，但命中计数照常累加：它决定经验条目的淘汰时机，
+                # 而且写 hits / last_hit_at 不会改变指纹，不会反过来打掉缓存。
+                self._safe_mark_hits(cached[2])
+                return cached[1], True
+
+        text, ids = self._render_prompt(query, tools, paths, agent_type, limit, project_id)
+        if use_cache:
+            with self._prompt_lock:
+                if len(self._prompt_cache) >= PROMPT_CACHE_LIMIT:
+                    self._prompt_cache.clear()
+                self._prompt_cache[key] = (fingerprint, text, ids)
+        return text, False
+
+    def _render_prompt(
+        self,
+        query: str,
+        tools: Optional[Sequence[str]] = None,
+        paths: Optional[Sequence[str]] = None,
+        agent_type: Optional[str] = None,
+        limit: int = 5,
+        project_id: Optional[str] = None,
+    ) -> Tuple[str, List[str]]:
+        entries = recall_mod.recall(
+            self.db, query, project_id, tools=tools, paths=paths, limit=limit,
+        )
+        ids = [e["id"] for e in entries]
+        if ids:
+            self._safe_mark_hits(ids)
         text = render_entries(entries)
         notes = []
         for note_scope in ("user", "project"):
-            content = self.get_agent_note(agent_type, note_scope)
+            # 显式传空串表示"本项目没有项目级备注"，避免 None 让 _note_key
+            # 回退去读可能已被并发切换的 self._project_id。
+            content = self.get_agent_note(
+                agent_type, note_scope, project_id=project_id if project_id else ""
+            )
             if content:
                 notes.append(content)
         note = "\n\n".join(notes)
-        return text + render_agent_note(agent_type or "", note)
+        return text + render_agent_note(agent_type or "", note), ids
+
+    def _safe_mark_hits(self, ids: Optional[List[str]]) -> None:
+        """累加命中计数，失败不影响经验块本身。
+
+        mark_hits 只服务于淘汰统计。写锁争用让它抛异常时，丢掉整块经验、
+        顺带改变 system prompt 是更坏的后果，所以这里只降级记日志。
+        """
+        if not ids:
+            return
+        try:
+            recall_mod.mark_hits(self.db, ids)
+        except Exception as exc:
+            logger.debug("[Ledger] mark_hits skipped: %s", exc)
+
+    def _prompt_fingerprint(
+        self, agent_type: Optional[str], project_id: Optional[str] = None
+    ) -> Tuple:
+        """经验块可见内容的指纹，用于判断缓存是否仍然有效。
+
+        只覆盖会出现在渲染结果里的字段：条目数量、更新时间、置信度与正文长度，
+        以及 agent_notes 的更新时间与正文长度。hits / last_hit_at 每轮都会被
+        mark_hits 改写，故意排除在外，否则缓存永远不会命中。
+        """
+        conn = self.db.connection()
+        exp = conn.execute(
+            """
+            SELECT COUNT(*),
+                   COALESCE(MAX(updated_at), 0),
+                   COALESCE(MAX(created_at), 0),
+                   COALESCE(SUM(LENGTH(statement)), 0),
+                   COALESCE(SUM(CAST(confidence * 100 AS INTEGER)), 0)
+            FROM experiences
+            WHERE status = 'active' AND (scope = 'global' OR project_id = ?)
+            """,
+            (project_id or "",),
+        ).fetchone()
+        notes = conn.execute(
+            """
+            SELECT COUNT(*),
+                   COALESCE(MAX(updated_at), 0),
+                   COALESCE(SUM(LENGTH(content)), 0)
+            FROM agent_notes
+            WHERE agent_type = ?
+              AND (scope = 'user' OR (scope = 'project' AND project_id = ?))
+            """,
+            (agent_type or "", project_id or ""),
+        ).fetchone()
+        return tuple(exp) + tuple(notes)
 
     # ---------- 对话观察 ----------
 
@@ -324,15 +449,19 @@ class ExperienceLedger:
 
     # ---------- Agent 笔记 ----------
 
-    def _note_key(self, scope: str) -> tuple:
+    def _note_key(self, scope: str, project_id: Optional[str] = None) -> tuple:
         scope = scope if scope in AGENT_NOTE_SCOPES else "project"
-        pid = "" if scope == "user" else (self._project_id or "")
-        return scope, pid
+        if scope == "user":
+            return scope, ""
+        pid = self._project_id if project_id is None else project_id
+        return scope, pid or ""
 
-    def get_agent_note(self, agent_type: str, scope: str = "project") -> str:
+    def get_agent_note(
+        self, agent_type: str, scope: str = "project", project_id: Optional[str] = None
+    ) -> str:
         if not agent_type:
             return ""
-        scope, pid = self._note_key(scope)
+        scope, pid = self._note_key(scope, project_id)
         conn = self.db.connection()
         row = conn.execute(
             "SELECT content FROM agent_notes WHERE agent_type = ? AND scope = ? AND project_id = ?",
