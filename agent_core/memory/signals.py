@@ -12,24 +12,45 @@ from .lang import is_chinese
 CORRECTION_PATTERNS = [
     r"不对", r"不是这样", r"错了", r"别(?:再)?", r"不要", r"禁止", r"我说过",
     r"应该是", r"改成", r"而不是", r"换成", r"谁让你", r"为什么又",
-    r"\bno[,.]", r"\bactually\b", r"\bwrong\b", r"\binstead\b", r"\bstop\b",
+    r"\bno[,.]",
     r"\bdon'?t (?:use|do|add|write|create|call|run|touch|modify|change|put)\b",
     r"\bdo not (?:use|do|add|write|create|call|run|touch|modify|change|put)\b",
-    r"\bshould be\b", r"\bchange (?:it|that|this) to\b", r"\bswitch to\b",
+    r"\bchange (?:it|that|this) to\b", r"\bswitch to\b",
     r"\bnot what i (?:asked|meant|wanted)\b",
-    r"\b(?:that|this|it) (?:is|'s) not\b",
     r"\bwhy did you\b", r"\bi said\b",
+]
+
+# 纠正：歧义词。这些词在技术描述里同样高频（"this actually returns None"、
+# "stop the server first"），单独命中不足以证明用户在纠正。
+CORRECTION_WEAK_PATTERNS = [
+    r"\bactually\b", r"\bwrong\b", r"\binstead\b", r"\bstop\b",
+    r"\bshould be\b", r"\b(?:that|this|it) (?:is|'s) not\b",
 ]
 
 # 约束：长期生效的硬性要求
 CONSTRAINT_PATTERNS = [
     r"必须", r"务必", r"只能", r"一律", r"绝对", r"永远", r"不允许",
     r"严禁", r"统一(?:用|改|走|成)", r"都要", r"全都",
+    r"\bforbidden\b", r"\bprohibited\b", r"\bin all cases\b",
+    r"\bunder no circumstances\b",
+]
+
+# 约束：歧义词。"must be initialized before use" 描述的是现状，不是要求。
+CONSTRAINT_WEAK_PATTERNS = [
     r"\bmust\b", r"\balways\b", r"\bnever\b", r"\bonly\b",
     r"\bmake sure\b", r"\bensure\b", r"\bhave to\b", r"\bhas to\b",
-    r"\brequired?\b", r"\bmandatory\b", r"\bforbidden\b", r"\bprohibited\b",
-    r"\bin all cases\b", r"\bunder no circumstances\b",
+    r"\brequired?\b", r"\bmandatory\b",
 ]
+
+# 整条消息处于纠正语境时，弱模式的可信度随之提高。
+_STRONG_CONTEXT = [
+    r"不对", r"不是这样", r"错了", r"我说过", r"谁让你", r"为什么又",
+    r"\bno[,.]", r"\bwrong\b", r"\bnot what i (?:asked|meant|wanted)\b",
+    r"\bwhy did you\b", r"\bi said\b",
+]
+
+# 句内否定：把「only use X, not Y」这类真约束与纯技术描述区分开。
+_NEGATION = re.compile(r"\bnot\b|\bnever\b|n't\b|不要|别|禁止|不允许|严禁", re.I)
 
 # 偏好：习惯与取向
 PREFERENCE_PATTERNS = [
@@ -79,6 +100,16 @@ def _match_any(text: str, patterns: Iterable[str]) -> Optional[str]:
         if m:
             return m.group(0)
     return None
+
+
+def _weak_allowed(sentence: str, strong_context: bool) -> bool:
+    """弱模式生效的前提：整条消息处于纠正语境，或本句自带否定。
+
+    单独出现 "only" / "must" / "actually" 无法区分「在下指令」和「在描述
+    现状」，这两种情况的后果不对称：漏记只是少一条经验，误记会占掉一个
+    注入名额，把真约束挤出去。
+    """
+    return strong_context or bool(_NEGATION.search(sentence))
 
 
 def _sentences(text: str) -> List[str]:
@@ -136,11 +167,16 @@ def detect_user_signals(
             ))
         return signals
 
+    strong_context = bool(_match_any(text, _STRONG_CONTEXT))
+
     for idx, sentence in enumerate(sentences):
         cleaned = _clean_statement(sentence)
         if len(cleaned) < 4:
             continue
-        if _match_any(sentence, CORRECTION_PATTERNS):
+        if _match_any(sentence, CORRECTION_PATTERNS) or (
+            _weak_allowed(sentence, strong_context)
+            and _match_any(sentence, CORRECTION_WEAK_PATTERNS)
+        ):
             rationale = "用户否定了先前的做法" if zh else "The user rejected the previous approach"
             if previous_assistant:
                 prefix = "用户否定了先前的做法：" if zh else "The user rejected the previous approach: "
@@ -161,7 +197,10 @@ def detect_user_signals(
                 evidence_quote=sentence.strip()[:400],
             ))
             break
-        if _match_any(sentence, CONSTRAINT_PATTERNS):
+        if _match_any(sentence, CONSTRAINT_PATTERNS) or (
+            _weak_allowed(sentence, strong_context)
+            and _match_any(sentence, CONSTRAINT_WEAK_PATTERNS)
+        ):
             signals.append(Signal(
                 kind="constraint",
                 statement=cleaned,

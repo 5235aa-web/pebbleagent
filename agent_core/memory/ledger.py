@@ -10,7 +10,7 @@ import uuid
 from typing import Any, Dict, List, Optional, Sequence, Tuple
 
 from . import lifecycle, recall as recall_mod, signals
-from .prompt import render_agent_note, render_entries
+from .prompt import confidence_label, render_agent_note, render_entries
 from .schema import LedgerDatabase, project_id_for, tokenize_for_index
 
 logger = logging.getLogger(__name__)
@@ -18,6 +18,13 @@ logger = logging.getLogger(__name__)
 VALID_KINDS = ("correction", "constraint", "preference", "pitfall", "recipe", "reference")
 VALID_SCOPES = ("global", "project")
 AGENT_NOTE_SCOPES = ("user", "project")
+
+# 注入顺序即优先级：约束排在最前，偏好和参考排在最后。
+KIND_ORDER = ("constraint", "correction", "pitfall", "preference", "recipe", "reference")
+
+# 注入窗口的默认容量。渲染层预算 2000 字符，去掉证据行后每条约 60 到 100
+# 字符，14 条留有余量。
+DEFAULT_LIMIT = 14
 
 # 经验块缓存的条目上限。键是 (project_id, agent_type)，正常远小于此值；
 # 上限只用于兜住项目频繁切换的极端情况。
@@ -278,7 +285,7 @@ class ExperienceLedger:
         tools: Optional[Sequence[str]] = None,
         paths: Optional[Sequence[str]] = None,
         agent_type: Optional[str] = None,
-        limit: int = 10,
+        limit: int = DEFAULT_LIMIT,
         use_cache: bool = True,
     ) -> str:
         """兼容包装：query / tools / paths 已不参与选取，保留只为旧调用方。"""
@@ -290,7 +297,7 @@ class ExperienceLedger:
         tools: Optional[Sequence[str]] = None,
         paths: Optional[Sequence[str]] = None,
         agent_type: Optional[str] = None,
-        limit: int = 10,
+        limit: int = DEFAULT_LIMIT,
         use_cache: bool = True,
     ) -> Tuple[str, bool]:
         """兼容包装，见 build_block_with_status。"""
@@ -299,7 +306,7 @@ class ExperienceLedger:
         )
 
     def build_block(
-        self, agent_type: Optional[str] = None, limit: int = 10, use_cache: bool = True
+        self, agent_type: Optional[str] = None, limit: int = DEFAULT_LIMIT, use_cache: bool = True
     ) -> str:
         text, _ = self.build_block_with_status(
             agent_type=agent_type, limit=limit, use_cache=use_cache
@@ -309,7 +316,7 @@ class ExperienceLedger:
     def build_block_with_status(
         self,
         agent_type: Optional[str] = None,
-        limit: int = 10,
+        limit: int = DEFAULT_LIMIT,
         use_cache: bool = True,
     ) -> Tuple[str, bool]:
         """渲染经验块，返回 (文本, 是否命中缓存)。
@@ -320,8 +327,9 @@ class ExperienceLedger:
         组合变了，整段历史跟着重新计费）。现在同一项目、同一 agent 在同一批
         条目下永远得到相同的文本，重启和换话题都不再影响它。
 
-        缓存键是 (project_id, agent_type, limit)，指纹覆盖条目集合与可见属性，
-        条目或 agent note 真正变化时才重新渲染。
+        缓存键是 (project_id, agent_type, limit)。签名直接由本次选取结果构造，
+        只覆盖参与渲染的字段，所以 confidence 的微调不会打掉缓存，而正文、
+        kind、置信度档、rationale 或 agent note 的任何真实变化都会。
 
         use_cache=False 供预览类只读调用使用：既不读缓存也不写缓存，避免预览
         把结果带进正式请求。
@@ -331,22 +339,29 @@ class ExperienceLedger:
         """
         project_id = self._project_id
         key = (project_id, agent_type or "", limit)
-        fingerprint = self._prompt_fingerprint(agent_type, project_id)
+        entries = self._select_entries(project_id, limit)
+        notes = self._collect_notes(agent_type, project_id)
+        ids = [entry["id"] for entry in entries]
+        signature = self._signature(entries, notes)
+
         if use_cache:
             with self._prompt_lock:
                 cached = self._prompt_cache.get(key)
-            if cached is not None and cached[0] == fingerprint:
+            if cached is not None and cached[0] == signature:
                 # 复用文本，但命中计数照常累加：它决定经验条目的淘汰时机，
-                # 而且写 hits / last_hit_at 不会改变指纹，不会反过来打掉缓存。
-                self._safe_mark_hits(cached[2])
+                # 而且写 hits / last_hit_at 不在签名里，不会反过来打掉缓存。
+                self._safe_mark_hits(ids)
                 return cached[1], True
 
-        text, ids = self._render_block(agent_type, limit, project_id)
+        self._safe_mark_hits(ids)
+        text = render_entries(entries) + render_agent_note(
+            agent_type or "", "\n\n".join(notes)
+        )
         if use_cache:
             with self._prompt_lock:
                 if len(self._prompt_cache) >= PROMPT_CACHE_LIMIT:
                     self._prompt_cache.clear()
-                self._prompt_cache[key] = (fingerprint, text, ids)
+                self._prompt_cache[key] = (signature, text, ids)
         return text, False
 
     def _select_entries(
@@ -354,45 +369,66 @@ class ExperienceLedger:
     ) -> List[Dict[str, Any]]:
         """确定性地选取要注入的条目，不经过相关性打分。
 
-        排序是 created_at DESC, id ASC：新条目优先进入预算，同一批条目每次
-        得到完全相同的顺序。刻意避开 updated_at 与 confidence —— 它们会被
-        boost_recent / _reinforce 改写，一旦参与排序，同一批条目的顺序就会在
-        某个时刻翻转，经验块随之变化。
+        按 kind 轮转填充：每类各取一条，循环到凑满 limit 或所有队列取空。
+        纯时间排序下第 11 条以后永远进不了窗口，而 constraint 只要不是最新
+        就会被后来写入的偏好挤出去，hits 停在 0，最终被 expire_stale 退役 ——
+        用户看到的是「明明教过，过一阵又忘了」。轮转保证每一类都有机会，
+        数量少的类自动把名额让给其他类，不需要硬配额。
+
+        每类内部按 created_at DESC, id ASC 排序：新条目优先进入预算，同一批
+        条目每次得到完全相同的顺序。刻意避开 updated_at 与 confidence —— 它们
+        会被 boost_recent / _reinforce 改写，一旦参与排序，同一批条目的顺序
+        就会在某个时刻翻转，经验块随之变化。
+
+        返回顺序按 KIND_ORDER 分组：约束全部在前，组内保持时间降序。
         """
         conn = self.db.connection()
-        rows = conn.execute(
-            """
-            SELECT * FROM experiences
-            WHERE status = 'active' AND (scope = 'global' OR project_id = ?)
-            ORDER BY created_at DESC, id ASC
-            LIMIT ?
-            """,
-            (project_id or "", max(1, int(limit or 5))),
-        ).fetchall()
-        return [self._row_to_dict(row) for row in rows]
+        window = max(1, int(limit or DEFAULT_LIMIT))
+        queues: Dict[str, List[Dict[str, Any]]] = {}
+        for kind in KIND_ORDER:
+            rows = conn.execute(
+                """
+                SELECT * FROM experiences
+                WHERE status = 'active' AND (scope = 'global' OR project_id = ?)
+                  AND kind = ?
+                ORDER BY created_at DESC, id ASC
+                LIMIT ?
+                """,
+                (project_id or "", kind, window),
+            ).fetchall()
+            queues[kind] = [self._row_to_dict(row) for row in rows]
 
-    def _render_block(
-        self,
-        agent_type: Optional[str] = None,
-        limit: int = 10,
-        project_id: Optional[str] = None,
-    ) -> Tuple[str, List[str]]:
-        entries = self._select_entries(project_id, limit)
-        ids = [e["id"] for e in entries]
-        if ids:
-            self._safe_mark_hits(ids)
-        text = render_entries(entries)
-        notes = []
+        picked: Dict[str, List[Dict[str, Any]]] = {kind: [] for kind in KIND_ORDER}
+        count = 0
+        while count < window:
+            progressed = False
+            for kind in KIND_ORDER:
+                queue = queues[kind]
+                if not queue:
+                    continue
+                picked[kind].append(queue.pop(0))
+                count += 1
+                progressed = True
+                if count >= window:
+                    break
+            if not progressed:
+                break
+        return [entry for kind in KIND_ORDER for entry in picked[kind]]
+
+    def _collect_notes(
+        self, agent_type: Optional[str], project_id: Optional[str]
+    ) -> List[str]:
+        """按固定顺序收集要追加在经验块之后的 agent 便签。"""
+        notes: List[str] = []
         for note_scope in ("user", "project"):
             # 显式传空串表示"本项目没有项目级备注"，避免 None 让 _note_key
             # 回退去读可能已被并发切换的 self._project_id。
             content = self.get_agent_note(
-                agent_type, note_scope, project_id=project_id if project_id else ""
+                agent_type or "", note_scope, project_id=project_id if project_id else ""
             )
             if content:
                 notes.append(content)
-        note = "\n\n".join(notes)
-        return text + render_agent_note(agent_type or "", note), ids
+        return notes
 
     def _safe_mark_hits(self, ids: Optional[List[str]]) -> None:
         """累加命中计数，失败不影响经验块本身。
@@ -407,40 +443,35 @@ class ExperienceLedger:
         except Exception as exc:
             logger.debug("[Ledger] mark_hits skipped: %s", exc)
 
-    def _prompt_fingerprint(
-        self, agent_type: Optional[str], project_id: Optional[str] = None
-    ) -> Tuple:
-        """经验块可见内容的指纹，用于判断缓存是否仍然有效。
+    @staticmethod
+    def _signature(entries: List[Dict[str, Any]], notes: List[str]) -> Tuple:
+        """经验块可见内容的签名，用于判断缓存是否仍然有效。
 
-        只覆盖会出现在渲染结果里的字段：条目数量、更新时间、置信度与正文长度，
-        以及 agent_notes 的更新时间与正文长度。hits / last_hit_at 每轮都会被
-        mark_hits 改写，故意排除在外，否则缓存永远不会命中。
+        只覆盖会出现在渲染结果里的字段：id 决定组内顺序，kind 与置信度档决定
+        首行标签，statement 与 rationale 是正文，created_at 决定组内排序，
+        applies_to 决定「适用」行。hits / last_hit_at / updated_at / 精确置信度
+        一律排除 —— 它们会被 mark_hits、boost_recent、_reinforce 每轮改写，一旦
+        进入签名缓存就永远不会命中，而渲染结果其实一模一样。
+
+        rationale 只对 correction 计入：其他 kind 的 rationale 不参与渲染，把它
+        算进来会让一次无意义的说明修改白白打掉缓存。
+
+        置信度必须用档位而不是四舍五入后的数值：0.749 与 0.75 分属 low 和
+        medium 两档，按数值比较会漏判。
         """
-        conn = self.db.connection()
-        exp = conn.execute(
-            """
-            SELECT COUNT(*),
-                   COALESCE(MAX(updated_at), 0),
-                   COALESCE(MAX(created_at), 0),
-                   COALESCE(SUM(LENGTH(statement)), 0),
-                   COALESCE(SUM(CAST(confidence * 100 AS INTEGER)), 0)
-            FROM experiences
-            WHERE status = 'active' AND (scope = 'global' OR project_id = ?)
-            """,
-            (project_id or "",),
-        ).fetchone()
-        notes = conn.execute(
-            """
-            SELECT COUNT(*),
-                   COALESCE(MAX(updated_at), 0),
-                   COALESCE(SUM(LENGTH(content)), 0)
-            FROM agent_notes
-            WHERE agent_type = ?
-              AND (scope = 'user' OR (scope = 'project' AND project_id = ?))
-            """,
-            (agent_type or "", project_id or ""),
-        ).fetchone()
-        return tuple(exp) + tuple(notes)
+        rows = []
+        for entry in entries:
+            kind = entry.get("kind")
+            rows.append((
+                entry.get("id"),
+                kind,
+                confidence_label(float(entry.get("confidence") or 0.0)),
+                entry.get("created_at"),
+                entry.get("statement") or "",
+                (entry.get("rationale") or "") if kind == "correction" else "",
+                entry.get("applies_to") or "",
+            ))
+        return tuple(rows) + (tuple(notes),)
 
     # ---------- 对话观察 ----------
 

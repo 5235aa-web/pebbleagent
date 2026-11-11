@@ -3,18 +3,23 @@
 from __future__ import annotations
 
 import json
-from datetime import datetime
 from typing import Any, Dict, List, Optional
 
 MAX_PROMPT_CHARS = 2000
 
+# 写入 correction 时 rationale 的固定前缀，渲染时据此判断后面是否带着上下文。
+_CONTEXT_PREFIXES = (
+    "用户否定了先前的做法：",
+    "The user rejected the previous approach: ",
+)
+
 _HEADER = (
     "<experience-ledger>\n"
-    "以下条目来自此前会话中你被纠正或确认过的做法，最新的在前。"
+    "以下条目来自此前会话中你被纠正或确认过的做法，按重要程度分组，同类内最新的在前。"
     "它们是历史结论，若与当前代码冲突，以代码为准。\n"
     "Lessons below come from earlier sessions where you were corrected or the user "
-    "confirmed a rule, newest first. They are historical conclusions: if they "
-    "conflict with the current code, trust the code.\n"
+    "confirmed a rule, grouped by importance, newest first within each group. They "
+    "are historical conclusions: if they conflict with the current code, trust the code.\n"
 )
 
 
@@ -36,20 +41,29 @@ def _scope_line(applies_to: Dict[str, Any]) -> str:
     return "；".join(parts)
 
 
-def _evidence_line(evidence: List[Dict[str, Any]]) -> str:
-    if not evidence:
+def _context_line(entry: Dict[str, Any]) -> str:
+    """correction 条目附上被否定的做法。
+
+    statement 常常只有后半句：「不对，我不是让你别动那个文件吗」去掉前缀后
+    剩下「我不是让你别动那个文件吗」，模型既不知道哪个文件也不知道当时在
+    干什么。rationale 里存了助手上一轮的做法，只有这个前缀才说明它是有内容
+    的上下文；constraint 的「用户下达了长期约束」之类是废话，跳过。
+    """
+    if entry.get("kind") != "correction":
         return ""
-    item = evidence[0]
-    conversation = str(item.get("conversation_uuid") or "")[:8]
-    timestamp = item.get("timestamp")
-    when = ""
-    if isinstance(timestamp, (int, float)):
-        when = datetime.fromtimestamp(timestamp).strftime("%Y-%m-%d")
-    label = "会话 " + conversation if conversation else "历史会话"
-    return f"{label}（{when}）" if when else label
+    rationale = (entry.get("rationale") or "").strip()
+    for prefix in _CONTEXT_PREFIXES:
+        if rationale.startswith(prefix):
+            text = rationale[len(prefix):].strip()
+            if len(text) < 4:
+                return ""
+            if len(text) > 60:
+                text = text[:60].rstrip() + "…"
+            return f"  当时: {text}"
+    return ""
 
 
-def _confidence_label(value: float) -> str:
+def confidence_label(value: float) -> str:
     """把置信度压成三档。
 
     渲染里放精确值会让 boost_recent 的每次 +0.05 都改写这一行，进而让整块
@@ -70,7 +84,6 @@ def render_entries(entries: List[Dict[str, Any]], max_chars: int = MAX_PROMPT_CH
     used = len(_HEADER)
     for entry in entries:
         applies_to = _load(entry.get("applies_to"), {})
-        evidence = _load(entry.get("evidence"), [])
         kind = entry.get("kind", "")
         confidence = float(entry.get("confidence") or 0.0)
         statement = (entry.get("statement") or "").strip()
@@ -78,13 +91,13 @@ def render_entries(entries: List[Dict[str, Any]], max_chars: int = MAX_PROMPT_CH
             continue
         if len(statement) > 240:
             statement = statement[:240].rstrip() + "…"
-        block = [f"- [{kind} · {_confidence_label(confidence)}] {statement}"]
+        block = [f"- [{kind} · {confidence_label(confidence)}] {statement}"]
         scope = _scope_line(applies_to)
         if scope:
             block.append(f"  适用: {scope}")
-        source = _evidence_line(evidence)
-        if source:
-            block.append(f"  证据: {source}")
+        context = _context_line(entry)
+        if context:
+            block.append(context)
         text = "\n".join(block)
         if used + len(text) + 1 > max_chars:
             break

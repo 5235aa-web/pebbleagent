@@ -7,6 +7,12 @@ which is what the in-app update sheet shows before installing. Add the section
 before running `npm run release`; the release stops if it is missing, because a
 feed with empty notes tells the user nothing.
 
+## 1.2.6
+
+- Corrections are remembered more accurately. Ordinary technical wording such as "this only works in dev" or "must be initialised first" used to be filed as a standing rule; it no longer is, so what the agent keeps is what you actually asked it to keep.
+- Rules you set early no longer fade out. Once enough preferences piled up, the oldest constraints dropped out of the text the agent reads each turn and were eventually retired, which looked like it had forgotten something you taught it. Each kind now keeps a share of that space.
+- A remembered correction now says what it was correcting. "Don't do that again" used to be stored without the part explaining what "that" was; the note that reaches the agent carries it now.
+
 ## 1.2.5
 
 - Compaction no longer comes back empty. A model that thinks before answering could spend its whole output budget deliberating and hand back nothing, which read as a silent failure. The instruction that this is a reorganising job rather than analysis work now reaches every summary request, including the multi-part path that was missing it, and an empty answer is retried once with more room before anything is reported.
