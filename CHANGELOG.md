@@ -7,6 +7,14 @@ which is what the in-app update sheet shows before installing. Add the section
 before running `npm run release`; the release stops if it is missing, because a
 feed with empty notes tells the user nothing.
 
+## 1.2.4
+
+- Long conversations can be compacted again. A transcript too large to summarize in one request is now handled in parts and merged, so its length decides how many requests it takes instead of whether it works at all.
+- A failed compaction is now reported as a failure. When the summary request was rejected, the session used to be folded into a short placeholder and shown as a success, which is why a compacted conversation could suddenly forget everything. Nothing is folded now, the transcript stays exactly as it was, and you can run it again.
+- The outcome is shown in the compact window itself, with the reason and a "Try again" button. It used to appear only as a corner notification that vanished after a few seconds, easy to miss while waiting for the run to finish.
+- The "not enough messages" warning no longer appears on a conversation that clearly has history. It could show up right after opening a session and only cleared after switching away and back.
+- The summary has far more room to write, so a model that thinks before answering no longer comes back empty.
+
 ## 1.2.3
 
 - Lessons remembered from earlier conversations are now a fixed set of the ten most recent, instead of being re-picked for every message. Switching topics no longer re-bills the whole conversation, so cache hits are back around 99% rather than the low nineties. The trade-off: the set is no longer filtered for relevance to what you just asked.

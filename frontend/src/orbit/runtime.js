@@ -50,10 +50,14 @@ export function initOrbit() {
         : '<svg width="11" height="11" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="3"><polyline points="20 6 9 17 4 12"/></svg>';
     el.innerHTML =
       '<span class="toast-ico">' + icon + '</span>' +
-      '<span class="toast-main"><span class="toast-title">' + title + '</span>' +
-      '<span class="toast-msg">' + (msg || "") + '</span></span>' +
+      '<span class="toast-main"><span class="toast-title"></span>' +
+      '<span class="toast-msg"></span></span>' +
       '<button class="toast-x"><svg width="9" height="9" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.4"><line x1="18" y1="6" x2="6" y2="18"/><line x1="6" y1="6" x2="18" y2="18"/></svg></button>' +
       '<span class="toast-bar"></span>';
+    /* Text, not markup: a reason from the gateway is data, and this is the one
+       place that renders it without escaping. */
+    el.querySelector(".toast-title").textContent = title;
+    el.querySelector(".toast-msg").textContent = msg || "";
     toastHost.appendChild(el);
     var timer = window.setTimeout(function () { dismiss(); }, 4600);
     function dismiss() {

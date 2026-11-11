@@ -1350,6 +1350,22 @@ class AgentChatServiceV2:
                         # 环显示用完整 prompt_tokens（已含缓存），面板用 cost_info.input_tokens（非缓存输入）
                         latest_input = getattr(consumer.usage, 'prompt_tokens', 0)
 
+                        # 上下文分项：提示词（含经验/项目/备注）、预加载技能、工具 schema、
+                        # 会话历史。四项都是本地估算，前端按实测 prompt_tokens 统一缩放。
+                        breakdown = {
+                            "system_base": state.prompt_base_tokens,
+                            "skills": state.prompt_skills_tokens,
+                            "tools": state.tools_tokens,
+                            "messages": count_messages_tokens(messages),
+                        }
+                        # 把这组「实测 / 估算」喂给压缩器的标尺。之后所有预算判断
+                        # 都按这个比值修正，tokenizer 的差异被校准而不是被假设。
+                        try:
+                            from .context_compressor import record_token_calibration
+                            record_token_calibration(sum(breakdown.values()), latest_input)
+                        except Exception as e:
+                            logger.debug(f"[Cost] Calibration skipped: {e}")
+
                         yield {
                             "type": "usage",
                             "model": use_model,
@@ -1361,12 +1377,7 @@ class AgentChatServiceV2:
                             # 上下文分项：提示词（含经验/项目/备注）、预加载技能、工具 schema、
                             # 会话历史。四项都是本地估算，前端按实测 prompt_tokens 统一缩放，
                             # 四项之和恒等于真实占用，误差均摊而不是全压到会话上。
-                            "context_breakdown": {
-                                "system_base": state.prompt_base_tokens,
-                                "skills": state.prompt_skills_tokens,
-                                "tools": state.tools_tokens,
-                                "messages": count_messages_tokens(messages),
-                            },
+                            "context_breakdown": breakdown,
                             # 本轮每个工具的输出占用（明细，不是分项；已含在 messages 里）
                             "tool_results": summarize_tool_results(messages, turn_start),
                             "this_call": {**cost_info, "model": use_model}

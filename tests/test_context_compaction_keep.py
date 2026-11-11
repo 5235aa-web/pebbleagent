@@ -16,6 +16,52 @@ if ROOT not in sys.path:
 sys.stdout.reconfigure(encoding="utf-8", errors="replace")
 
 
+SUMMARY = """## Task
+- tidy the conversation so the next session can resume
+
+## Status
+- Done: kept the recent turns verbatim
+- In progress: nothing
+- Blocked: nothing
+
+## Decisions
+- keep the tail untouched instead of summarizing it
+
+## Todo
+- resume from the last user message
+
+## Clues
+- files: none; commands: none; error text: none"""
+
+
+class _FakeMessage:
+    def __init__(self, content):
+        self.content = content
+
+
+class _FakeResponse:
+    def __init__(self, content):
+        self.choices = [type("C", (), {"message": _FakeMessage(content)})()]
+        self.usage = type("U", (), {"prompt_tokens": 1200})()
+
+
+class _FakeCompletions:
+    def __init__(self):
+        self.calls = []
+
+    def create(self, **kwargs):
+        self.calls.append(kwargs)
+        return _FakeResponse(SUMMARY)
+
+
+class FakeClient:
+    """Stands in for the model: a fixed five-section summary, no network."""
+
+    def __init__(self):
+        self.completions = _FakeCompletions()
+        self.chat = type("Chat", (), {"completions": self.completions})()
+
+
 def make_msgs(n):
     msgs = []
     for i in range(n):
@@ -41,7 +87,8 @@ def main() -> int:
 
     def run_case(name, msgs, expect_success, expect_keep=None, expect_reason_sub=None):
         print("=== %s (n=%d) ===" % (name, len(msgs)))
-        result = manual_compress(messages=msgs, max_tokens=30000, recent_messages=2, llm_client=None)
+        result = manual_compress(messages=msgs, max_tokens=30000, recent_messages=2,
+                                 llm_client=FakeClient())
         ok = bool(result.get("success"))
         check("success == %s" % expect_success, ok == expect_success,
               "got success=%s reason=%s" % (ok, result.get("reason")))
@@ -120,6 +167,19 @@ def main() -> int:
                       "tool_call_id": "c%d" % i, "name": "read_file"})
     msgs9.append({"role": "assistant", "content": "done"})
     run_case("tool-heavy turn", msgs9, True, 14)
+
+    # --- Scenario 10: no model means visible failure, never a rule-built shell ---
+    print("=== no llm client ===")
+    bare_msgs = make_msgs(6)
+    bare = manual_compress(messages=bare_msgs, max_tokens=30000, recent_messages=2,
+                           llm_client=None)
+    check("success == False", not bare.get("success"), str(bare.get("reason")))
+    check("summary is None", bare.get("summary") is None, str(bare.get("summary")))
+    check("reason explains itself", "Summary generation failed" in (bare.get("reason") or ""),
+          str(bare.get("reason")))
+
+    import agent_core.context_compressor as _cc
+    check("rule-based summary is gone", not hasattr(_cc, "simple_structured_summary"))
 
     print("\n=== RESULT: PASS=%d FAIL=%d ===" % (passed, failed))
     return 1 if failed else 0

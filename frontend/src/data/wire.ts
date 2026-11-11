@@ -2805,7 +2805,13 @@ export async function compressSession(): Promise<CompactOutcome> {
   }
   const sid = streamState.sessionId || sessionState.activeId
   if (!sid) return { ok: false, title: 'Cannot compact', message: 'No session is open.' }
-  const total = lastHistory.length
+  /* `messageCount` is kept current as rows arrive, while `lastHistory` is only
+     the snapshot taken when the session was opened. Reading the snapshot here
+     made a session that had grown to forty rows still answer "only 0 messages";
+     switching away and back rebuilt the snapshot, which is why the block felt
+     random. The gateway checks the stored transcript anyway, so this is a
+     courtesy check, not the authority. */
+  const total = sessionState.messageCount
   if (total < 2) {
     return { ok: false, title: 'Cannot compact', message: `Only ${total} messages in this session; at least 2 are required to compact.` }
   }

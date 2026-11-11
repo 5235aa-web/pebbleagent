@@ -11,6 +11,7 @@ Context Compressor - 完整的上下文压缩器
 
 import logging
 import re
+import threading
 import uuid
 import json
 import time
@@ -888,6 +889,19 @@ def truncate_to_tokens(content: str, max_tokens: int) -> str:
 # ============================================================================
 
 
+# Providers spell the same rejection differently. `context_length_exceeded` and
+# "Input too long: N input tokens, limit is M" are the openai-compatible gateway
+# forms; missing them left the 11-09 failure classified as a generic error, so
+# the real token count in the message was never read.
+_PTL_MARKERS = (
+    "prompt_too_long",
+    "context length",
+    "context_length_exceeded",
+    "input too long",
+    "maximum context",
+)
+
+
 def is_prompt_too_long_error(error: Any) -> Tuple[bool, Optional[int], Optional[int]]:
     """
     检查是否是 prompt_too_long 错误
@@ -897,8 +911,8 @@ def is_prompt_too_long_error(error: Any) -> Tuple[bool, Optional[int], Optional[
         token_gap 和 context_limit 在无法解析时为 None
     """
     error_str = str(error).lower()
-    
-    if "prompt_too_long" not in error_str and "context length" not in error_str:
+
+    if not any(marker in error_str for marker in _PTL_MARKERS):
         return False, None, None
     
     # 尝试多种格式提取 (limit, actual) 或 (gap)
@@ -918,7 +932,25 @@ def is_prompt_too_long_error(error: Any) -> Tuple[bool, Optional[int], Optional[
         if match:
             limit = int(match.group(1))
             actual = int(match.group(2))
-    
+
+    # 格式2b: "[context_length_exceeded] Input too long: 1636417 input tokens,
+    # limit is 1048576 for this model" — the openai-compatible gateway form that
+    # the 11-09 incident produced.
+    if limit is None:
+        match = re.search(r'input too long:?\s*(\d+)\s*input tokens?,?\s*limit is (\d+)', error_str)
+        if match:
+            actual = int(match.group(1))
+            limit = int(match.group(2))
+
+    # 格式2c: the same numbers without the phrasing, e.g. "1636417 input tokens
+    # ... limit is 1048576"
+    if limit is None:
+        match = re.search(r'(\d+)\s*input tokens', error_str)
+        limit_match = re.search(r'limit is (\d+)', error_str)
+        if match and limit_match:
+            actual = int(match.group(1))
+            limit = int(limit_match.group(1))
+
     # 格式3: 提示词超长（X tokens > Y tokens）
     if limit is None:
         match = re.search(r'prompt is too long:?\s*(\d+)\s*tokens?\s*>\s*(\d+)', error_str)
@@ -1000,6 +1032,7 @@ def compact_conversation(
     file_states: Optional[Dict[str, FileState]] = None,
     session_id: Optional[str] = None,
     project_path: Optional[str] = None,
+    context_limit: Optional[int] = None,
 ) -> CompactionResult:
     """
     压缩对话的核心函数
@@ -1047,7 +1080,10 @@ def compact_conversation(
     pre_compact_token_count = estimate_messages_tokens(messages)
     
     # 3. 日志记录压缩参数
-    logger.info(f"[ContextCompressor] Manual compress requested: {pre_compact_token_count} tokens, target: {max_tokens} tokens")
+    logger.info(
+        f"[ContextCompressor] Manual compress requested: {pre_compact_token_count} tokens, "
+        f"budget {'auto (from model window)' if not max_tokens else max_tokens}"
+    )
     
     # 4. 分离系统消息和对话消息
     system_messages = [m for m in messages if m.role == "system"]
@@ -1121,7 +1157,8 @@ def compact_conversation(
         llm_model=llm_model,
         custom_instructions=custom_instructions,
         direction=direction if pivot_index else None,
-        input_budget=max_tokens if max_tokens else DEFAULT_SUMMARY_INPUT_BUDGET
+        input_budget=max_tokens if max_tokens else None,
+        context_limit=context_limit,
     )
     
     if not summary:
@@ -1364,15 +1401,152 @@ def _force_wrap_summary(raw: str) -> str:
 - (none)"""
 
 
-# Summary input budget (tokens). The conversation is fed whole; this only caps a
-# pathological transcript. Sized for a long-window model so a normal session
-# never loses its oldest turns to this limit.
-DEFAULT_SUMMARY_INPUT_BUDGET = 700000
+# Summary input budget is derived from the model window (`_summary_input_budget`);
+# there is no fixed ceiling to fall back on any more.
 
-# Output ceiling for the summary call itself. A five-section handoff needs a few
-# thousand tokens; the headroom exists so a thinking model cannot run out of
-# budget before it writes the body.
-SUMMARY_MAX_OUTPUT_TOKENS = 250000
+# Output ceiling for the summary call itself. Generous on purpose: a reasoning
+# model spends part of this before it writes a word, and the failure mode of a
+# tight ceiling is an empty answer, not a shorter one. Shrinks to a quarter of
+# the window on small models (`_summary_output_budget`), because a provider
+# checks input + max_tokens together.
+SUMMARY_MAX_OUTPUT_TOKENS = 90000
+
+# Ceiling for one part's digest during the map phase. Generous on purpose: a
+# reasoning model spends part of this budget before it writes a single word of
+# the digest, and a tight ceiling shows up as an empty answer rather than a
+# shorter one.
+SUMMARY_PART_OUTPUT_TOKENS = 20000
+
+# One request may not carry more than this, even when the model window is larger.
+# Splitting is cheap; a request that takes minutes and then fails is not.
+SUMMARY_PART_INPUT_TOKENS = 120_000
+
+# Prompt scaffolding (instructions plus the part header) around the transcript.
+SUMMARY_PROMPT_OVERHEAD_TOKENS = 4_000
+
+# Share of the window kept free so rounding and format overhead cannot push a
+# request over the limit.
+CONTEXT_SAFETY_RATIO = 0.10
+
+# Assumed window when the model is unknown.
+FALLBACK_CONTEXT_LIMIT = 128_000
+
+# Multiplier applied to an uncalibrated estimate. `estimate_tokens` reads English
+# at ~4 chars per token; real mixed code/JSON/Chinese runs closer to 2.5, and
+# pessimism only costs extra parts while optimism costs the whole compaction.
+UNCALIBRATED_PESSIMISM = 1.6
+
+# Per-message rendering caps. A single tool result used to reach the request at
+# full length, so one 2 MB grep could fill every part on its own.
+RENDER_USER_CHARS = 4000
+RENDER_ASSISTANT_CHARS = 4000
+RENDER_TOOL_CHARS = 4000
+RENDER_TOOL_COMMAND_CHARS = 8000
+RENDER_TOOL_READ_CHARS = 600
+RENDER_TOOL_EDIT_CHARS = 800
+
+# How many part digests may be merged into one before the merge must recurse.
+SUMMARY_MERGE_FANIN = 8
+
+# Calibration: measured/estimated ratios observed so far. Bounded and median
+# based, so one odd request cannot redefine the scale.
+_CALIBRATION_MAX_SAMPLES = 24
+_CALIBRATION_MIN_RATIO = 0.4
+_CALIBRATION_MAX_RATIO = 4.0
+_calibration_samples: List[float] = []
+_calibration_lock = threading.Lock()
+
+
+def record_token_calibration(estimated: int, actual: int) -> None:
+    """Feed one measured/estimated pair into the scale.
+
+    `actual` comes from a provider `prompt_tokens` (or a rejection message) and
+    `estimated` from `estimate_tokens` over the same text. The caller decides
+    which text; the only requirement is that both numbers describe it.
+    """
+    try:
+        if not actual or actual <= 0 or not estimated or estimated <= 0:
+            return
+        ratio = actual / estimated
+        if not (_CALIBRATION_MIN_RATIO <= ratio <= _CALIBRATION_MAX_RATIO):
+            return
+        with _calibration_lock:
+            _calibration_samples.append(ratio)
+            if len(_calibration_samples) > _CALIBRATION_MAX_SAMPLES:
+                del _calibration_samples[:-_CALIBRATION_MAX_SAMPLES]
+    except Exception as e:
+        logger.debug(f"[ContextCompressor] Calibration sample rejected: {e}")
+
+
+def get_token_calibration_factor() -> Optional[float]:
+    """Median measured/estimated ratio, or None before any sample landed."""
+    with _calibration_lock:
+        samples = list(_calibration_samples)
+    if not samples:
+        return None
+    samples.sort()
+    mid = len(samples) // 2
+    if len(samples) % 2:
+        return samples[mid]
+    return (samples[mid - 1] + samples[mid]) / 2
+
+
+def estimate_tokens_calibrated(text: str) -> int:
+    """Token estimate corrected for this provider's real tokenizer.
+
+    With samples the median ratio is applied; without them the pessimistic
+    multiplier is. Never returns less than the plain estimate.
+    """
+    base = estimate_tokens(text)
+    if base <= 0:
+        return 0
+    factor = get_token_calibration_factor()
+    scale = factor if factor else UNCALIBRATED_PESSIMISM
+    return max(base, int(base * scale))
+
+
+def resolve_context_limit(model_name: Optional[str]) -> int:
+    """Model window in tokens: pricing table first, name matching second."""
+    try:
+        from .agent_chat_service_v2 import get_model_context_limit
+        limit = int(get_model_context_limit(model_name or "") or 0)
+        if limit > 0:
+            return limit
+    except Exception as e:
+        logger.debug(f"[ContextCompressor] Context limit lookup failed: {e}")
+    return FALLBACK_CONTEXT_LIMIT
+
+
+def _summary_output_budget(context_limit: int) -> int:
+    """Output ceiling for one summary call on this window.
+
+    `SUMMARY_MAX_OUTPUT_TOKENS` is the ceiling the user asked for, but a provider
+    checks input + max_tokens together. Reserving the whole ceiling on a small
+    window would leave almost no room for the transcript, so it shrinks to a
+    quarter of the window there.
+    """
+    limit = int(context_limit or 0)
+    if limit <= 0:
+        return SUMMARY_MAX_OUTPUT_TOKENS
+    return max(4_000, min(SUMMARY_MAX_OUTPUT_TOKENS, int(limit * 0.25)))
+
+
+def _part_output_budget(context_limit: int, retry: bool = False) -> int:
+    """Output ceiling for one part digest; doubled on a retry, still capped."""
+    ceiling = _summary_output_budget(context_limit)
+    base = min(SUMMARY_PART_OUTPUT_TOKENS, ceiling)
+    return min(ceiling, base * 2) if retry else base
+
+
+def _summary_input_budget(context_limit: int) -> int:
+    """Largest transcript a single summary request may carry."""
+    usable = int(context_limit * (1 - CONTEXT_SAFETY_RATIO)) - _summary_output_budget(context_limit)
+    usable -= SUMMARY_PROMPT_OVERHEAD_TOKENS
+    if usable <= 0:
+        # Window smaller than the output ceiling: fall back to a fraction of it
+        # so the request still has a chance rather than being impossible.
+        usable = max(8_000, int(context_limit * 0.4) - SUMMARY_PROMPT_OVERHEAD_TOKENS)
+    return min(usable, SUMMARY_PART_INPUT_TOKENS)
 
 
 # Tool families, decided by name when the transcript is rendered for the summary.
@@ -1390,12 +1564,10 @@ _EDIT_TOOLS = {
     'write_file', 'edit_file', 'delete_file', 'move_file', 'copy_file',
     'create_directory', 'todo_write',
 }
-# Command tools keep their full output: shell results, test runs and stack
-# traces are the only copy of what happened.
+# Command tools keep more of their output: shell results, test runs and stack
+# traces are the only copy of what happened. The cap still applies.
 _COMMAND_TOOLS = {'execute_shell', 'powershell', 'execute_code', 'bash', 'batch'}
 
-_TOOL_READ_CHARS = 200
-_TOOL_EDIT_CHARS = 400
 # Below this size an output is short enough that a failure marker is the whole
 # payload rather than incidental text inside a file that was read successfully.
 _TOOL_FAILURE_SNIFF_CHARS = 500
@@ -1441,7 +1613,10 @@ def _summarize_message_content(
 
     Human messages keep a head+tail slice so both the ask and its outcome
     survive. Tool messages are graded by family: reads shrink to a stub, edits
-    keep only the shape of the change, commands and every failure are kept whole.
+    keep only the shape of the change, commands keep more because their output
+    is the only record of what ran. Every family is capped, including unknown
+    names and failures: falling through to the whole body is how one 2 MB grep
+    filled the entire request on its own.
     """
     if msg.role == "tool":
         body = _message_plain_text(msg)
@@ -1451,13 +1626,17 @@ def _summarize_message_content(
         # limited to commands and edits, plus any short response where an error
         # would be the whole payload.
         structured = name not in _READ_TOOLS
-        if _looks_failed(body) and (structured or len(body) <= _TOOL_FAILURE_SNIFF_CHARS):
-            return f"[{name}] FAILED\n{body}"
+        failed = _looks_failed(body) and (structured or len(body) <= _TOOL_FAILURE_SNIFF_CHARS)
         if name in _READ_TOOLS:
-            return f"[{name}] {_truncate(body, _TOOL_READ_CHARS)}"
-        if name in _EDIT_TOOLS:
-            return f"[{name}] {_truncate(body, _TOOL_EDIT_CHARS)}"
-        return f"[{name}]\n{body}"
+            cap = RENDER_TOOL_READ_CHARS
+        elif name in _EDIT_TOOLS:
+            cap = RENDER_TOOL_EDIT_CHARS
+        elif name in _COMMAND_TOOLS:
+            cap = RENDER_TOOL_COMMAND_CHARS
+        else:
+            cap = RENDER_TOOL_CHARS
+        rendered = _truncate(body, cap)
+        return f"[{name}] FAILED\n{rendered}" if failed else f"[{name}]\n{rendered}"
 
     text = _message_plain_text(msg)
     if not text:
@@ -1500,13 +1679,21 @@ def _tool_name_index(messages: List[Message]) -> Dict[str, str]:
             if not isinstance(call, dict):
                 continue
             call_id = call.get("id")
-            if not call_id:
-                continue
+            name = None
+            # OpenAI shape: {"id": ..., "function": {"name": ...}}
             fn = call.get("function")
-            name = fn.get("name") if isinstance(fn, dict) else None
+            if isinstance(fn, dict):
+                name = fn.get("name")
             if not name:
                 name = call.get("name")
-            if name:
+            # Orbit block shape: {"type": "tool", "tool_info": {"id", "name"}}.
+            # The transcript stores this form, so without reading it every tool
+            # rendered as an unknown name.
+            info = call.get("tool_info")
+            if isinstance(info, dict):
+                call_id = call_id or info.get("id")
+                name = name or info.get("name")
+            if call_id and name:
                 index[call_id] = name
     return index
 
@@ -1542,7 +1729,261 @@ def _detect_body_language(messages: List[Message]) -> str:
     return "Chinese" if cjk / total >= 0.2 else "English"
 
 
-def _ensure_usable_summary(candidate: str, rule_fallback: Optional[str] = None) -> Optional[str]:
+class _PromptTooLongError(Exception):
+    """The provider rejected a request because it exceeded the model window."""
+
+    def __init__(self, actual: Optional[int], limit: Optional[int], message: str = ""):
+        self.actual = actual
+        self.limit = limit
+        super().__init__(message or f"prompt too long: actual={actual} limit={limit}")
+
+
+def extract_actual_prompt_tokens(error: Any) -> Optional[int]:
+    """Read the provider's own token count for the rejected prompt.
+
+    `is_prompt_too_long_error` answers "was this a size rejection" and the model
+    limit; the actual count is what makes a retry calculable, so it is parsed
+    separately here rather than widening that function's contract.
+    """
+    try:
+        error_str = str(error).lower()
+        patterns = (
+            r'input too long:?\s*(\d+)\s*input tokens',
+            r'you requested (\d+) tokens',
+            r'prompt is too long:?\s*(\d+)\s*tokens?\s*>',
+            r'(\d+)\s*tokens?\s*>\s*\d+',
+        )
+        for pattern in patterns:
+            match = re.search(pattern, error_str)
+            if match:
+                return int(match.group(1))
+    except Exception:
+        pass
+    return None
+
+
+def _split_rendered_parts(rows: List[str], budget_tokens: int) -> List[str]:
+    """Pack rendered rows into request-sized parts, preserving order.
+
+    Greedy on purpose: a boundary may fall inside a turn, which is acceptable
+    because each part is digested on its own and the merge restores the
+    through-line. What matters is that every row lands in exactly one part.
+    """
+    budget_tokens = max(4_000, int(budget_tokens))
+    parts: List[str] = []
+    current: List[str] = []
+    used = 0
+    for row in rows:
+        cost = estimate_tokens_calibrated(row) + 8
+        if current and used + cost > budget_tokens:
+            parts.append("\n\n".join(current))
+            current = []
+            used = 0
+        current.append(row)
+        used += cost
+    if current:
+        parts.append("\n\n".join(current))
+    return parts
+
+
+def _part_prompt(index: int, total: int, language: str) -> str:
+    """Instruction for digesting one part of a long transcript."""
+    return (
+        f"You are writing part {index} of {total} of a factual handoff record for a "
+        f"long conversation that is about to be compacted.\n"
+        f"Write in {language}. Record only what the next session needs:\n"
+        f"- what the user was trying to do\n"
+        f"- decisions made, and the reason given\n"
+        f"- files touched, commands run, exact error text\n"
+        f"- what is still open\n"
+        f"No greetings, no meta commentary, no headings. Dense lines. "
+        f"Never repeat a fact twice."
+    )
+
+
+def _merge_prompt(language: str) -> str:
+    """Instruction for folding several digests into one record."""
+    return (
+        f"Merge the digests below into a single factual record, written in {language}. "
+        f"Keep every distinct fact: goals, decisions, file paths, commands, error "
+        f"text, open items. Drop duplication and narrative. "
+        f"No headings, no meta commentary, no preamble."
+    )
+
+
+def _call_summary_model(
+    llm_client: Any,
+    llm_model: Optional[str],
+    prompt: str,
+    max_tokens: int,
+    temperature: float,
+) -> str:
+    """One summary request.
+
+    Returns the answer. Raises `_PromptTooLongError` when the provider rejected
+    it for size, so the caller can measure and split; any other failure is
+    re-raised untouched. A successful call feeds its measured `prompt_tokens`
+    back into the calibration scale, which is what makes the next estimate
+    trustworthy.
+    """
+    try:
+        response = llm_client.chat.completions.create(
+            model=llm_model or "gpt-4o-mini",
+            messages=[{"role": "user", "content": prompt}],
+            max_tokens=max_tokens,
+            temperature=temperature,
+        )
+    except Exception as e:
+        too_long, _gap, limit = is_prompt_too_long_error(e)
+        if too_long:
+            raise _PromptTooLongError(extract_actual_prompt_tokens(e), limit, str(e)) from e
+        raise
+    usage = getattr(response, "usage", None)
+    measured = int(getattr(usage, "prompt_tokens", 0) or 0) if usage else 0
+    if measured > 0:
+        record_token_calibration(estimate_tokens(prompt), measured)
+    try:
+        message = response.choices[0].message
+        content = message.content or ""
+    except (AttributeError, IndexError, TypeError):
+        return ""
+    if not content.strip():
+        # An empty answer is diagnostic, not just absent: on a reasoning model it
+        # usually means the ceiling went to the reasoning trace.
+        reasoning = getattr(message, "reasoning_content", None) or ""
+        logger.warning(
+            f"[ContextCompressor] Summary call returned empty content "
+            f"(reasoning_chars={len(reasoning)}, max_tokens={max_tokens})"
+        )
+    return content
+
+
+def _summarize_part_digest(
+    part_text: str,
+    index: int,
+    total: int,
+    llm_client: Any,
+    llm_model: Optional[str],
+    language: str,
+    budget_tokens: int,
+    context_limit: int,
+    depth: int = 0,
+    attempt: int = 0,
+) -> Optional[str]:
+    """Digest one part, splitting further when the provider says it is too long.
+
+    A size rejection carries the real token count, so the part is re-split with
+    a budget derived from that measurement instead of the estimate that let it
+    through. Depth is capped: two halvings turn any part into something a
+    provider will take, and a third would mean the content itself is unusable.
+    """
+    prompt = f"{_part_prompt(index, total, language)}\n\nTranscript part:\n{part_text}"
+    try:
+        text = _call_summary_model(
+            llm_client, llm_model, prompt,
+            _part_output_budget(context_limit, retry=attempt > 0), 0.3 if attempt == 0 else 0.2
+        ).strip()
+    except _PromptTooLongError as e:
+        actual = e.actual
+        local = estimate_tokens(prompt)
+        if actual:
+            record_token_calibration(local, actual)
+        if depth >= 2:
+            logger.error(
+                f"[ContextCompressor] Part {index}/{total} rejected for size twice; giving up"
+            )
+            return None
+        ratio = (actual / local) if (actual and local) else 2.0
+        rows = [row for row in part_text.split("\n\n") if row]
+        if len(rows) <= 1:
+            logger.error(
+                f"[ContextCompressor] Part {index}/{total} is one row and cannot be split"
+            )
+            return None
+        smaller = max(2_000, int(budget_tokens / max(2.0, ratio)))
+        sub_parts = _split_rendered_parts(rows, smaller)
+        if len(sub_parts) <= 1:
+            return None
+        digests: List[str] = []
+        for sub_index, sub_text in enumerate(sub_parts, 1):
+            digest = _summarize_part_digest(
+                sub_text, sub_index, len(sub_parts), llm_client, llm_model,
+                language, smaller, context_limit, depth + 1,
+            )
+            if not digest:
+                return None
+            digests.append(digest)
+        return "\n\n".join(digests)
+    except Exception as e:
+        logger.warning(f"[ContextCompressor] Part {index}/{total} failed: {e}")
+        return None
+
+    if not text:
+        if attempt == 0:
+            # A reasoning model can spend the whole ceiling thinking and answer
+            # with nothing; that says nothing about the content. Ask again with
+            # room to spare before calling the part a failure.
+            logger.warning(
+                f"[ContextCompressor] Part {index}/{total} came back empty; "
+                f"retrying with a larger output ceiling"
+            )
+            return _summarize_part_digest(
+                part_text, index, total, llm_client, llm_model, language,
+                budget_tokens, context_limit, depth, 1,
+            )
+        logger.warning(f"[ContextCompressor] Part {index}/{total} came back empty twice")
+        return None
+    return text
+
+
+def _merge_part_digests(
+    digests: List[str],
+    llm_client: Any,
+    llm_model: Optional[str],
+    language: str,
+    budget_tokens: int,
+) -> Optional[str]:
+    """Fold part digests until one request can hold them.
+
+    Each round merges groups of `SUMMARY_MERGE_FANIN`, so the digest count falls
+    by that factor and the loop terminates in a handful of rounds even for a
+    transcript split into dozens of parts. Returning the joined text that still
+    exceeds the budget is intentional: the final call has its own size handling
+    and a partial record beats no record.
+    """
+    current = [d for d in digests if d]
+    if not current:
+        return None
+    for _ in range(6):
+        joined = "\n\n---\n\n".join(current)
+        if estimate_tokens_calibrated(joined) <= budget_tokens:
+            return joined
+        merged: List[str] = []
+        for start in range(0, len(current), SUMMARY_MERGE_FANIN):
+            group = current[start:start + SUMMARY_MERGE_FANIN]
+            if len(group) == 1:
+                merged.append(group[0])
+                continue
+            body = "\n\n---\n\n".join(group)
+            prompt = f"{_merge_prompt(language)}\n\nDigests:\n{body}"
+            try:
+                text = _call_summary_model(
+                    llm_client, llm_model, prompt, SUMMARY_PART_OUTPUT_TOKENS, 0.2
+                ).strip()
+            except Exception as e:
+                logger.warning(f"[ContextCompressor] Digest merge failed: {e}")
+                return None
+            if not text:
+                logger.warning("[ContextCompressor] Digest merge came back empty")
+                return None
+            merged.append(text)
+        current = merged
+        if len(current) == 1:
+            break
+    return "\n\n---\n\n".join(current)
+
+
+def _ensure_usable_summary(candidate: str) -> Optional[str]:
     """Return a summary worth persisting, or None.
 
     Headings alone are not a summary. Persisting a shell replaces real history
@@ -1555,15 +1996,6 @@ def _ensure_usable_summary(candidate: str, rule_fallback: Optional[str] = None) 
     logger.warning(
         f"[ContextCompressor] Summary rejected: missing={missing}, content_chars={volume}"
     )
-    if rule_fallback:
-        ok2, missing2, volume2 = _validate_summary_format(rule_fallback)
-        if ok2:
-            logger.warning("[ContextCompressor] Falling back to the rule-based summary")
-            return rule_fallback
-        logger.warning(
-            f"[ContextCompressor] Rule-based summary rejected too: "
-            f"missing={missing2}, content_chars={volume2}"
-        )
     return None
 
 
@@ -1574,71 +2006,103 @@ def generate_structured_summary(
     custom_instructions: Optional[str] = None,
     direction: Optional[CompactDirection] = None,
     input_budget: Optional[int] = None,
-    language: Optional[str] = None
+    language: Optional[str] = None,
+    context_limit: Optional[int] = None,
 ) -> Optional[str]:
     """
     Build the five-section handoff summary.
 
-    The input budget is a pathology guard, not a tax on normal sessions: the
-    transcript is fed whole, and only a transcript larger than the budget loses
-    its oldest turns. Bodies are written in `language` (detected from the user's
-    messages when not given); headings stay English so the structure is stable.
+    The transcript is rendered once, capped per message, then packed into parts
+    that fit a single request. A transcript that fits is summarized in one call;
+    a longer one is digested part by part and the digests are merged, so length
+    decides how many calls it takes, never whether it works. The part budget comes
+    from the model window and the calibrated token estimate, not a constant.
+
+    Bodies are written in `language` (detected from the user's messages when not
+    given); headings stay English so the structure is stable.
 
     Returns None when nothing usable could be produced. Callers must treat that
-    as a failure and leave the transcript untouched.
+    as a failure and leave the transcript untouched: there is no rule-built
+    fallback any more, because a shell is worse than a visible failure.
     """
     if not messages:
         return None
 
     body_language = language or _detect_body_language(messages)
 
-    # No client: rule-based summary, still in the detected language.
     if not llm_client:
-        return _ensure_usable_summary(
-            simple_structured_summary(messages, input_budget=input_budget, language=body_language)
-        )
+        # No model means no summary. A rule-built shell is not a handoff, and
+        # persisting one replaces real history with nothing.
+        logger.error("[ContextCompressor] No LLM client; refusing to compact")
+        return None
 
-    # ---- 1. 输入预算控制：只在超预算时丢弃最旧的消息 ----
-    budget = input_budget if input_budget else DEFAULT_SUMMARY_INPUT_BUDGET
-    kept: List[Message] = []
-    dropped = 0
-    budget_tokens = 0
-    for msg in reversed(messages):
-        tok = estimate_message_tokens(msg)
-        if budget_tokens + tok > budget and kept:
-            dropped += 1
-        else:
-            budget_tokens += tok
-            kept.insert(0, msg)
-    if not kept:
-        kept = [messages[-1]]
-        dropped = max(0, len(messages) - 1)
+    # ---- 1. 按模型窗口决定单次请求的预算 ----
+    if context_limit and context_limit > 0:
+        window = int(context_limit)
+    else:
+        window = resolve_context_limit(llm_model)
+    if input_budget and input_budget > 0:
+        part_budget = min(int(input_budget), SUMMARY_PART_INPUT_TOKENS)
+    else:
+        part_budget = _summary_input_budget(window)
 
-    # ---- 2. 逐条渲染：工具消息按类型分级，人类消息按位置给额度 ----
+    # ---- 2. 逐条渲染，每条独立封顶 ----
     name_by_call_id = _tool_name_index(messages)
-    content_parts = []
-    n = len(kept)
-    for i, msg in enumerate(kept):
-        pos_ratio = (i + 1) / n  # 0..1，越大越新
+    rows: List[str] = []
+    for msg in messages:
         if msg.role == "user":
-            char_budget = int(600 + pos_ratio * 1400)   # 600..2000
+            row_budget = RENDER_USER_CHARS
             label = "User"
         elif msg.role == "assistant":
-            char_budget = int(300 + pos_ratio * 700)    # 300..1000
+            row_budget = RENDER_ASSISTANT_CHARS
             label = "Assistant"
         else:
-            char_budget = _TOOL_READ_CHARS
+            row_budget = RENDER_TOOL_CHARS
             label = "Tool"
         tool_name = name_by_call_id.get(msg.tool_call_id or "") if msg.role == "tool" else None
-        content_parts.append(
-            f"{label}: {_summarize_message_content(msg, char_budget, tool_name)}"
-        )
+        body = _summarize_message_content(msg, row_budget, tool_name)
+        if body:
+            rows.append(f"{label}: {body}")
 
-    conversation_content = "\n\n".join(content_parts)
-    if dropped > 0:
-        conversation_content = (
-            f"[Note: the oldest {dropped} messages were left out to keep the request "
-            f"within budget; their topics should still be covered.]\n\n{conversation_content}"
+    if not rows:
+        logger.error("[ContextCompressor] Nothing renderable to summarize")
+        return None
+
+    # ---- 3. 切块：装不下就分段，绝不整段硬发 ----
+    parts = _split_rendered_parts(rows, part_budget)
+    logger.info(
+        f"[ContextCompressor] Summary planned: {len(rows)} rows, {len(parts)} part(s), "
+        f"budget {part_budget} tokens, window {window}, "
+        f"output {_summary_output_budget(window)}, "
+        f"calibration {get_token_calibration_factor() or 'none'}"
+    )
+
+    if len(parts) == 1:
+        conversation_content = parts[0]
+    else:
+        digests: List[str] = []
+        for index, part_text in enumerate(parts, 1):
+            digest = _summarize_part_digest(
+                part_text, index, len(parts), llm_client, llm_model,
+                body_language, part_budget, window,
+            )
+            if not digest:
+                logger.error(
+                    f"[ContextCompressor] Part {index}/{len(parts)} produced no digest; "
+                    f"refusing to persist a partial summary"
+                )
+                return None
+            digests.append(digest)
+        merged_digest = _merge_part_digests(
+            digests, llm_client, llm_model, body_language, part_budget
+        )
+        if not merged_digest:
+            logger.error("[ContextCompressor] Digest merge produced nothing; refusing to compact")
+            return None
+        conversation_content = merged_digest
+        logger.info(
+            f"[ContextCompressor] Digested {len(parts)} parts into "
+            f"{len(conversation_content)} chars"
         )
 
     # ---- 3. 获取提示词 ----
@@ -1647,23 +2111,49 @@ def generate_structured_summary(
     else:
         prompt = get_compact_prompt(custom_instructions, body_language)
 
-    full_prompt = f"{prompt}\n\nConversation:\n{conversation_content}"
+    # ---- 4. 生成五段式摘要；被拒时按实测比例缩减后重试一次 ----
+    final_content = conversation_content
+    summary = ""
+    for attempt in range(2):
+        full_prompt = f"{prompt}\n\nConversation:\n{final_content}"
+        try:
+            summary = _call_summary_model(
+                llm_client, llm_model, full_prompt, SUMMARY_MAX_OUTPUT_TOKENS, 0.3
+            )
+            break
+        except _PromptTooLongError as e:
+            # The provider named the real size. Shrink by that measurement rather
+            # than the estimate that let the request through, then try once more.
+            actual = e.actual
+            local = estimate_tokens(full_prompt)
+            if actual:
+                record_token_calibration(local, actual)
+            if attempt == 1:
+                logger.error(
+                    f"[ContextCompressor] Final summary request rejected for size "
+                    f"(actual={e.actual} limit={e.limit}); compaction reported as failed"
+                )
+                return None
+            ratio = (actual / local) if (actual and local) else 2.0
+            keep = int(len(final_content) / max(2.0, ratio) * 0.85)
+            if keep < 2000:
+                logger.error(
+                    f"[ContextCompressor] Final summary request rejected for size and the "
+                    f"digest cannot shrink further (actual={e.actual}); reporting failure"
+                )
+                return None
+            final_content = final_content[:keep]
+            logger.warning(
+                f"[ContextCompressor] Final summary request too long "
+                f"(actual={actual or '?'} vs limit {e.limit or '?'}); "
+                f"retrying with {keep} chars"
+            )
+        except Exception as e:
+            logger.warning(f"[ContextCompressor] Failed to generate summary: {e}")
+            return None
 
+    logger.info(f"[ContextCompressor] Generated structured summary: {len(summary)} chars")
     try:
-        response = llm_client.chat.completions.create(
-            model=llm_model or "gpt-4o-mini",
-            messages=[
-                {
-                    "role": "user",
-                    "content": full_prompt
-                }
-            ],
-            max_tokens=SUMMARY_MAX_OUTPUT_TOKENS,
-            temperature=0.3
-        )
-
-        summary = response.choices[0].message.content or ""
-        logger.info(f"[ContextCompressor] Generated structured summary: {len(summary)} chars")
 
         ok, missing, volume = _validate_summary_format(summary)
         if ok:
@@ -1693,159 +2183,18 @@ def generate_structured_summary(
         )
 
         wrapped = _force_wrap_summary(candidate)
-        usable = _ensure_usable_summary(
-            wrapped,
-            rule_fallback=simple_structured_summary(
-                messages, input_budget=input_budget, language=body_language
-            )
-        )
+        usable = _ensure_usable_summary(wrapped)
         if not usable:
             logger.error(
-                "[ContextCompressor] No usable summary from the model or the "
-                "rule-based fallback; compaction will be reported as failed"
+                "[ContextCompressor] No usable summary from the model; "
+                "compaction will be reported as failed"
             )
         return usable
 
     except Exception as e:
-        logger.warning(f"[ContextCompressor] Failed to generate summary: {e}")
-        # The rule-based path is pure string work, but it runs inside an error
-        # handler: letting it raise would escape the caller's "no usable summary"
-        # branch and turn a soft failure into a crash.
-        try:
-            fallback = simple_structured_summary(
-                messages, input_budget=input_budget, language=body_language
-            )
-        except Exception as nested:
-            logger.error(f"[ContextCompressor] Rule-based summary crashed: {nested}")
-            return None
-        return _ensure_usable_summary(fallback)
+        logger.warning(f"[ContextCompressor] Failed to finalize summary: {e}")
+        return None
 
-# Rule-based summary copy. The headings stay English everywhere; only these
-# phrases follow the conversation language.
-_RULE_COPY = {
-    "English": {
-        "used_tools": "used tools",
-        "none": "(none)",
-        "done": "Done:",
-        "in_progress": "In progress:",
-        "blocked": "Blocked:",
-        "todo": "Continue from where the previous session stopped",
-        "note": "rule-based summary, no LLM involved",
-        "users": "user turns in this stretch: {n}; ",
-        "oldest": "{n} oldest user messages left out for budget; see the full transcript",
-        "files": "Files",
-    },
-    "Chinese": {
-        "used_tools": "使用了工具",
-        "none": "(none)",
-        "done": "已完成：",
-        "in_progress": "进行中：",
-        "blocked": "阻塞：",
-        "todo": "继续上次停下的地方",
-        "note": "本摘要由规则生成，未调用 LLM",
-        "users": "段内共 {n} 条用户消息；",
-        "oldest": "最旧的 {n} 条用户消息因预算未纳入，详见完整会话记录",
-        "files": "涉及文件",
-    },
-}
-
-
-def simple_structured_summary(
-    messages: List[Message],
-    input_budget: Optional[int] = None,
-    language: str = "English"
-) -> str:
-    """Rule-based five-section summary, used when the model gives nothing usable.
-
-    Same `##` shape as the LLM summary so the card renders it unchanged. The task
-    line comes from the newest user messages, newest first: a compaction exists
-    to let the next session resume the current work, so the most recent request
-    is the one that must survive.
-    """
-    if not messages:
-        return ""
-
-    copy = _RULE_COPY.get(language, _RULE_COPY["English"])
-    budget = input_budget if input_budget else DEFAULT_SUMMARY_INPUT_BUDGET
-
-    user_texts: List[str] = []
-    for msg in messages:
-        if msg.role != "user":
-            continue
-        text = _message_plain_text(msg)
-        if text.strip():
-            user_texts.append(text)
-
-    kept_users: List[str] = []
-    used = 0
-    for t in reversed(user_texts):
-        c = min(len(t), 300)
-        if used + c > budget:
-            break
-        used += c
-        kept_users.insert(0, t)
-    dropped_users = len(user_texts) - len(kept_users)
-
-    def _snippet(text: str, limit: int) -> str:
-        s = text.strip().replace('\n', ' ')
-        return s if len(s) <= limit else s[:limit] + "..."
-
-    tool_names: List[str] = []
-    for msg in messages:
-        if msg.role != "assistant":
-            continue
-        for call in (msg.tool_calls or []):
-            if not isinstance(call, dict):
-                continue
-            fn = call.get("function")
-            name = fn.get("name") if isinstance(fn, dict) else call.get("name")
-            if name and name not in tool_names:
-                tool_names.append(name)
-
-    file_paths: List[str] = []
-    path_re = re.compile(
-        r'([A-Za-z]:[\\/][^\s"\'<>|?*]+'
-        r'|(?:src|ui-gui-vue3|gateway|agent_core|tools|extensions|skills|agents|knowledgesource)[\\/][^\s"\'<>|?*]+)'
-    )
-    for msg in messages:
-        text = _message_plain_text(msg)
-        for m in path_re.finditer(text):
-            fp = m.group(1).replace('\\', '/')
-            if fp not in file_paths:
-                file_paths.append(fp)
-        if len(file_paths) >= 10:
-            break
-
-    # Newest first: the last request is what the next session has to resume.
-    goal_lines = [f"- {_snippet(t, 150)}" for t in list(reversed(kept_users))[:3]]
-    if not goal_lines:
-        goal_lines = [f"- {copy['none']}"]
-
-    parts = ["## Task"]
-    parts.extend(goal_lines)
-    parts.append("")
-    parts.append("## Status")
-    if tool_names:
-        parts.append(f"- {copy['done']} {copy['used_tools']} {', '.join(tool_names[:15])}")
-    else:
-        parts.append(f"- {copy['done']} {copy['none']}")
-    parts.append(f"- {copy['in_progress']} {copy['none']}")
-    parts.append(f"- {copy['blocked']} {copy['none']}")
-    parts.append("")
-    parts.append("## Decisions")
-    parts.append(f"- {copy['none']}")
-    parts.append("")
-    parts.append("## Todo")
-    parts.append(f"- {copy['todo']}")
-    parts.append("")
-    parts.append("## Clues")
-    parts.append("- " + copy['users'].format(n=len(user_texts)) + copy['note'])
-    if dropped_users > 0:
-        parts.append("- " + copy['oldest'].format(n=dropped_users))
-    if file_paths:
-        parts.append(f"- {copy['files']}: " + ", ".join(file_paths[:10]))
-    parts.append("")
-    return "\n".join(parts)
 
 def create_post_compact_file_attachments(
     file_states: Dict[str, FileState],
@@ -2011,12 +2360,13 @@ def smart_compress(
 
 def manual_compress(
     messages: List[Dict[str, str]],
-    max_tokens: int = 50000,
+    max_tokens: Optional[int] = None,
     recent_messages: int = 20,
     llm_client = None,
     llm_model: str = None,
     session_id: Optional[str] = None,
     project_path: Optional[str] = None,
+    context_limit: Optional[int] = None,
 ) -> Dict[str, Any]:
     """
     手动压缩上下文（兼容旧 API）
@@ -2036,6 +2386,7 @@ def manual_compress(
         trigger=CompactTrigger.MANUAL,
         session_id=session_id,
         project_path=project_path,
+        context_limit=context_limit,
     )
     
     # 转换结果
@@ -2124,5 +2475,10 @@ __all__ = [
     'compress_context',
     'smart_compress',
     'manual_compress',
-    'simple_structured_summary',
+
+    # 尺寸校准
+    'record_token_calibration',
+    'get_token_calibration_factor',
+    'estimate_tokens_calibrated',
+    'resolve_context_limit',
 ]

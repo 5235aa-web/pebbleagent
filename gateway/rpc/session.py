@@ -254,7 +254,7 @@ def handle(ctx, method):
         if not raw_messages:
             return {"id": rid, "result": {"success": False, "reason": "no messages"}}
         try:
-            from agent_core.context_compressor import manual_compress, DEFAULT_SUMMARY_INPUT_BUDGET
+            from agent_core.context_compressor import manual_compress, resolve_context_limit
             client, model = srv._get_llm_client(sid)
 
             # 转换消息格式：get_messages 返回的格式 → manual_compress 期望的格式
@@ -294,9 +294,13 @@ def handle(ctx, method):
 
             result = manual_compress(
                 messages=messages,
-                max_tokens=DEFAULT_SUMMARY_INPUT_BUDGET,
+                # No fixed input budget: the window of the model that will write
+                # the summary decides how much one request may carry, and a
+                # transcript that exceeds it is summarized in parts.
+                max_tokens=None,
                 llm_client=client,
                 llm_model=model,
+                context_limit=resolve_context_limit(model),
                 # The transcript is the only copy of what the fold removed, so it
                 # needs both the session id and the project root to land next to
                 # the session instead of in whatever cwd the gateway started in.
