@@ -3507,10 +3507,32 @@ export function bindThemeSync(): void {
 }
 
 export async function pullOrbitTheme(): Promise<void> {
+  let localMode = ''
+  let localAccent = ''
+  try {
+    const storedMode = window.localStorage.getItem('pebble-orbit-theme') || ''
+    localMode = storedMode === 'light' || storedMode === 'dark' ? storedMode : ''
+    localAccent = window.localStorage.getItem('pebble-orbit-accent') || ''
+  } catch { /* storage blocked: the record is the only source left */ }
+
+  /* A pick made on this device always wins. `applyAccent` writes the swatch to
+     localStorage but only `setTheme` pushes to the gateway record, so an accent
+     chosen without a following light/dark switch never reaches it. Applying the
+     record unconditionally then overwrote the newer local choice on every
+     reconnect. The record still fills in whichever half this device has not
+     chosen, which keeps a fresh install picking up the other machine's theme. */
+  if (localMode && localAccent) return
+
   const saved = await readOrbitTheme()
   if (!saved) return
+
+  const currentMode = document.documentElement.getAttribute('data-theme') || ''
+  const mode = localMode || !saved.mode || saved.mode === currentMode ? '' : saved.mode
+  const accent = localAccent ? '' : saved.accent
+  if (!mode && !accent) return
+
   const w = window as unknown as { __pebbleThemeApply?: (mode: string, accent: string) => void }
-  if (w.__pebbleThemeApply) w.__pebbleThemeApply(saved.mode, saved.accent)
+  if (w.__pebbleThemeApply) w.__pebbleThemeApply(mode, accent)
 }
 
 /* ---------------- image viewer ---------------- */

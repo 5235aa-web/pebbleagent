@@ -7,6 +7,10 @@ which is what the in-app update sheet shows before installing. Add the section
 before running `npm run release`; the release stops if it is missing, because a
 feed with empty notes tells the user nothing.
 
+## 1.2.7
+
+- The accent colour you pick now survives a restart. Choosing a swatch only saved it on this machine, while the theme record kept whatever was there the last time you switched between Daylight and Nightfall, and that older value was reapplied on every launch. The colour you picked last now wins, and a fresh install still inherits the theme from your other machine.
+
 ## 1.2.6
 
 - Corrections are remembered more accurately. Ordinary technical wording such as "this only works in dev" or "must be initialised first" used to be filed as a standing rule; it no longer is, so what the agent keeps is what you actually asked it to keep.
