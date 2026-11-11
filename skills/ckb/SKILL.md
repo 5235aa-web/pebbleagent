@@ -141,11 +141,14 @@ knowledgesource/
 
 Tags: 🔴Core / 🟡Aux / ⚠️Stub / 🗑️Deprecated / 📦Config / 🧪Test
 
+Rows are tiered (spec `3.6.1`). Tier A fills all six columns; Tier B may drop `Callers`/`Callees`; Tier C keeps only `File / Function / Tag`. Tiering changes how much a row says, **never whether it exists**: the row count of a chapter's index must equal the number of files that chapter owns. A file you consider uninteresting still gets a row.
+
 ## Verification Checklist (must pass before marking complete)
 
 - [ ] content.md generated; chapter list matches chapter files (count and names)
 - [ ] Every chapter file exists and is non-empty
-- [ ] File index covers all glob results (difference < 5)
+- [ ] Coverage audit reports missing = 0 and extra = 0 (`python skills/ckb/scripts/ckb_audit.py --root <project root>`)
+- [ ] Every chapter opens with a scope declaration whose numbers are current
 - [ ] At least one file per directory sampled and confirmed
 - [ ] Every entry file has a corresponding step in the critical paths
 - [ ] Files tagged "⚠️Stub" confirmed with read_file
@@ -159,7 +162,28 @@ After every project change (files added/modified/deleted, bug fixes, new feature
 
 ```
 1. Read knowledgesource/content.md to locate the affected chapters
-2. Read those chapter files and update the affected entries (file index, critical paths, boundary notes)
-3. If chapters were added/removed: update the content.md directory and rename chapter files per the naming rule (keep indices contiguous)
-4. Append one terse entry to knowledgesource/VERSION: what changed and the resulting state, not the process
+2. Files added or deleted: add or remove their index rows first. A new file belongs to the chapter owning its path prefix (spec `3.6.2`); a deleted file loses its row in the same pass. This is its own step, not part of "updating entries": entry updates describe files that already have rows, so a new file is invisible to that wording.
+3. Update the affected entries in those chapters (Function, Key symbols, critical paths, boundary notes)
+4. Recompute the chapter's scope declaration when the file count moved
+5. If chapters were added/removed: update the content.md directory and rename chapter files per the naming rule (keep indices contiguous)
+6. Append one terse entry to knowledgesource/VERSION: what changed and the resulting state, not the process
 ```
+
+### Backfill on a miss
+
+When a lookup in the knowledge base fails and you then find the file by directory structure or search, add its row to the owning chapter before continuing the task. Tier B is enough. Record one line in VERSION.
+
+An index that only ever lags behind the code degrades monotonically, and no amount of "we should audit this someday" reverses it. Backfilling on the miss costs one row and keeps the index growing with the code instead of behind it.
+
+### When to audit
+
+| Event | Action |
+|-------|--------|
+| Conversation start | probe `content.md`; no audit needed |
+| Code changed | incremental update, including the added or deleted rows |
+| Lookup missed | backfill the row |
+| Build completed | full audit; missing and extra must be 0 |
+| Before a release | full audit |
+| User asks | full audit |
+
+Drive any periodic sweep from the VERSION entry count rather than from a date. An agent has no reliable clock; a count of change records is deterministic.

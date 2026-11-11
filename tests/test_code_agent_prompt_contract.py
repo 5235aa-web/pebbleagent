@@ -230,6 +230,9 @@ def main() -> int:
 
     # ---------- 5. build-mode guard is not absolutist ----------
     check("CKB exemptions exist", "Exemptions from the CKB flow" in prompt)
+    check("index-first locating rule exists", "before grepping the project" in prompt)
+    check("a missing row is backfilled, not absorbed",
+          "add its row (Tier B is enough)" in prompt)
     check("MCP fallback documented", "Build fallback when the graph tools are unavailable" in prompt)
     check("no unconditional 'absolutely forbidden' in build mode",
           "it is absolutely forbidden to" not in prompt)

@@ -1,5 +1,7 @@
 # 8. Configuration & Auxiliary Files
 
+> Scope: `frontend/src-tauri/**` · paths in this chapter may be written relative to that root; root-level configs are listed by full path
+
 ### Root Config & Scripts (config / scripts / packaging / misc)
 
 | File | Function | Read/Write by | Tag |
@@ -21,8 +23,12 @@
 | lan.json + lan/ | Mobile LAN access state under {PEBBLE_HOME}: `lan.json` holds {enabled (default false), port (19877), bind_host (0.0.0.0)} written atomically; `lan/` holds the self-signed cert.pem + key.pem (0600, 10-year, SAN = localhost + every non-loopback IPv4). Deleting `lan/` rotates the certificate and invalidates every paired phone (their pinned fingerprint stops matching) | lan_access.py (rw), rpc/pairing | 📦Core |
 | ruff.toml | Static analysis gate (rules F + E9: undefined names, unused imports/variables, redefinitions, empty f-strings, syntax errors; style rules off) | ruff check (local + CI) | 📦Build |
 | CONTRIBUTING.md | Contributor guide (requirements, setup, run, pre-PR checks, test conventions, PR rules) | contributors | 📄Doc |
-| start_backend.bat / start_gui.bat | Windows launch scripts (UTF-8 with `chcp 65001` set before any Chinese output) | user | 🟡Script |
-| peb_check_holiday.py / peb_check_holiday_env.py / peb_check_pricing_scope.py | Billing-decision checks (holiday main rules 30 cases + isolated env: priority+hot reload+fallback+degradation / peak-scope: all-model time sensitivity + numeric assertions) | user runs manually (python <script>) | 🧪Test |
+| start_backend.bat | Windows launcher (UTF-8 with `chcp 65001` set before any Chinese output) | user | 🟡Script |
+| start_gui.bat | Windows launcher that starts the gateway and the Tauri shell together | user | 🟡Script |
+| start_backend.sh | macOS / Linux launcher: starts the gateway, waits for the port, holds the terminal and shuts down on keypress | user | 🟡Script |
+| peb_check_holiday.py | Holiday main rules, 30 cases | user runs manually (python peb_check_holiday.py) | 🧪Test |
+| peb_check_holiday_env.py | Isolated-env check: priority, hot reload, fallback, degradation | user runs manually (python peb_check_holiday_env.py) | 🧪Test |
+| peb_check_pricing_scope.py | Peak-scope check: all-model time sensitivity, numeric assertions | user runs manually (python peb_check_pricing_scope.py) | 🧪Test |
 | pebble-backend.spec | PyInstaller packaging config (entry run_backend.py; datas bundle skills / agent_core/agents / config JSONs; binaries carry vendor/ripgrep/rg.exe so the grep tool works without a system ripgrep; output dist/pebble-backend.exe) | build (Tauri sidecar chain, see below) | 📦Build |
 | run_backend.py | Backend entry point (→ gateway/ws_server.py) | user / Tauri sidecar | 🟡Script |
 | skills_loader.py | Skills loader over two roots, user first: `{PEBBLE_HOME}/skills` then the bundled `skills/`. A packaged app unpacks its built-ins into a per-launch PyInstaller temp directory, so the user tree is the only one that can grow, and a user skill with the same name shadows the built-in — `skill_dirs()` is the single ordering every other module reads. YAML frontmatter description with a single-line fallback for non-standard files; `_valid_name` rejects separators so a `../` name from the model cannot escape a root | list_skills / load_skill / get_skill_names / skill_dirs | 🟡Aux |
@@ -34,12 +40,13 @@ Shell = Tauri 2 (Rust), crate `pebble-orbit-shell` (lib name `app_lib`), product
 
 | File | Function | Tag |
 |------|------|------|
-| src/lib.rs | Shell core: sidecar backend management (launch / priority boost / exit cleanup); **get_gateway_token command (reads {USERPROFILE}/.pebble/gateway.token for the webview)** | 🔴Core |
-| src/main.rs | Entry (windows_subsystem hides the console in release) | 🟡Aux |
+| frontend/src-tauri/src/lib.rs | Shell core: sidecar backend management (launch / priority boost / exit cleanup); **get_gateway_token command (reads {USERPROFILE}/.pebble/gateway.token for the webview)** | 🔴Core |
+| frontend/src-tauri/build.rs | Tauri build script: declares `icons/icon.ico` as an input, because tauri-build alone never rebuilds the Windows resource and a replaced icon would stay the old one | 🟡Aux |
+| frontend/src-tauri/src/main.rs | Entry (windows_subsystem hides the console in release) | 🟡Aux |
 | tauri.conf.json | Frameless window (1440×900, minWidth 1024 / minHeight 700, decorations:false, dragDropEnabled:false, shadow:true); frontendDist `../dist`, devUrl 5180 with beforeDevCommand `npm run dev` / beforeBuildCommand `npm run build`; **CSP + devCsp** (default-src 'self'; script allows 'unsafe-inline' + 'unsafe-eval' + https:, style allows 'unsafe-inline' + https: — required by the srcdoc preview inheriting the host policy; connect-src allows ws/http 127.0.0.1:19876; img-src adds data: / blob: / http:; devCsp additionally allows the 5180 HMR endpoints); **dangerousDisableAssetCspModification: ["script-src", "style-src"]** — both are required: Tauri's compile-time asset hardening would add a nonce-source and silently void 'unsafe-inline' (CSP3: any nonce/hash in the source list disables it), which kills every inline script the preview injects into srcdoc (html-to-image capture, preview bridge, feedback engine) and every inline style the prototype CSS relies on; bundle resources binaries/*; targets `["nsis"]` (the NSIS installer is what the updater installs) with `createUpdaterArtifacts: true`; shell plugin (open only ^https?://); **updater plugin** — endpoint `https://github.com/5235aa-web/pebbleagent/releases/latest/download/latest.json`, `pubkey` is the minisign public half generated by `tauri signer generate` (the private half lives in `frontend/.tauri-keys/`, gitignored, and must never be committed: the repository is public) | 📦Config |
-| capabilities/default.json | Window permissions (minimize / toggle-maximize / close / start-dragging) + shell:allow-open + updater:default + process:allow-restart (without the last two the update button fails at the invoke boundary, not in JavaScript) | 📦Config |
+| frontend/src-tauri/capabilities/default.json | Window permissions (minimize / toggle-maximize / close / start-dragging) + shell:allow-open + updater:default + process:allow-restart (without the last two the update button fails at the invoke boundary, not in JavaScript) | 📦Config |
 | Cargo.toml | tauri 2.11.3 + plugin-log 2 / plugin-shell 2 / plugin-updater 2 / plugin-process 2 + serde / serde_json / log; lib crate = app_lib (staticlib / cdylib / rlib); rust-version 1.77.2 (the updater plugin itself needs 1.90+, the installed toolchain is 1.97) | 📦Config |
-| binaries/pebble-backend-x86_64-pc-windows-msvc.exe | Sidecar backend (PyInstaller artifact ~89MB) | 📦Artifact |
+| frontend/src-tauri/binaries/pebble-backend-x86_64-pc-windows-msvc.exe | Sidecar backend (PyInstaller artifact ~89MB) | 📦Artifact |
 | gen/schemas/ | Tauri-generated permission schemas (automatic) | 📦Generated |
 
 **Sidecar lifecycle (src/lib.rs)**:
@@ -58,21 +65,10 @@ Shell = Tauri 2 (Rust), crate `pebble-orbit-shell` (lib name `app_lib`), product
 
 **CI (`.github/workflows/checks.yml`)**: two jobs. `python` runs a 3.11 / 3.14 matrix (compileall → ruff F/E9 → billing scripts → `tests/run_all.py`); `frontend` runs once inside `frontend/` (`npm ci` with `frontend/package-lock.json`, then vue-tsc, then `node tests/run_all.mjs` — the JS runner currently holds no `test_*.mjs` files and passes with zero).
 
-### .pebble/ Auxiliary Directory (diagnostic tools & verification scripts, kept by user decision)
+### Diagnostic scripts (removed)
 
-`.pebble/` is the in-project runtime-data directory (snapshots / truncation archives / _tmp_* investigation artifacts). `_tmp_verify/` holds diagnostic tools and verification scripts — **low frequency, zero cost, high diagnostic value; kept by user decision** (reuse for troubleshooting, do not clean up):
+The `_tmp_verify/` helpers that used to sit at the project root (main-thread monitor, WebView2 memory measurement, `agent_chat.db` inspection, localStorage benchmark, regression and investigation scripts) are no longer in the repository. Their descriptions are recoverable from git history if one is needed again. Keeping their paths in this index only sends the next reader to a directory that does not exist, which is worse than not listing them at all.
 
-| File | Purpose | Tag |
-|------|------|------|
-| _tmp_verify/thread_monitor.html | **Main-thread monitor page** — open in a browser when suspecting jank/disconnects: rAF sampling measures main-thread blocking in real time (records >500ms blocks, distinguishes hidden windows, shows fps/max block duration); the first-hand measurement tool for "streaming jank/disconnect" issues | 🟡Diag |
-| _tmp_verify/measure_mem.py | WebView2 memory-growth measurement (90s window; filters msedgewebview2 processes by com.pebble.agent, reports per-PID delta and MB/min growth) | 🟡Diag |
-| _tmp_verify/inspect_db.py | Quick agent_chat.db inspection (table schema + conversation data-volume ranking) | 🟡Diag |
-| _tmp_verify/storage_perf.html | localStorage performance test page (read/parse/write timings for a ~7.8M-char conversation cache; diagnosing write jank) | 🟡Diag |
-| _tmp_verify/verify_*.mjs / verify_*.py | Regression scripts (rendering performance / WS recovery / thinking toggle / price panel / input resize / jump-folding / agent tool whitelist etc., re-runnable) | 🧪Verify |
-| _tmp_verify/verify_security_fixes.py | Security regression script (isolated PEBBLE_HOME): WS token/auth helpers / payload limits / file.* path guard / PathBoundaryChecker / unknown-tool mapping / sync permission evaluation / trust granularity / audit checksum / enforcer end-to-end | 🧪Verify |
-| _tmp_verify/check_*.py / investigate_*.py / extract_*.py / *_out.txt / real_messages.json | Investigation helpers and output snapshots (billing checks / interruption probes / event extraction / real message samples) | 🟡Investigation |
-
-> Retention: these assets are used passively only when diagnosing and cost nothing at rest; they are kept wholesale. Companion long-term logs: backend "Stream events dropped" (Chapter 4 ws_server.py) and frontend [WS] lifecycle (Chapter 10, frontend/src/data/gateway.ts).
 
 ### Built-in Skills (50 skill directories total)
 

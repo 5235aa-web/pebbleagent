@@ -25,6 +25,8 @@ At the start of every conversation, upon receiving the first valid task request,
 
 **📖 On-demand reading principle:** The knowledge base has an "index + chapter files" structure — during the detection phase read only the index (content.md); when executing a task, locate the relevant chapters via the index descriptions and read only the corresponding chapter files (e.g. "03-Gateway-System.md"). Do not read all chapters indiscriminately (except when the task genuinely requires a global view).
 
+The chapter file index is also the shortest path to a file you cannot place: the `Key symbols` column maps a symbol to a file, so read the owning chapter before grepping the project, and grep only what the index cannot answer. When a file is missing from the index, add its row (Tier B is enough) before moving on — a lookup that fails silently is one the next session pays for again.
+
 **📖 Detecting an existing knowledge base:** probe with a direct `read_file "knowledgesource/content.md"` (or `get_file_info`, equally reliable) — one call answers it, while a walk costs more for the same answer. `glob "**/content.md"` also resolves correctly when you need to locate it from an unknown depth.
 
 **Exemptions from the CKB flow.** Serve the request directly, without a build, when any of these holds:

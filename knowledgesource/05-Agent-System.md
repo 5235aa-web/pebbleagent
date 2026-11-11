@@ -1,5 +1,7 @@
 # 5. Agent System
 
+> Scope: `agent_core/**` · paths in this chapter may be written relative to that root
+
 ### agent_core/ (22 .py at root + memory/snapshot/mcp/extensions/agents subpackages)
 
 | File | Function | Key symbols | Callers | Callees | Tag |
@@ -9,11 +11,11 @@
 | agent_chat_history.py | agent_chat.db CRUD (incl. insert_compaction_result: keep the newest N (default 2, at least 1) and mark older messages; bounded context expansion; delete_agent_conversation_full: fully delete a conversation's messages + costs + session row; **a unified `_connect` connection factory**: WAL + foreign_keys=ON + timeout=10, preventing orphan messages) | get_agent_chat_messages_for_context, add_agent_chat_message, insert_compaction_result, delete_agent_conversation_full, _truncate_context_text, _connect | agent_chat_service_v2, server.py | agent_chat.db | 📦Data |
 | agent_loader.py | Agent YAML loading (**includes tool-policy enforcement **) | load_agent_yaml, get_agent_system_prompt, get_agent_prompt_parts (own prompt and preloaded SKILL.md block kept apart, cache keyed by skill mtimes so an edited SKILL.md reloads), filter_tools_for_agent (schema filtering), check_agent_tool_policy (execution interception); ToolPermissions.enforce switch | agent_chat_service_v2, tool_executor_impl | agents/*.yaml, *_prompt.md | 🔴Core |
 | tool_definitions.py | 50+ built-in tool definitions | get_tools_definition, get_tools_definition_with_mcp | agent_chat_service_v2 | extensions_loader, MCP | 🔴Core |
-| chat/usage.py | Pricing table, per-call cost, per-session accumulation | UsageTracker, calculate_cost, accumulate, load_session_cost | agent_chat_service_v2 | model_pricing.json, agent_chat_history | 🟡Aux |
-| chat/prompt.py | System prompt composition (base + memory + project path + usernote); the project-path block scopes file access to the working directory by default and defers to any path the user names explicitly | compose_system_prompt, render_project_path_instruction, render_usernote_prompt | agent_chat_service_v2 | - | 🟡Aux |
-| chat/stream_client.py | Streamed completion: request retry, context-window error, chunk accumulation, segment ordering, usage capture (last non-empty usage chunk exposed as StreamConsumer.usage); **live output-token counter**: cumulative estimate (reasoning + content + tool-call arguments) attached to every streamed event as `tokens`, re-estimated every 32 new chars so encoding stays linear; display-only, never used for billing; **flush_pending()** exposes the in-flight chunk flush publicly so partial-reply persistence stores the same segment order the user saw | open_stream, StreamConsumer, PromptTooLong, flush_pending | agent_chat_service_v2 | context_compressor | 🟡Aux |
-| chat/tool_cycle.py | Tool cycle: question-id injection, tool execution, event emission, result write-back | ToolCycle, prepare, run | agent_chat_service_v2 | tool_orchestrator, tool_concurrency | 🟡Aux |
-| chat/turn_executor.py | Turn preparation: agent, conversation, user message, history, prompt, client, cancel signal | prepare_turn, TurnState | agent_chat_service_v2 | agent_loader, agent_chat_history | 🟡Aux |
+| agent_core/chat/usage.py | Pricing table, per-call cost, per-session accumulation | UsageTracker, calculate_cost, accumulate, load_session_cost | agent_chat_service_v2 | model_pricing.json, agent_chat_history | 🟡Aux |
+| agent_core/chat/prompt.py | System prompt composition (base + memory + project path + usernote); the project-path block scopes file access to the working directory by default and defers to any path the user names explicitly | compose_system_prompt, render_project_path_instruction, render_usernote_prompt | agent_chat_service_v2 | - | 🟡Aux |
+| agent_core/chat/stream_client.py | Streamed completion: request retry, context-window error, chunk accumulation, segment ordering, usage capture (last non-empty usage chunk exposed as StreamConsumer.usage); **live output-token counter**: cumulative estimate (reasoning + content + tool-call arguments) attached to every streamed event as `tokens`, re-estimated every 32 new chars so encoding stays linear; display-only, never used for billing; **flush_pending()** exposes the in-flight chunk flush publicly so partial-reply persistence stores the same segment order the user saw | open_stream, StreamConsumer, PromptTooLong, flush_pending | agent_chat_service_v2 | context_compressor | 🟡Aux |
+| agent_core/chat/tool_cycle.py | Tool cycle: question-id injection, tool execution, event emission, result write-back | ToolCycle, prepare, run | agent_chat_service_v2 | tool_orchestrator, tool_concurrency | 🟡Aux |
+| agent_core/chat/turn_executor.py | Turn preparation: agent, conversation, user message, history, prompt, client, cancel signal | prepare_turn, TurnState | agent_chat_service_v2 | agent_loader, agent_chat_history | 🟡Aux |
 | tool_executor_impl.py | Tool execution facade: pipeline (policy → permission → snapshot → dispatch → write-result backfill) + mixin composition; handlers live in tool_impl/ | AgentToolExecutorImpl, TOOL_HANDLERS | tool_orchestrator | tool_impl/, permission_enforcer, agent_loader | 🔴Core |
 | tool_orchestrator.py | Tool orchestration (parallel/serial; **concurrent batches bounded by a max_concurrency semaphore**; **parallel/serial executors share a single _execute_tool_core generator with thin wrappers**) | run_tools, _execute_tool_core | agent_chat_service_v2 | tool_executor_impl | 🔴Core |
 | tool_concurrency.py | Concurrency-safety decisions (**read-only set, side-effect set, SIDE_EFFECT branch**) | is_concurrency_safe, partition_tool_calls | tool_orchestrator | - | 🟡Aux |
@@ -43,6 +45,7 @@
 | lifecycle.py | Dedupe/supersede, confirmation boost, stale retirement. `expire_stale` runs once per gateway start in a background task; it retires entries created more than 90 days ago that were never rendered (`hits = 0`) and sit below 0.7 confidence. `hits = 0` is exactly "outside the injection window", so retiring one leaves the experience block byte-identical and the prompt cache untouched | find_similar, supersede, boost_recent, expire_stale | 🟡Aux |
 | migrate.py | One-shot import of Markdown memory files and agent notes | migrate_legacy | 🟡Aux |
 | __init__.py | Package exports | - | 🟡Aux |
+| lang.py | Conversation-language detection for ledger wording: CJK ratio >= 0.2 counts as Chinese, the same threshold the compaction summary uses | is_chinese | 🟡Aux |
 
 ### agent_core/snapshot/ (7 files)
 
@@ -61,7 +64,7 @@
 | File | Agent | system_prompt_file |
 |------|-------|--------------------|
 | agents/code_agent.yaml | Code expert | code_agent_prompt.md |
-| agents/chat_agent.yaml | Daily chat | (inline system_prompt, no external file; **enforce=true, 32-entry allowlist: read/search tools + read-only web + read-only MCP; writes, exec, downloads and clarify denied**) |
+| agent_core/agents/chat_agent.yaml | Daily chat | (inline system_prompt, no external file; **enforce=true, 32-entry allowlist: read/search tools + read-only web + read-only MCP; writes, exec, downloads and clarify denied**) |
 
 Each agent YAML defines: tools permission (**the `enforce` switch can force it: when enforce=true, filter by the allowed whitelist / disallowed blacklist — blocked tools' schemas are not uploaded to the LLM + execution entry interception; enforce=false (default) stays backward-compatible with full injection**), behavior, skills preload list.
 

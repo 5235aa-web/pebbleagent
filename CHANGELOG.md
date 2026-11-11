@@ -7,6 +7,13 @@ which is what the in-app update sheet shows before installing. Add the section
 before running `npm run release`; the release stops if it is missing, because a
 feed with empty notes tells the user nothing.
 
+## 1.2.5
+
+- Compaction no longer comes back empty. A model that thinks before answering could spend its whole output budget deliberating and hand back nothing, which read as a silent failure. The instruction that this is a reorganising job rather than analysis work now reaches every summary request, including the multi-part path that was missing it, and an empty answer is retried once with more room before anything is reported.
+- The appearance panel has three more accent colours to choose from: rose, teal-blue and slate grey.
+- The project knowledge base can now be checked instead of trusted. A script reports which source files it does not know about, which entries point at files that no longer exist, and which entries name a file without saying where it lives. "Cover every file" used to be an instruction with no way to verify it.
+- The agent reaches for the knowledge base before searching the project: it reads the symbol index of the chapter that owns the area to find a file, and adds the entry itself when a lookup misses, so the gap does not have to be hit twice.
+
 ## 1.2.4
 
 - Long conversations can be compacted again. A transcript too large to summarize in one request is now handled in parts and merged, so its length decides how many requests it takes instead of whether it works at all.

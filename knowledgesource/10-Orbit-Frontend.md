@@ -1,5 +1,7 @@
 # 10. Orbit Frontend
 
+> Scope: `frontend/src/**` · paths in this chapter may be written relative to that root
+
 The Orbit surface (`frontend/`) rebuilds `design-preview/pebble-orbit.html` pixel for
 pixel and puts real gateway data and transport behind it. The visual layer is frozen:
 `styles/orbit.css` is the prototype stylesheet, copied verbatim and kept byte-identical.
@@ -60,6 +62,44 @@ Behaviour that needs new CSS goes into `styles/app.css`, never into `orbit.css`.
 | `PreviewStage.vue` | Floating stage for the one file the transcript exposed: tab strip from `previewState.entries`, `file.read_text` source into a sandboxed iframe, Code view, device presets, PNG capture | Aux |
 | `preview.ts` | Preview state: scans `@pebble-file:` out of `streamState.items[].plain`, reads through `file.read_text`, injects the CSP head plus the capture and comment bridges, owns `capturePreview` and `mergePreviewComments` | `previewState`, `setActive`, `reloadPreview`, `markPreviewChanged`, `capturePreview`, `activateComments`, `mergePreviewComments` | Core |
 | `previewBridge.ts` | Comment picker inlined into every preview frame: hover ring, element picker, editor, numbered markers, `pebble-feedback-update` reporting; CSS uses `--fb-*` variables the host supplies | `FEEDBACK_CSS`, `FEEDBACK_JS` | Core |
+| `App.vue` | Root component: mounts `AmbientBackdrop`, `OrbitalBar` and the stream/dock layout | - | Core |
+| `AmbientBackdrop.vue` | Decorative ambient layer behind the shell (`aria-hidden`, pointer-events none) | - | Aux |
+| `BarActions.vue` | Top-bar actions: notifications bell, the daylight/nightfall pill and the theme-sheet trigger | `themePill` | Aux |
+| `ComposerWrap.vue` | Composer tray: attachment chips, image detail selection, send/stop state | `DETAILS`, `files`, `hasImages` | Core |
+| `ConfirmSheet.vue` | Shared confirmation sheet: Escape closes it, Enter is not bound so a destructive action needs a click | `onKey` | Core |
+| `ContextPane.vue` | Context panel: used tokens, window size and the four-segment split from `usage` | `usedTokens`, `windowSize`, `split` | Aux |
+| `ConversationMenu.vue` | Per-conversation row menu (rename, delete, pin) opened from the session list | - | Aux |
+| `DropOverlay.vue` | Full-window drop veil while files are dragged onto the shell | - | Aux |
+| `ImageViewer.vue` | Image attachment viewer sheet | - | Aux |
+| `LedgerPanel.vue` | Experience-ledger panel: entry count, chip classes and per-kind marks | `globalCount`, `MARKS`, `CLASSES` | Aux |
+| `LlmPane.vue` | Right-dock LLM tab: provider cards, model list and the two reasoning shapes (`thinking` keeps the vendor block, `effort_only` drops it) | `EFFORTS`, `MODES`, `MAX_EFFORTS` | Core |
+| `McpPanel.vue` | MCP panel: per-server tool chips, install state and editing of the server entry | `fullTools`, `editing`, `secretDraft` | Aux |
+| `MessageSearch.vue` | In-transcript search over rows already on screen (substring match, role filter, next/previous) | `query`, `role`, `activeIdx` | Aux |
+| `NewEntryDialog.vue` | New note/entry sheet: kind and scope selection; stays open with the text when saving fails | `KINDS`, `kind`, `scope` | Aux |
+| `NotesPane.vue` | Right-dock notes tab: fragments that drop into the composer on click, plus the usernote draft | `draft`, `editing`, `usernoteDraft` | Aux |
+| `NotifySheet.vue` | Notification sound picker: selecting a row plays it once so the choice is made by ear | `settings`, `pick`, `preview` | Aux |
+| `OrbitalBar.vue` | Undecorated window bar: drag region, app version and the window buttons | `appVersion` | Core |
+| `PairingPanel.vue` | Mobile pairing sheet: compact pairing code printed spaced out, LAN address and live enable/disable | `codeText`, `addressText` | Aux |
+| `PathsPanel.vue` | Path-whitelist editor: the index of the row being replaced, or -1 when adding a new root | `draft`, `editing`, `toast` | Aux |
+| `ProjectSwitcher.vue` | Project registry switcher: entries are directories the tools may touch, with add/remove and error surfacing | `addPath`, `addError`, `unassigned` | Core |
+| `RightDock.vue` | Right dock shell: tab strip and the scrollbar that stays transparent until the pointer is over the content | `SCROLLBAR_HIDE_DELAY`, `scrollHot`, `showScrollbar` | Core |
+| `SessionSwitcher.vue` | Session list with groups: unassigned sessions can be pulled into the active project | `unassigned`, `pullUnassigned`, `adopt` | Core |
+| `StatusBar.vue` | Bottom bar: context ring, clock, online state and the compact trigger | `clock`, `tick`, `online` | Core |
+| `StreamCodeBlock.vue` | Fenced code block rendered with the shared highlighter, with a line count and copy control | `props`, `lines`, `lineCount` | Aux |
+| `StreamPane.vue` | Transcript container: renders `streamState.items` and the plan slip beside it | - | Core |
+| `StreamToolCard.vue` | One tool call as a card: output disclosure only when there is something underneath, cancelled state when a turn stops | `props`, `open`, `onClick` | Core |
+| `SvgCard.vue` | Generated SVG handed to the browser as an `<img>`, never as live DOM, so it cannot script the shell | `props`, `state`, `dataUri` | Aux |
+| `ThemeSheet.vue` | Appearance sheet: daylight/nightfall cards and the accent swatches (nine, tiered by tone); a swatch calls `themeEngine.applyAccent(hex)` and persists it | `failure`, `run` | Aux |
+| `ToastStack.vue` | Toast host (`#toasts`); rows are created by `runtime.js`, and titles and bodies are written with `textContent` | - | Aux |
+| `ToolsPanel.vue` | Tool and skill inventory sheet: tool total, skill total and per-entry detail | `toolTotal`, `skillTotal` | Aux |
+| `frontend/src/data/confirm.ts` | Promise-based confirmation used across the shell: `askConfirm` opens the shared sheet, `settleConfirm` resolves it | `confirmState`, `askConfirm`, `settleConfirm` | Core |
+| `frontend/src/main.ts` | Renderer entry: mounts Vue, then hands the shell to `initOrbit()` | - | Core |
+| `frontend/src/orbit/runtime.js` | Prototype-frozen shell runtime: overlays, toasts, theme engine wiring and the `window.__pebble*` bridges Vue components call into | `initOrbit` | Core |
+| `frontend/src/orbit/theme.js` | Theme engine: `THEMES`, `setTheme`, `applyAccent` (writes `--accent`, `--accent-soft`, `--accent-soft-2` and persists the hex) | `createTheme` | Core |
+| `frontend/src/vite-env.d.ts` | Ambient declarations for the Vite client | - | Aux |
+| `frontend/vite.config.ts` | Vite build config for the renderer bundle | - | Config |
+| `frontend/scripts/release.mjs` | Release driver: writes the version into `tauri.conf.json`, runs `tauri build`, then `publish.mjs` | - | Aux |
+| `frontend/scripts/publish.mjs` | Uploads the artifacts, writes `latest.json` and cuts the GitHub release notes from CHANGELOG | - | Aux |
 
 ## Critical paths
 

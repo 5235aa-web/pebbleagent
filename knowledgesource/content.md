@@ -13,4 +13,21 @@
 9. Android Client (Kotlin + Compose companion app: gateway transport and retry loop, connection lifecycle guards, foreground service and background keeping, catch-up resync, global event routing, streaming transcript, approval/clarification queues, file changes, usage, settings and accent theming)
 10. Orbit Frontend (the only front end: frontend/ gateway transport, transcript build, compaction folding, streaming blocks, interrupted-turn settling, prototype-frozen CSS)
 
+## Ownership
+
+```
+01-Project-Overview   — cross-cutting only
+02-Module-Topology    — cross-cutting; carries the miscellaneous table
+03-Critical-Paths     — cross-cutting only
+04-Gateway-System     — gateway/**
+05-Agent-System       — agent_core/**
+06-Tool-System        — agent_core/tool_impl/**, agent_core/extensions/**, agent_core/mcp/**
+07-LLM-Billing        — cross-cutting only (billing and compaction behaviour, not a directory)
+08-Configuration      — root *.json / *.yaml / *.toml, run_backend.py, pebble-backend.spec, frontend/src-tauri/**
+09-Android-Client     — external: android/** (companion app source lives outside this repository)
+10-Orbit-Frontend     — frontend/src/**
+```
+
+> Coverage: `ckb_audit.py` reports missing 0, extra 0, weak 10. The ten weak rows are `__init__.py` and `prompt.py` entries whose short names match more than one file, so the chapter scope cannot resolve them uniquely.
+
 > Reading guide: read this index first to locate chapters, then read the relevant chapter files on demand (e.g. "04-Gateway-System.md").

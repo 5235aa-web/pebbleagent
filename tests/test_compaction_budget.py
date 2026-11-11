@@ -274,6 +274,54 @@ def main() -> int:
           empty_client.ceilings[1] > empty_client.ceilings[0], str(empty_client.ceilings))
     check("the retry produces the digest", bool(got), str(got)[:40])
 
+    # --- 10. every summary request carries the preamble ---
+    print("=== preamble coverage ===")
+    MARK = "reformatting job, not engineering work"
+
+    class RecordingClient:
+        def __init__(self):
+            self.prompts = []
+            self.chat = type("Chat", (), {"completions": self})()
+
+        def create(self, **kw):
+            self.prompts.append(kw["messages"][0]["content"])
+            body = type("M", (), {"content": SUMMARY})()
+            return type("R", (), {
+                "choices": [type("C", (), {"message": body})()],
+                "usage": type("U", (), {"prompt_tokens": 100})(),
+            })()
+
+    rec = RecordingClient()
+    cc._call_summary_model(rec, "m", "User: hi", 1000, 0.3)
+    check("the choke point adds it", bool(rec.prompts) and MARK in rec.prompts[0])
+
+    rec = RecordingClient()
+    cc._summarize_part_digest("User: hi\n\nAssistant: ok", 1, 1, rec, "m", "English",
+                              120000, 1000000)
+    check("part digest carries it", bool(rec.prompts) and all(MARK in p for p in rec.prompts))
+
+    rec = RecordingClient()
+    # A budget small enough that the digests cannot be returned as-is, so the
+    # merge actually calls the model instead of joining the text.
+    cc._merge_part_digests(["a" * 100, "b" * 100], rec, "m", "English", 10)
+    check("merge carries it", bool(rec.prompts) and all(MARK in p for p in rec.prompts))
+
+    rec = RecordingClient()
+    cc._retry_summary_with_strict_prompt(rec, "m", "User: hi", language="English",
+                                         context_limit=1000000)
+    check("strict retry carries it", bool(rec.prompts) and all(MARK in p for p in rec.prompts))
+
+    from agent_core.context_compressor import Message as _Msg
+    rec = RecordingClient()
+    out = cc.generate_structured_summary(
+        messages=[_Msg(uuid="a", role="user", content="hi"),
+                  _Msg(uuid="b", role="assistant", content="hello")],
+        llm_client=rec, llm_model="m", context_limit=1000000,
+    )
+    check("final summary carries it", bool(out) and bool(rec.prompts)
+          and all(MARK in p for p in rec.prompts), str(len(rec.prompts)))
+
+
     print("\n=== RESULT: PASS=%d FAIL=%d ===" % (passed, failed))
     return 1 if failed else 0
 

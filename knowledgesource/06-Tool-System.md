@@ -1,5 +1,7 @@
 # 6. Tool System
 
+> Scope: `agent_core/**` · paths in this chapter may be written relative to that root
+
 ### agent_core/tool_impl/ (8 files — tool handlers by domain)
 
 The executor is a thin pipeline (policy → permission → snapshot → dispatch → write-result backfill); handlers live in per-domain modules and are registered in one table.
@@ -13,6 +15,7 @@ The executor is a thin pipeline (policy → permission → snapshot → dispatch
 | workspace.py | Todo, notes, questions, skills, experience ledger writes and updates (experience_write / experience_update) | 🟡Aux |
 | lsp.py | Language-server code intelligence (9 tools + formatters) | 🟡Aux |
 | mcp_bridge.py | MCP tool routing (executor factory + ToolExecutionContext imported; unconnected server returns an error string) | 🟡Aux |
+| system.py | Environment, process and repository state tools: `get_system_info`, process listing and termination, environment variables, timestamp conversion | 🟡Aux |
 
 `agent_core/tool_executor_impl.py` is the facade: mixin composition + the execution pipeline.
 

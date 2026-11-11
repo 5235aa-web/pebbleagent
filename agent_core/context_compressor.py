@@ -1331,9 +1331,15 @@ def _retry_summary_with_strict_prompt(
     conversation_content: str,
     direction=None,
     custom_instructions=None,
-    language: str = "English"
+    language: str = "English",
+    context_limit: int = 0,
 ) -> Optional[str]:
-    """Second attempt with an explicit, non-negotiable heading contract."""
+    """Second attempt with an explicit, non-negotiable heading contract.
+
+    Routed through `_call_summary_model` like every other summary request, so it
+    cannot drift away from the shared preamble, the size handling or the
+    calibration feed.
+    """
     if direction == CompactDirection.FROM:
         task = COMPACT_TASK_FROM
     elif direction == CompactDirection.UP_TO:
@@ -1353,19 +1359,13 @@ def _retry_summary_with_strict_prompt(
     prompt = f"{strict_prefix}\n{_build_compact_prompt(task, custom_instructions, language)}"
 
     try:
-        response = llm_client.chat.completions.create(
-            model=llm_model or "gpt-4o-mini",
-            messages=[
-                {
-                    "role": "user",
-                    "content": f"{prompt}\n\nConversation:\n{conversation_content}"
-                }
-            ],
-            max_tokens=SUMMARY_MAX_OUTPUT_TOKENS,
-            temperature=0.1
+        summary = _call_summary_model(
+            llm_client, llm_model,
+            f"{prompt}\n\nConversation:\n{conversation_content}",
+            _summary_output_budget(context_limit or FALLBACK_CONTEXT_LIMIT),
+            0.1,
         )
-        summary = response.choices[0].message.content
-        logger.info(f"[ContextCompressor] Retry summary: {len(summary or '')} chars")
+        logger.info(f"[ContextCompressor] Retry summary: {len(summary)} chars")
         return summary
     except Exception as e:
         logger.warning(f"[ContextCompressor] Retry failed: {e}")
@@ -1820,12 +1820,23 @@ def _call_summary_model(
 ) -> str:
     """One summary request.
 
+    The preamble is attached here rather than in each prompt builder, so no
+    builder can lose the "reformatting job, do not deliberate" framing.
+
     Returns the answer. Raises `_PromptTooLongError` when the provider rejected
     it for size, so the caller can measure and split; any other failure is
     re-raised untouched. A successful call feeds its measured `prompt_tokens`
     back into the calibration scale, which is what makes the next estimate
     trustworthy.
     """
+    # Single choke point: every summary call passes through here, so the
+    # preamble is attached once here instead of in each prompt builder. A
+    # builder that forgot it (the part digests did) lets the model treat this
+    # as engineering work, spend the output ceiling deliberating, and answer
+    # with nothing.
+    if COMPACT_PREAMBLE not in prompt:
+        prompt = f"{COMPACT_PREAMBLE}\n{prompt}"
+
     try:
         response = llm_client.chat.completions.create(
             model=llm_model or "gpt-4o-mini",
@@ -2169,7 +2180,8 @@ def generate_structured_summary(
             conversation_content=conversation_content,
             direction=direction,
             custom_instructions=custom_instructions,
-            language=body_language
+            language=body_language,
+            context_limit=window,
         )
         # Keep whichever attempt actually said something: the first answer may be
         # empty while the retry carried real content.

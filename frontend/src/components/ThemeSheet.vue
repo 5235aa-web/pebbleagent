@@ -52,6 +52,9 @@
         <button class="swatch" data-accent="#2F5FA8" style="background:#2F5FA8"></button>
         <button class="swatch" data-accent="#7A3E9D" style="background:#7A3E9D"></button>
         <button class="swatch" data-accent="#3E6B2F" style="background:#3E6B2F"></button>
+        <button class="swatch" data-accent="#B0446B" style="background:#B0446B"></button>
+        <button class="swatch" data-accent="#2F7E96" style="background:#2F7E96"></button>
+        <button class="swatch" data-accent="#6B7A8F" style="background:#6B7A8F"></button>
       </div>
 
     </div>

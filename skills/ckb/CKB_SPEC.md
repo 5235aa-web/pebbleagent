@@ -210,6 +210,13 @@ knowledgesource/
 04-{System-Name} ({one-line summary})
 ...
 
+## Ownership
+01-Project-Overview   — cross-cutting only
+02-Module-Topology    — cross-cutting; carries the miscellaneous table
+03-{System-Name}      — {path prefix}/**
+04-{System-Name}      — {path prefix}/**
+...
+
 > Reading guide: read this directory first, then open only the chapters you need (e.g. `03-Gateway-System.md`).
 ```
 
@@ -218,6 +225,7 @@ knowledgesource/
 - The parenthesised note after each chapter entry is the "necessary summary" (one line; omit if unnecessary)
 - Chapter entries and chapter file names correspond one-to-one: an entry `03-Gateway-System` means the file `03-Gateway-System.md`
 - Keep the header block: last update time, change summary, statistics (file count, etc.)
+- Keep the `Ownership` block complete and in step with the chapters: one line per chapter, each naming the path prefix that chapter is responsible for (section 3.6.2). This block is what makes a per-chapter coverage check possible; without it, nobody can say which chapter should have listed a given file.
 
 ### 3.3 Chapter file naming rules
 
@@ -244,7 +252,7 @@ Columns for every file, in order:
 
 | File | Function | Key symbols | Callers | Callees | Tag |
 
-- **File**: path relative to the project root
+- **File**: path relative to the project root, never a bare file name and never relative to a sub-project. The audit resolves rows by path: a bare name (`context_compressor.py`) is reported as weak coverage because it does not say where the file lives, and a sub-project path (`ui/InboxScreen.kt`) is reported as missing and extra at the same time.
 - **Function**: one-line description of the file's responsibility (extracted from source/docs, never guessed)
 - **Key symbols**: the 1-3 most important classes/functions (precise enough to be found by lsp/grep)
 - **Callers**: who calls this module (module or file name)
@@ -284,17 +292,60 @@ Arrow direction is consistent: `↑` means "called by the layer above", `↓` me
 - `❗Easy to misread`: the understanding trap an agent is most likely to fall into
 - `🗑️Deprecated`: no longer maintained but still present
 
-### 3.6 File index coverage requirements
+### 3.6 File index coverage
 
-- Must cover every .py file (excluding __pycache__)
-- Must cover every .ts/.vue file (excluding node_modules/dist)
-- Must cover every configuration file (.json/.yaml/.toml/.env.example)
-- Test files may be reduced to one line (file name + "test")
-- Entry files must be described in detail (multiple lines)
+Coverage is not negotiable; detail is. Every file on disk gets one row. The tier of that row decides how much it says, never whether it exists.
+
+A chapter that lists 25 of 48 components is not a lightly-detailed chapter, it is an incomplete one. The distinction matters: an incomplete index sends the next reader looking for a file that the knowledge base was supposed to know about.
+
+#### 3.6.1 Tiered rows
+
+| Tier | Applies to | Required columns | Depth |
+|------|-----------|------------------|-------|
+| A | Entry points, core modules, anything with call relationships | all six | Function one-liner, 1-3 real symbols, at least one of Callers/Callees |
+| B | Auxiliary modules, tools, secondary panels, config loaders | File / Function / Key symbols / Tag | Function one-liner, 1-3 real symbols |
+| C | Tests, generated artefacts, thin third-party wrappers | File / Function / Tag | One line stating what it is |
+
+Rules:
+
+- The row count of a chapter's index must equal the number of files that chapter owns. Tiering changes how much a row says, never whether the row exists.
+- A test file may be Tier C. It is still listed. "No value in the index" is not an accepted reason for omitting a file.
+- Symbols in `Key symbols` must exist in the source. When a symbol cannot be confirmed, write the responsibility only and leave the column as `-`. Never invent a plausible name.
+- A deleted file loses its row in the same change that deletes the file. A stale row is worse than a missing one: it sends the next reader to a path that no longer resolves, and the failure looks like the reader's mistake.
+
+#### 3.6.2 Chapter ownership matrix
+
+Ownership is decided by path prefix, not by topic. Each file belongs to exactly one chapter, and that chapter is responsible for covering it.
+
+| Chapter kind | Owns |
+|--------------|------|
+| Service / gateway chapters | `gateway/**`, `agent_core/**`, or the directory the chapter is named after |
+| Frontend chapters | `frontend/src/**` |
+| Configuration chapters | `*.json`, `*.yaml`, `*.toml`, `.env.example` outside the above |
+| Overview / topology chapters | nothing by prefix; cross-cutting content only |
+
+Rules:
+
+- Write the matrix into `content.md` before the build starts, one line per chapter. Discovering ownership while writing is how rpc sub-modules and UI panels get dropped: the chapter existed, but nobody had said it owned that subtree.
+- Coverage is checked per chapter against its own prefix. A single global difference count hides this exact failure, because a chapter that over-covers masks one that under-covers.
+- A file matching no prefix goes into the miscellaneous table of `02-Module-Topology`. It is never left out.
+
+#### 3.6.3 Scope declaration
+
+Every chapter opens with one line stating what it covers and how completely:
+
+```
+> Scope: frontend/src/** · 67 files (48 components, 19 modules) · indexed 67/67 · A 25 / B 39 / C 3
+```
+
+The declaration tells a reader whether a missing name means "this chapter does not own it" or "the index is incomplete". Without it, an agent that cannot find a file cannot decide whether to look elsewhere or to add the row.
+
+Recompute the numbers whenever the chapter is edited; correct a stale declaration in the same pass.
 
 ### 3.7 Length control
 
 - A single chapter stays under ~1000 lines; split by sub-module when it grows beyond that
+- Before splitting, check whether the chapter is large because every row was written at Tier A. A chapter that grew from uniform detail is a tiering problem: demote the auxiliary rows to Tier B or C first, and split only if it is still too long. Splitting changes ownership, and ownership churn is what loses files.
 - When chapters exceed 15, check whether the granularity is reasonable (merge related systems if too fragmented)
 - The v1.x "single file 3000-line cap" is superseded by chaptering and no longer applies
 
@@ -325,8 +376,8 @@ Arrow direction is consistent: `↑` means "called by the layer above", `↓` me
 After the build, run these checks:
 
 ```
-1. File count check: glob results vs the sum of index rows across chapters
-   → difference > 5 files → mark as "needs completion"
+1. Coverage audit: file count on disk against the rows in the owning chapter
+   → missing > 0 or extra > 0 → fix before marking complete (section 5.4)
 
 2. Key symbol check: for the 10 largest files, pick 3 key symbols at random
    → search_knowledge base confirms the symbol exists in the index → fix any mismatch
@@ -348,7 +399,7 @@ A CKB build must pass the following before it can be marked "complete":
 ```
 □ content.md generated; chapter list matches chapter files (count and names)
 □ Every chapter file exists and is non-empty
-□ File index covers every file in the glob results (difference < 5)
+□ Coverage audit reports missing = 0 and extra = 0 (section 5.4)
 □ At least one file per directory sampled and confirmed
 □ Every entry file has a corresponding step in the critical paths
 □ Every file tagged "⚠️Stub" confirmed with read_file (not assumed)
@@ -364,12 +415,37 @@ When project code changes:
 
 ```
 1. Read content.md to locate the affected chapters
-2. Read those chapter files and update the affected entries (file index, critical paths, boundary notes)
-3. Chapters added/removed: update content.md and rename the affected files per the naming rule (keep indices contiguous)
-4. Append one terse entry to VERSION: what changed and the resulting state, not the process
+2. Files added or deleted: add or remove their index rows first. A new file is assigned to the chapter owning its path prefix (section 3.6.2); a deleted file loses its row in the same pass. This is its own step, not part of "updating entries": entry updates describe files that already have rows, so a new file is invisible to that wording.
+3. Update the affected entries in those chapters (Function, Key symbols, critical paths, boundary notes)
+4. Recompute the chapter's scope declaration (section 3.6.3) when the file count moved
+5. Chapters added/removed: update content.md and rename the affected files per the naming rule (keep indices contiguous)
+6. Append one terse entry to VERSION: what changed and the resulting state, not the process
 ```
 
 If the knowledge base clearly disagrees with the actual code (e.g. an indexed file no longer exists), correct it with the same flow.
+
+#### 5.2.1 Backfill on a miss
+
+A file the index does not know about stays invisible until someone needs it. That moment is the cheapest time to fix the index, and the only time the fix is guaranteed correct, because the reader has just learned what the file does.
+
+When a lookup in the knowledge base fails and the file is subsequently found by directory structure or search, add its row to the owning chapter before continuing the task. Tier B is enough for most cases. Record one line in VERSION.
+
+Do not leave the miss as a mental note. An index that only ever lags behind the code degrades monotonically, and no amount of "we should audit this someday" reverses it. Backfilling on the miss costs one row and keeps the index growing with the code instead of behind it.
+
+#### 5.2.2 When to run the audit
+
+Event-driven, never calendar-driven. An agent has no reliable clock, but these events are unambiguous:
+
+| Event | Action |
+|-------|--------|
+| Conversation start | probe `content.md` (section 1.2); no audit needed |
+| Code changed | incremental update (5.2), including the added or deleted rows |
+| Lookup missed | backfill the row (5.2.1) |
+| Build completed | full audit; missing and extra must be 0 |
+| Before a release | full audit |
+| User asks | full audit |
+
+If a periodic sweep is wanted anyway, drive it from the VERSION entry count rather than from time: after roughly twenty change records, run a full audit at the next conversation start. A count is deterministic; a date is not.
 
 ### 5.3 Format detection
 
@@ -380,6 +456,27 @@ If the knowledge base clearly disagrees with the actual code (e.g. an indexed fi
 ```
 
 ---
+
+### 5.4 Coverage audit
+
+The checklist in 5.1 is mechanical, so it is run rather than read. The audit compares files on disk with rows in the knowledge base and reports three numbers:
+
+| Metric | Meaning | Pass condition |
+|--------|---------|----------------|
+| missing | on disk, absent from every chapter's index | 0 |
+| extra | in an index, absent from disk | 0 |
+| stale | file modified after the knowledge base was last updated | reported only |
+| weak | listed by bare file name, so the row does not pin a directory | reported, target 0 |
+
+`missing` is a coverage defect: the knowledge base does not know about a file it is supposed to own. `extra` is a lie, and the more damaging of the two, because it sends the next reader to a path that no longer resolves and the failure reads as the reader's mistake. `stale` is a hint that a row's description may have drifted, never proof that it has. `weak` is the honest middle: the row exists, so the file is not lost, but it names only the file, so the next reader still has to search for it. It does not block a pass and it should not be argued away — every weak row repaired removes one search from the next session.
+
+The audit only reads. It enumerates, compares, prints; it changes nothing. That is what makes it safe to run at any moment, including the first minute of a conversation.
+
+```
+python skills/ckb/scripts/ckb_audit.py --root <project root>
+```
+
+Repair is a separate, deliberate step: add or delete the rows, run the audit again, record the pass in VERSION. Keep the two apart. An audit that edits files is an audit nobody runs, because every run becomes a repair job of unknown size.
 
 ## 6. Migration (v1.x → v2.0)
 
