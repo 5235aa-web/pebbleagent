@@ -893,11 +893,27 @@ export function initOrbit() {
       if (next) place();
       pop.classList.toggle("open", next);
       chip.classList.toggle("active", next);
+      /* Vue owns what sits inside the popover, including the file preview it
+         only mounts on demand. The runtime is the one place that knows the
+         panel has closed, so it reports the transition instead of reaching
+         into component state. */
+      window.dispatchEvent(new CustomEvent("pebble:project-panel", { detail: { open: next } }));
     }
     chip.addEventListener("click", function (e) { e.stopPropagation(); toggle(); });
     pop.addEventListener("click", function (e) { e.stopPropagation(); });
     document.addEventListener("click", function () { toggle(false); });
     document.addEventListener("keydown", function (e) { if (e.key === "Escape") toggle(false); });
+    /* The popover is anchored to the chip, so a window resize has to re-measure
+       it. Its height is a calc() against the viewport, which reflows on its own;
+       only the horizontal placement needs the second pass. */
+    window.addEventListener("resize", function () {
+      if (pop.classList.contains("open")) place();
+    });
+    /* Opening a file widens the panel, which moves its right edge. Vue owns that
+       width; this is the runtime's cue to re-measure rather than guess. */
+    window.addEventListener("pebble:project-relayout", function () {
+      if (pop.classList.contains("open")) place();
+    });
 
     /* Vue owns the rows and answers the gateway. The popover still closes
        itself, which is the one behaviour the prototype had that no component

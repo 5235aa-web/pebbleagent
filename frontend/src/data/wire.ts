@@ -2815,8 +2815,16 @@ export async function compressSession(): Promise<CompactOutcome> {
   if (total < 2) {
     return { ok: false, title: 'Cannot compact', message: `Only ${total} messages in this session; at least 2 are required to compact.` }
   }
+  /* Wall-clock start in the unit the transcript records, so a timeout can ask
+     the gateway what it actually did after the client stopped waiting. */
+  const startedAt = Math.floor(Date.now() / 1000)
   try {
-    const r = await gateway.request<Record<string, unknown>>('session.compress', { session_id: sid })
+    const r = await gateway.request<Record<string, unknown>>(
+      'session.compress', { session_id: sid },
+      /* Compaction is a batch of model calls, not one RPC: two segments plus a
+         merge already ran 161 s, past any sensible default deadline. */
+      600_000
+    )
     if (!r?.success) {
       return { ok: false, title: 'Cannot compact', message: String(r?.reason ?? 'Compaction failed') }
     }
@@ -2847,7 +2855,46 @@ export async function compressSession(): Promise<CompactOutcome> {
       message: `Compacted ${cut} messages · kept ${kept} · saved ${String(r.saved_percent ?? 0)}%`
     }
   } catch {
-    return { ok: false, title: 'Cannot compact', message: 'The gateway refused the request.' }
+    /* A timeout is not an answer: the gateway keeps working after the client
+       stops waiting, so ask the transcript what actually happened before
+       reporting "nothing was folded" and inviting a retry. */
+    const recovered = await confirmCompaction(sid, startedAt)
+    if (recovered) return recovered
+    return {
+      ok: false,
+      title: 'Cannot compact',
+      message: 'The gateway did not answer in time and no new summary appeared. Check the transcript before running it again.'
+    }
+  }
+}
+
+/** After a client-side timeout, ask the transcript whether the run finished.
+
+    The gateway does not cancel a compaction when the socket stops waiting, so a
+    request that outlived its deadline may still have written a boundary. One
+    created at or after `since` means the run completed and only the answer was
+    lost; reloading then shows the result instead of inviting a retry that would
+    compact the summary it just wrote. */
+async function confirmCompaction(sid: string, since: number): Promise<CompactOutcome | null> {
+  try {
+    const res = await gateway.request<{ messages?: Array<Record<string, unknown>> }>(
+      'session.resume', { session_id: sid }, 30_000
+    )
+    const rows = res?.messages
+    if (!Array.isArray(rows)) return null
+    const newest = rows.reduce((acc, m) => {
+      if (!String(m.text ?? '').startsWith('[COMPACT_BOUNDARY:')) return acc
+      return Math.max(acc, Number(m.created_at ?? 0))
+    }, 0)
+    if (!newest || newest < since) return null
+    await loadSession(sid)
+    return {
+      ok: true,
+      title: 'Compaction complete',
+      message: 'The gateway finished the run after the client stopped waiting.'
+    }
+  } catch {
+    return null
   }
 }
 
@@ -3066,20 +3113,55 @@ export function openFile(path: string): void {  if (!gateway.connected || !path)
   })
 }
 
-export async function readFileText(path: string): Promise<string> {
-  if (!gateway.connected || !path) return ''
-  try {
-    const res = await gateway.request<{ content?: string }>('file.read_text', { path })
-    return String(res?.content ?? '')
-  } catch { return '' }
+/** One text read. The gateway answers with the size and two flags, because an
+    empty page can be an empty file, a binary, or a read that stopped at the
+    byte cap, and those are three different things on screen. */
+export interface FilePeek {
+  ok: boolean
+  text: string
+  size: number
+  binary: boolean
+  truncated: boolean
+  error: string
 }
 
-export async function readFileBase64(path: string): Promise<string> {
-  if (!gateway.connected || !path) return ''
+/** 512 KiB matches the gateway ceiling (`_MAX_TEXT_BYTES`). Past that point the
+    highlighter, not the disk, is what stalls the click. */
+export const FILE_PEEK_BYTES = 512 * 1024
+
+/** The `text` field is the one the gateway sends. An earlier version read
+    `content`, which no handler ever returned, so this call answered with an
+    empty string for every file — visible only once something displayed it. */
+export async function readFileText(path: string, maxBytes = FILE_PEEK_BYTES): Promise<FilePeek> {
+  const blank: FilePeek = { ok: false, text: '', size: 0, binary: false, truncated: false, error: '' }
+  if (!gateway.connected || !path) return { ...blank, error: 'gateway offline' }
   try {
-    const res = await gateway.request<{ data?: string; data_base64?: string }>('file.read_base64', { path })
-    return String(res?.data ?? res?.data_base64 ?? '')
-  } catch { return '' }
+    const res = await gateway.request<Record<string, unknown>>('file.read_text', { path, max_bytes: maxBytes })
+    if (res?.ok === false) return { ...blank, error: String(res?.error ?? 'could not read this file') }
+    return {
+      ok: true,
+      text: String(res?.text ?? ''),
+      size: Number(res?.size ?? 0),
+      binary: res?.binary === true,
+      truncated: res?.truncated === true,
+      error: ''
+    }
+  } catch (e) {
+    return { ...blank, error: e instanceof Error ? e.message : 'could not read this file' }
+  }
+}
+
+/** Base64 body plus the reason when it failed, so a viewer can say "too large"
+    instead of rendering an empty frame. */
+export async function readFileBase64(path: string): Promise<{ data: string; error: string; size: number }> {
+  if (!gateway.connected || !path) return { data: '', error: 'gateway offline', size: 0 }
+  try {
+    const res = await gateway.request<Record<string, unknown>>('file.read_base64', { path })
+    if (res?.ok === false) return { data: '', error: String(res?.error ?? 'could not read this file'), size: 0 }
+    return { data: String(res?.data ?? res?.data_base64 ?? ''), error: '', size: Number(res?.size ?? 0) }
+  } catch (e) {
+    return { data: '', error: e instanceof Error ? e.message : 'could not read this file', size: 0 }
+  }
 }
 
 export function writeFileBase64(path: string, dataBase64: string): Promise<boolean> {
@@ -3537,7 +3619,7 @@ export async function pullOrbitTheme(): Promise<void> {
 
 /* ---------------- image viewer ---------------- */
 
-const IMAGE_MIME: Record<string, string> = {
+export const IMAGE_MIME: Record<string, string> = {
   png: 'image/png',
   jpg: 'image/jpeg',
   jpeg: 'image/jpeg',
@@ -3556,9 +3638,9 @@ export function isImagePath(path: string): boolean {
     the prototype's overlay uses, so it animates and closes like every other. */
 export async function openImage(path: string): Promise<boolean> {
   if (!gateway.connected || !path) return false
-  const data = await readFileBase64(path)
+  const { data, error } = await readFileBase64(path)
   if (!data) {
-    notify('Cannot open image', path, 'err')
+    notify('Cannot open image', error || path, 'err')
     return false
   }
   const ext = path.split('.').pop()?.toLowerCase() ?? 'png'

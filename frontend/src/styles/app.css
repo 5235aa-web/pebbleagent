@@ -176,6 +176,219 @@
   color: var(--accent);
 }
 
+/* The popover tree draws a glyph per file kind (see data/fileicons.ts) instead
+   of the prototype's 9px colour chip, so the slot is sized for a stroke icon.
+   The glyph inherits the row's colour, which is what keeps the tree mono. */
+
+.pp-ico {
+  display: grid;
+  place-items: center;
+  width: 11px;
+  height: 11px;
+  flex: 0 0 11px;
+}
+
+.pp-ico svg { display: block; }
+
+/* ---- project popover: full height, tree beside a preview ----
+
+   The cap used to be 560px, and the project list ate half of it before the tree
+   got a row. Both ends are fixed here instead of trading space: the panel takes
+   whatever the window leaves below the bar, and the list stops growing at five
+   projects so every extra one scrolls inside it. `#projPop` and `#ppList` are
+   ids because they have to win against the frozen sheet regardless of the order
+   the two files load in. */
+
+#projPop {
+  width: var(--pp-w, 392px);
+  max-height: min(calc(100vh - 74px), 1100px);
+  min-height: 320px;
+}
+
+/* Five rows and nothing of the sixth: 6px list padding + 5 x 38px items + the
+   four 2px gaps brings the fifth row to 204px, and the next gap starts at 206.
+   A cap of 210 (the content height) let the sixth row peek through the padding
+   by four pixels. */
+
+#ppList {
+  max-height: 206px;
+  overflow-y: auto;
+  overscroll-behavior: contain;
+}
+
+/* Every block above the tree is fixed content. Without `flex: none` the column
+   shrinks them when the tree is long, which squeezed the project list to a
+   two-row window instead of letting it scroll. */
+
+#projPop > .pp-head,
+#projPop > .pp-err,
+#projPop > .pp-list,
+#projPop > .pp-adopt,
+#projPop > .pp-add,
+#projPop > .pp-foot,
+.pp-left > .pp-tree-h,
+.pp-pv > .pp-pv-h,
+.pp-pv > .pp-pv-foot {
+  flex: 0 0 auto;
+}
+
+.pp-body {
+  flex: 1 1 auto;
+  min-height: 0;
+  display: flex;
+}
+
+/* The tree takes the whole panel on its own; with a preview open it keeps the
+   width it always had and the pane takes the rest. The width and this flex come
+   from custom properties ProjectSwitcher sets, not from a class: the runtime
+   writes the popover's `open` class on the same element, and a class binding
+   would rewrite `className` wholesale and take `open` with it. */
+
+.pp-left {
+  flex: var(--pp-left, 1 1 auto);
+  min-width: 0;
+  min-height: 0;
+  display: flex;
+  flex-direction: column;
+}
+
+/* ---- file preview pane ----
+
+   Mounted only while a file is open (see FilePreview.vue), so an unopened
+   preview costs nothing: no request, no markup, no retained text. */
+
+.pp-pv {
+  flex: 1 1 auto;
+  min-width: 240px;
+  min-height: 0;
+  display: flex;
+  flex-direction: column;
+  border-left: 1px solid var(--line-2);
+  background: var(--surface);
+}
+
+.pp-pv-h {
+  display: flex;
+  align-items: center;
+  gap: 7px;
+  padding: 7px 9px;
+  border-bottom: 1px solid var(--line-2);
+  background: var(--surface-2);
+}
+
+.pp-pv-ico {
+  display: grid;
+  place-items: center;
+  width: 12px;
+  height: 12px;
+  flex: 0 0 12px;
+  color: var(--accent);
+}
+
+.pp-pv-ico svg { display: block; }
+
+.pp-pv-t {
+  flex: 1 1 auto;
+  min-width: 0;
+  display: flex;
+  flex-direction: column;
+}
+
+.pp-pv-t b {
+  font-family: var(--font-mono);
+  font-size: 9.5px;
+  font-weight: 600;
+  color: var(--ink);
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.pp-pv-t small { font-family: var(--font-mono); font-size: 8px; color: var(--faint); }
+
+.pp-pv-act {
+  width: 20px;
+  height: 20px;
+  display: grid;
+  place-items: center;
+  border-radius: 5px;
+  color: var(--faint);
+  flex: 0 0 auto;
+}
+
+.pp-pv-act:hover { background: var(--surface-3); color: var(--ink); }
+
+.pp-pv-body {
+  flex: 1 1 auto;
+  min-height: 0;
+  display: flex;
+  flex-direction: column;
+}
+
+.pp-pv-note {
+  margin: auto;
+  padding: 16px;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 8px;
+  font-family: var(--font-mono);
+  font-size: 9px;
+  color: var(--faint);
+  text-align: center;
+}
+
+.pp-pv-note.err { color: var(--err); }
+
+.pp-pv-link {
+  font-family: var(--font-mono);
+  font-size: 9px;
+  color: var(--accent);
+  text-decoration: underline;
+  text-underline-offset: 2px;
+}
+
+.pp-pv-img {
+  flex: 1 1 auto;
+  min-height: 0;
+  display: grid;
+  place-items: center;
+  padding: 10px;
+  overflow: auto;
+}
+
+.pp-pv-img img { max-width: 100%; max-height: 100%; object-fit: contain; border-radius: 6px; }
+
+.pp-pv-code { flex: 1 1 auto; min-height: 0; overflow: auto; }
+
+/* The transcript block is sized for a message column. In the pane the outer box
+   owns the scrolling, so the block itself drops its frame and lets the header
+   stay put while the body moves under it. */
+
+.pp-pv-code .code {
+  margin: 0;
+  border: none;
+  border-radius: 0;
+  background: transparent;
+  overflow: visible;
+}
+
+.pp-pv-code .code-body { overflow: visible; }
+
+.pp-pv-code .code-hdr { position: sticky; top: 0; z-index: 1; background: var(--surface-2); }
+
+.pp-pv-foot {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 6px 9px;
+  border-top: 1px solid var(--line-2);
+  background: var(--surface-2);
+  font-family: var(--font-mono);
+  font-size: 8px;
+  color: var(--faint);
+}
+
 /* ---- project tree ----
 
    The dock has no room for a wide tree, so the branch depth is carried by a

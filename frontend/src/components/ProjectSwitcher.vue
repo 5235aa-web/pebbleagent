@@ -7,7 +7,7 @@
       <svg class="pc-caret" width="10" height="10" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><polyline points="6 9 12 15 18 9"/></svg>
     </button>
 
-    <div class="proj-pop" id="projPop">
+    <div class="proj-pop" id="projPop" :style="pvStyle">
       <div class="pp-head">
         <span class="pp-folder">
           <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.7"><path d="M22 19a2 2 0 0 1-2 2H4a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h5l2 3h9a2 2 0 0 1 2 2z"/></svg>
@@ -16,8 +16,8 @@
           <div class="pp-name">{{ activeName }}</div>
           <div class="pp-path">{{ projects.active || 'no project selected' }}</div>
         </div>
-        <button class="pp-switch" id="ppSwitch" @click="onRescan">Switch
-          <svg width="9" height="9" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2"><polyline points="6 9 12 15 18 9"/></svg>
+        <button class="pp-switch" id="ppSwitch" @click="onRefresh">Refresh
+          <svg width="9" height="9" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2"><path d="M20.5 12a8.5 8.5 0 1 1-2.6-6.1"/><polyline points="20.5 3.5 20.5 9.5 14.5 9.5"/></svg>
         </button>
       </div>
 
@@ -58,26 +58,31 @@
       </div>
       <div v-if="addError" class="pp-err">{{ addError }}</div>
 
-      <div class="pp-tree-h">files <span>{{ treeHint }}</span>
-        <button class="pp-refresh" @click="reloadTree">refresh</button>
-      </div>
-      <div class="pp-tree">
-        <div v-if="treeLoading" class="pp-empty">loading…</div>
-        <div v-else-if="treeError" class="pp-err">{{ treeError }}</div>
-        <div v-else-if="!visibleRows.length" class="pp-empty">no entries</div>
-        <div
-          v-for="row in visibleRows"
-          :key="row.path"
-          class="pp-row"
-          :class="{ sub: row.depth > 0, on: row.path === activePath }"
-          :style="{ paddingLeft: 10 + row.depth * 13 + 'px' }"
-          @click="onRow(row)"
-        >
-          <span class="pp-cv">{{ row.type === 'directory' ? (expanded[row.path] ? '&#9662;' : '&#9656;') : '' }}</span>
-          <span :class="row.type === 'directory' ? 'pp-di' : 'pp-fi'"></span>
-          <span class="pp-nm">{{ row.name }}</span>
-          <span class="pp-ct">{{ row.type === 'directory' ? '' : row.size }}</span>
+      <div class="pp-body">
+        <div class="pp-left">
+          <div class="pp-tree-h">files <span>{{ treeHint }}</span>
+            <button class="pp-refresh" @click="reloadTree">refresh</button>
+          </div>
+          <div class="pp-tree">
+            <div v-if="treeLoading" class="pp-empty">loading…</div>
+            <div v-else-if="treeError" class="pp-err">{{ treeError }}</div>
+            <div v-else-if="!visibleRows.length" class="pp-empty">no entries</div>
+            <div
+              v-for="row in visibleRows"
+              :key="row.path"
+              class="pp-row"
+              :class="{ sub: row.depth > 0, on: row.path === activePath }"
+              :style="{ paddingLeft: 10 + row.depth * 13 + 'px' }"
+              @click="onRow(row)"
+            >
+              <span class="pp-cv">{{ row.type === 'directory' ? (expanded[row.path] ? '&#9662;' : '&#9656;') : '' }}</span>
+              <span class="pp-ico" v-html="row.icon"></span>
+              <span class="pp-nm">{{ row.name }}</span>
+              <span class="pp-ct">{{ row.type === 'directory' ? '' : row.size }}</span>
+            </div>
+          </div>
         </div>
+        <FilePreview v-if="previewPath" :path="previewPath" @close="previewPath = ''" />
       </div>
       <div class="pp-foot">
         <span class="pp-hint">unassigned sessions are adopted by the active root</span>
@@ -86,13 +91,15 @@
 </template>
 
 <script setup lang="ts">
-import { computed, onMounted, ref } from 'vue'
+import { computed, nextTick, onMounted, onUnmounted, ref, watch } from 'vue'
 import {
-  adoptUnassigned, addProject, isImagePath, openFile, openImage,
+  adoptUnassigned, addProject,
   refreshProjects, removeProject, searchProjectDir, switchProject, toast, unassignedCount
 } from '../data/wire'
 import { askConfirm } from '../data/confirm'
+import { fileGlyph } from '../data/fileicons'
 import { projects } from '../data/store'
+import FilePreview from './FilePreview.vue'
 
 /* The registry is the gateway's, not the UI's: every entry is a directory the
    tools are allowed to touch, and `active` is the one they are scoped to. */
@@ -107,6 +114,19 @@ const treeError = ref('')
 /* Which file row is selected, so the tree can show it without asking the
    gateway. Reset on every project switch: it names a path inside the old root. */
 const activePath = ref('')
+/* The file whose preview pane is mounted. Empty means no pane at all: the
+   component is behind a `v-if`, so nothing is read and nothing is held until a
+   row is clicked. */
+const previewPath = ref('')
+
+/* The popover's `open` class belongs to the runtime, and a class binding on the
+   same element rewrites `className` wholesale: the panel disappeared the moment
+   a file was clicked, because `open` was patched away with it. Custom properties
+   carry the same state and leave that attribute alone. */
+const pvStyle = computed<Record<string, string>>(() => ({
+  '--pp-w': previewPath.value ? 'min(745px, calc(100vw - 24px))' : '392px',
+  '--pp-left': previewPath.value ? '0 0 392px' : '1 1 auto'
+}))
 
 const activeName = computed(() => baseName(projects.active) || 'no project')
 
@@ -119,16 +139,23 @@ function baseName(p: string): string {
 async function onPick(path: string): Promise<void> {
   if (path === projects.active) return
   const ok = await switchProject(path)
-  /* The tree belongs to the root it was read from, so a selection made under
-     the previous project cannot stay highlighted. */
-  if (ok) activePath.value = ''
+  /* The tree, the highlighted row and the open preview all belong to the root
+     they were read from: a path from the previous project names nothing under
+     the new one, so the pane goes with the selection. */
+  if (ok) {
+    activePath.value = ''
+    previewPath.value = ''
+  }
 }
 
 /** Re-reads the registry and reselects the active project, which reloads the
     transcript and the tree in one step. */
-async function onRescan(): Promise<void> {
+async function onRefresh(): Promise<void> {
   await refreshProjects()
-  if (projects.active) await switchProject(projects.active)
+  if (projects.active) {
+    previewPath.value = ''
+    await switchProject(projects.active)
+  }
 }
 
 async function onAdd(): Promise<void> {
@@ -181,6 +208,9 @@ interface TreeRow {
   type: string
   depth: number
   size: string
+  /* Resolved once when the directory is read: the row is a flat list entry, so
+     the glyph never has to be rebuilt while the tree is merely re-flattened. */
+  icon: string
 }
 
 const children = ref<Record<string, TreeRow[]>>({})
@@ -220,13 +250,18 @@ async function load(path: string, depth: number): Promise<void> {
     children.value[path] = []
     return
   }
-  const rows: TreeRow[] = list.map(raw => ({
-    name: String(raw.name ?? ''),
-    path: String(raw.path ?? ''),
-    type: String(raw.type ?? 'file'),
-    depth,
-    size: ''
-  }))
+  const rows: TreeRow[] = list.map(raw => {
+    const name = String(raw.name ?? '')
+    const type = String(raw.type ?? 'file')
+    return {
+      name,
+      path: String(raw.path ?? ''),
+      type,
+      depth,
+      size: '',
+      icon: fileGlyph(name, type)
+    }
+  })
   children.value[path] = rows
     .filter(r => r.name && r.name !== '__pycache__' && r.name !== '.git')
     .sort((a, b) => (a.type === b.type ? a.name.localeCompare(b.name) : a.type === 'directory' ? -1 : 1))
@@ -239,12 +274,11 @@ async function onRow(row: TreeRow): Promise<void> {
     if (next && !children.value[row.path]) await load(row.path, row.depth + 1)
     return
   }
+  /* A file opens in the pane beside the tree, not in whatever program owns the
+     extension. That handoff is still one click away, inside the preview header,
+     for the formats a text pane cannot show. */
   activePath.value = row.path
-  if (isImagePath(row.path)) {
-    await openImage(row.path)
-    return
-  }
-  openFile(row.path)
+  previewPath.value = row.path
 }
 
 async function reloadTree(): Promise<void> {
@@ -253,6 +287,7 @@ async function reloadTree(): Promise<void> {
   children.value = {}
   expanded.value = {}
   activePath.value = ''
+  previewPath.value = ''
   try {
     await load('', 0)
   } finally {
@@ -267,13 +302,38 @@ async function loadRegistry(): Promise<void> {
   unassigned.value = await unassignedCount()
 }
 
+/** The popover is opened and closed by the runtime, not by this component. Its
+    close is the moment the preview has to go: a file's text should not sit in
+    memory behind a panel that is no longer on screen. */
+function onPanelToggle(event: Event): void {
+  const open = (event as CustomEvent<{ open?: boolean }>).detail?.open
+  if (!open) previewPath.value = ''
+}
+
+/* The pane widens the panel, which moves its right edge; the runtime is what
+   keeps that edge inside the window. Cue it once the new width has been laid
+   out, otherwise it measures the old one. */
+watch(previewPath, () => {
+  void nextTick(() => {
+    window.dispatchEvent(new CustomEvent('pebble:project-relayout'))
+  })
+})
+
+function onGatewayReady(): void {
+  void reloadTree()
+  void loadRegistry()
+}
+
 onMounted(() => {
   void reloadTree()
   void loadRegistry()
   // The socket opens after this mounts; the first answer would be empty.
-  window.addEventListener('pebble:gateway-ready', () => {
-    void reloadTree()
-    void loadRegistry()
-  })
+  window.addEventListener('pebble:gateway-ready', onGatewayReady)
+  window.addEventListener('pebble:project-panel', onPanelToggle)
+})
+
+onUnmounted(() => {
+  window.removeEventListener('pebble:gateway-ready', onGatewayReady)
+  window.removeEventListener('pebble:project-panel', onPanelToggle)
 })
 </script>

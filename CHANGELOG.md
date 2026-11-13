@@ -7,6 +7,20 @@ which is what the in-app update sheet shows before installing. Add the section
 before running `npm run release`; the release stops if it is missing, because a
 feed with empty notes tells the user nothing.
 
+## 1.2.9
+
+- Compacting a long conversation is no longer reported as a failure just because it takes a while. The client used to stop waiting after two minutes and say nothing had been folded, even when the run was still working and finished a minute later; it now waits long enough, and when it does give up it checks what actually happened before saying anything.
+- Running compaction twice in a row no longer leaves two summaries. A session that has not been spoken in since the last summary is refused with a reason instead of folding the summary into another summary.
+
+## 1.2.8
+
+- The project panel now fills the window instead of stopping at a fixed height, so the file list shows around twenty entries at a time rather than five.
+- The project list stops at five entries and scrolls. A long registry no longer pushes the file list out of the panel.
+- Files carry icons that match what they are: folders, source code, configuration, documents, images, stylesheets, archives and binaries each look different.
+- Clicking a file opens it beside the tree instead of launching another program. Text arrives with line numbers and syntax colour, images open in place, and the button in the preview header still hands the file to its default app. Closing the panel closes the preview and releases what it had loaded.
+- Files saved in GBK or ANSI open correctly instead of showing an error, and a very large file can no longer stall the panel: text is read up to 512 KB with a note, and images above 16 MB are refused with the reason.
+- `Switch` in the panel header is now `Refresh`, which is all it ever did.
+
 ## 1.2.7
 
 - The accent colour you pick now survives a restart. Choosing a swatch only saved it on this machine, while the theme record kept whatever was there the last time you switched between Daylight and Nightfall, and that older value was reapplied on every launch. The colour you picked last now wins, and a fresh install still inherits the theme from your other machine.

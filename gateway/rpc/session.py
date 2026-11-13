@@ -4,9 +4,43 @@ import json
 
 import logging
 import os
+import threading
 import time
 
 logger = logging.getLogger(__name__)
+
+# One compaction per session at a time, and never a second one that has nothing
+# new to fold: a client that timed out while the gateway was still working used
+# to retry into the summary the first run had already written.
+_COMPACT_LOCK = threading.Lock()
+_COMPACT_RUNNING: set = set()
+
+
+def _refuse_compaction(raw_messages):
+    """Why this compaction must not run, or None to proceed.
+
+    Nothing said since the last summary means there is nothing to fold: a second
+    pass would summarize the previous summary and leave two cards in the
+    transcript. That is the state a retry lands in when the first run succeeded
+    but its answer was lost to a client-side timeout. Returns the user-facing
+    reason so the refusal explains itself.
+    """
+    summaries = [m for m in raw_messages if m.get("is_compact_summary")]
+    if not summaries:
+        return None
+    newest = max((m.get("created_at") or 0) for m in summaries)
+    said_since = [
+        m for m in raw_messages
+        if m.get("role") == "user"
+        and not m.get("is_compact_summary")
+        and (m.get("created_at") or 0) > newest
+    ]
+    if said_since:
+        return None
+    return (
+        "This session was compacted a moment ago and nothing has been said since, "
+        "so there is nothing new to fold. Send a message first."
+    )
 
 
 def handle(ctx, method):
@@ -253,6 +287,22 @@ def handle(ctx, method):
         raw_messages = srv._session_store.get_messages_for_context(sid, limit=999999)
         if not raw_messages:
             return {"id": rid, "result": {"success": False, "reason": "no messages"}}
+
+        # A second pass over a session that has not moved on would only summarize
+        # the previous summary. Check before taking the run lock.
+        refused = _refuse_compaction(raw_messages)
+        if refused:
+            logger.info(f"[Server] Compress refused for {sid}: nothing new since the last summary")
+            return {"id": rid, "result": {"success": False, "reason": refused}}
+
+        with _COMPACT_LOCK:
+            if sid in _COMPACT_RUNNING:
+                logger.info(f"[Server] Compress refused for {sid}: already running")
+                return {"id": rid, "result": {
+                    "success": False,
+                    "reason": "A compaction is already running for this session.",
+                }}
+            _COMPACT_RUNNING.add(sid)
         try:
             from agent_core.context_compressor import manual_compress, resolve_context_limit
             client, model = srv._get_llm_client(sid)
@@ -372,6 +422,9 @@ def handle(ctx, method):
         except Exception as e:
             logger.error(f"[Server] Compress failed: {e}")
             return {"id": rid, "error": {"code": -32000, "message": str(e)}}
+        finally:
+            with _COMPACT_LOCK:
+                _COMPACT_RUNNING.discard(sid)
 
     if method == "session.interrupt":
         sid = params.get("session_id", "")

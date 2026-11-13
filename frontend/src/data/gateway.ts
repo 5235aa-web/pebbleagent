@@ -174,7 +174,9 @@ export class GatewayClient {
     }
   }
 
-  request<T = unknown>(method: string, params: Record<string, unknown> = {}): Promise<T> {
+  /** `timeoutMs` overrides the default per call: a compaction legitimately runs
+      longer than a normal RPC and must not be cut off at the default deadline. */
+  request<T = unknown>(method: string, params: Record<string, unknown> = {}, timeoutMs?: number): Promise<T> {
     return new Promise<T>((resolve, reject) => {
       if (!this.ws || this.ws.readyState !== WebSocket.OPEN) {
         reject(new Error('Not connected'))
@@ -184,7 +186,7 @@ export class GatewayClient {
       const timeout = setTimeout(() => {
         this.pending.delete(id)
         reject(new Error(`Timeout: ${method}`))
-      }, REQUEST_TIMEOUT)
+      }, timeoutMs ?? REQUEST_TIMEOUT)
       this.pending.set(id, { resolve: v => resolve(v as T), reject, timeout })
       try {
         this.ws.send(JSON.stringify({ id, jsonrpc: '2.0', method, params }))
