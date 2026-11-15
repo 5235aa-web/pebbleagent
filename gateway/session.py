@@ -1,3 +1,5 @@
+from __future__ import annotations
+
 import logging
 import os
 import sqlite3
@@ -318,7 +320,7 @@ class SessionStore:
             conn.rollback()
             raise
 
-    def get_messages_by_ids(self, session_id: str, message_ids: list) -> tuple[list[dict], dict[str, str]]:
+    def get_messages_by_ids(self, session_id: str, message_ids: list) -> tuple:
         """按会话和消息 ID 列表读取原始消息（按 sort_order 升序）及关联工具输出映射。"""
         clean_ids: list[int] = []
         seen: set[int] = set()
