@@ -133,7 +133,6 @@ def main() -> int:
         + summary_body
         + "\n\nRecent messages are preserved verbatim."
     )
-    conn = sv._session_store._get_db() if hasattr(sv._session_store, "_get_db") else None
     from gateway.session import _get_db
     db = _get_db()
     next_ord = sv._session_store._next_order(src_sid)
