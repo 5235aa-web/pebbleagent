@@ -2,7 +2,7 @@
 
 <img src="assets/logo.png" alt="PEBBLE-AGENT" width="720">
 
-**A light,open-source, and extensible desktop AI agent with tools, skills, MCP servers, a self-maintained code knowledge base, and cross-session memory.**
+**A light,extensible desktop AI agent with tools, skills, MCP servers, a self-maintained code knowledge base, and cross-session memory.**
 
 [![checks](https://img.shields.io/github/actions/workflow/status/5235aa-web/pebbleagent/checks.yml?style=flat-square&label=checks&labelColor=1f1f1f&color=00E676)](https://github.com/5235aa-web/pebbleagent/actions/workflows/checks.yml)
 [![License: AGPL-3.0](https://img.shields.io/badge/License-AGPL--3.0-CE93D8?style=flat-square&labelColor=1f1f1f)](LICENSE)
