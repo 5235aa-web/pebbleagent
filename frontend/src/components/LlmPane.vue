@@ -149,7 +149,7 @@
 </template>
 
 <script setup lang="ts">
-import { computed, ref } from 'vue'
+import { computed, ref, watch } from 'vue'
 import { llm, isOpenCodeProvider, isProviderReady, type LlmProvider } from '../data/panels'
 import { switchAgent, switchModel, setModelParams, saveProvider, deleteProvider, addProvider, switchProvider } from '../data/wire'
 import { askConfirm } from '../data/confirm'
@@ -171,6 +171,12 @@ const selectedIndex = ref(-1)
 const activeIndex = computed(() => {
   const i = llm.providers.findIndex(p => p.current)
   return i >= 0 ? i : 0
+})
+
+/* Keep the panel's selected card aligned when the active provider changes from
+   outside (for example, from the composer's upward model picker). */
+watch(activeIndex, () => {
+  selectedIndex.value = -1
 })
 
 const effectiveSelectedIndex = computed(() => {

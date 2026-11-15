@@ -1,5 +1,6 @@
 import { reactive } from 'vue'
 import type { Block } from './blocks'
+import type { ForwardedPayload } from './forwarded'
 
 /* The rendered message list.
 
@@ -38,6 +39,8 @@ export interface StreamItem {
   /* A pending agent question. The card owns its own step and selection state;
      the row only says which request it answers. */
   clarify?: { requestId: string; questions: import('./panels').ClarifyQuestion[] }
+  /* Structured payload when this user row is a batch-forwarded message card. */
+  forwarded?: ForwardedPayload
 }
 
 export interface StreamState {

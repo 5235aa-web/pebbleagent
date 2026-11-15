@@ -445,6 +445,7 @@ export function initOrbit() {
      next patch. Handlers therefore live on document, not on the nodes. */
   (function () {
     function toggleSummary(hdr) {
+      if (hdr.closest(".select-mode")) return;
       var card = hdr.closest(".summary");
       if (!card) return;
       var closed = card.classList.toggle("closed");

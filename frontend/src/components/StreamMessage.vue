@@ -1,5 +1,17 @@
 <template>
-  <div class="msg agent">
+  <div
+    class="msg agent"
+    :class="{ 'is-selectable': selectable, 'is-selected': selected }"
+    @click.capture="onCaptureClick"
+  >
+    <span
+      v-if="selectable"
+      class="fwd-check"
+      :class="{ checked: selected }"
+      aria-hidden="true"
+    >
+      <svg v-if="selected" width="10" height="10" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="3"><polyline points="20 6 9 17 4 12"/></svg>
+    </span>
     <div class="avatar" :style="streaming ? 'border-color: var(--accent);' : ''">
       <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.6"><rect x="3" y="3" width="18" height="14" rx="2"/><line x1="8" y1="21" x2="16" y2="21"/><line x1="12" y1="17" x2="12" y2="21"/></svg>
     </div>
@@ -57,6 +69,7 @@
 import { computed, reactive } from 'vue'
 import type { StreamItem } from '../data/stream'
 import { copyMessage, deleteMessage } from '../data/wire'
+import { forwardState, isSelectableItem, isMessageSelected, toggleSelectMessage } from '../data/forward'
 import StreamCodeBlock from './StreamCodeBlock.vue'
 import StreamToolCard from './StreamToolCard.vue'
 import MermaidCard from './MermaidCard.vue'
@@ -69,6 +82,15 @@ const TOGGLE_AT = 64
 
 const blocks = computed(() => props.item.blocks || [])
 const streaming = computed(() => !!props.item.streaming)
+const selectable = computed(() => forwardState.active && isSelectableItem(props.item))
+const selected = computed(() => selectable.value && isMessageSelected(props.item.id))
+
+function onCaptureClick(ev: MouseEvent) {
+  if (!selectable.value) return
+  ev.preventDefault()
+  ev.stopPropagation()
+  toggleSelectMessage(props.item.id)
+}
 const model = computed(() => props.item.model || '')
 const time = computed(() => props.item.time || '')
 

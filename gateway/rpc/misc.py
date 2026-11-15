@@ -3,6 +3,7 @@
 import logging
 import os
 import sys
+import uuid
 
 logger = logging.getLogger(__name__)
 
@@ -40,6 +41,117 @@ def handle(ctx, method):
             except Exception as e:
                 logger.warning(f"[Server] Failed to delete agent_chat message by uuid {msg_uuid}: {e}")
         return {"id": rid, "result": {"deleted": deleted}}
+
+    if method == "message.forward":
+        """同一项目下将源会话选中的多条消息合并打包转发到目标会话。"""
+        source_sid = str(params.get("source_session_id") or "").strip()
+        target_sid = str(params.get("target_session_id") or "").strip()
+        message_ids = params.get("message_ids")
+        if not source_sid or not target_sid or not isinstance(message_ids, list) or not message_ids:
+            return {"id": rid, "error": {"code": -32000, "message": "source_session_id, target_session_id and message_ids required"}}
+        if source_sid == target_sid:
+            return {"id": rid, "error": {"code": -32000, "message": "cannot forward messages to the same session"}}
+
+        src_session = srv._session_store.get(source_sid)
+        dst_session = srv._session_store.get(target_sid)
+        if not src_session:
+            return {"id": rid, "error": {"code": -32000, "message": f"Source session not found: {source_sid}"}}
+        if not dst_session:
+            return {"id": rid, "error": {"code": -32000, "message": f"Target session not found: {target_sid}"}}
+
+        src_proj = srv._norm_project_path(src_session.get("project_path") or "")
+        dst_proj = srv._norm_project_path(dst_session.get("project_path") or "")
+        if src_proj.lower() != dst_proj.lower():
+            return {"id": rid, "error": {"code": -32000, "message": "can only forward messages within the same project"}}
+
+        if srv.is_session_running(target_sid):
+            return {"id": rid, "error": {"code": -32000, "message": "target session is currently running; wait until it finishes"}}
+
+        rows, tool_outputs = srv._session_store.get_messages_by_ids(source_sid, message_ids)
+        if not rows:
+            return {"id": rid, "error": {"code": -32000, "message": "no matching messages found in source session"}}
+
+        from gateway.forward_formatter import format_forwarded_messages
+
+        merged_text, used_count = format_forwarded_messages(
+            src_session.get("title") or "",
+            rows,
+            tool_outputs=tool_outputs,
+        )
+        if not merged_text or used_count == 0:
+            return {"id": rid, "error": {"code": -32000, "message": "selected messages contain no forwardable content"}}
+
+        if bool(params.get("prepare_only")):
+            logger.info(
+                f"[Forward] Prepared {used_count} message(s) from {source_sid[:8]} -> {target_sid[:8]} "
+                f"({len(merged_text)} chars)"
+            )
+            return {
+                "id": rid,
+                "result": {
+                    "ok": True,
+                    "target_session_id": target_sid,
+                    "forwarded_count": used_count,
+                    "content": merged_text,
+                },
+            }
+
+        new_msg_uuid = str(uuid.uuid4())
+        preview_hint = f"[Forward] From \"{src_session.get('title') or 'Untitled session'}\" ({used_count} msgs)"
+        new_msg_id, _ = srv._session_store.add_forwarded_user_message(
+            target_sid,
+            merged_text,
+            msg_uuid=new_msg_uuid,
+            preview=preview_hint,
+        )
+
+        # 同步写入 agent_chat.db，保证目标会话后续 LLM 对话可读取转发内容
+        try:
+            from agent_core import agent_chat_history as history
+            try:
+                from agent_core.context_compressor import estimate_tokens
+                tok_count = estimate_tokens(merged_text)
+            except Exception:
+                tok_count = max(1, len(merged_text) // 4)
+            agent_name = getattr(srv, "_current_agent", "code_agent") or "code_agent"
+            conv = history.get_agent_conversation_by_uuid(target_sid)
+            if not conv:
+                history.create_agent_conversation(
+                    "default_user",
+                    agent_name,
+                    title=dst_session.get("title") or "New conversation",
+                    uuid=target_sid,
+                )
+                conv = history.get_agent_conversation_by_uuid(target_sid)
+            if conv:
+                history.add_agent_chat_message(
+                    conversation_id=conv["id"],
+                    role="user",
+                    content=merged_text,
+                    token_count=tok_count,
+                    agent_name=agent_name,
+                    msg_uuid=new_msg_uuid,
+                )
+        except Exception as e:
+            logger.warning(f"[Server] Failed to sync forwarded message to agent_chat.db for {target_sid}: {e}")
+
+        updated_dst = srv._session_store.get(target_sid) or {}
+        srv.broadcast_event("message.forwarded", {
+            "source_session_id": source_sid,
+            "target_session_id": target_sid,
+            "message_id": new_msg_id,
+            "forwarded_count": used_count,
+            "message_count": updated_dst.get("message_count", 0),
+        })
+        return {
+            "id": rid,
+            "result": {
+                "ok": True,
+                "target_session_id": target_sid,
+                "message_id": new_msg_id,
+                "forwarded_count": used_count,
+            },
+        }
 
     if method == "setup.status":
         ctx.llm_config = srv.load_llm_config(srv._current_agent)

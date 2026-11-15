@@ -1,5 +1,28 @@
 <template>
       <div class="composer-wrap">
+        <!-- Batch forward bar above composer -->
+        <div class="forward-bar" v-if="forwardState.active">
+          <div class="fb-left">
+            <span class="fb-badge">Forward</span>
+            <span class="fb-count"><b>{{ selectedCount }}</b> selected</span>
+            <button
+              v-if="selectableTotal > 0"
+              class="fb-link"
+              type="button"
+              @click="toggleSelectAll"
+            >{{ allSelected ? 'Clear' : 'Select all' }}</button>
+          </div>
+          <div class="fb-actions">
+            <button class="btn btn-ghost btn-sm" type="button" @click="cancelForward">Cancel</button>
+            <button
+              class="btn btn-primary btn-sm"
+              type="button"
+              :disabled="selectedCount === 0 || forwardState.submitting"
+              @click="openForwardDialog"
+            >Forward</button>
+          </div>
+        </div>
+
         <!-- attachment tray — real files, same film styling as the prototype -->
         <div class="attach-tray" v-if="files.length">
           <div class="film-head">
@@ -71,6 +94,94 @@
               <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.7"><path d="M21.44 11.05l-9.19 9.19a6 6 0 0 1-8.49-8.49l9.19-9.19a4 4 0 0 1 5.66 5.66l-9.2 9.19a2 2 0 0 1-2.83-2.83l8.49-8.48"/></svg>
               Attach
             </button>
+            <button
+              class="tool-btn tip"
+              :class="{ on: forwardState.active }"
+              data-tip="Select messages to forward to another session"
+              type="button"
+              :disabled="!canEnterForward"
+              @click="onToggleForward"
+            >
+              <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.7"><polyline points="15 14 20 9 15 4"/><path d="M4 20v-7a4 4 0 0 1 4-4h12"/></svg>
+              Forward
+            </button>
+            <div class="model-wrap" ref="modelWrapEl" :class="{ open: modelMenuOpen }">
+              <button
+                class="tool-btn model-btn"
+                :class="{ on: Boolean(activeModelName), tip: !modelMenuOpen }"
+                :data-tip="modelBtnTip"
+                type="button"
+                :aria-expanded="modelMenuOpen ? 'true' : 'false'"
+                @click="toggleModelMenu"
+              >
+                <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.7"><rect x="4" y="4" width="16" height="16" rx="3"/><rect x="9" y="9" width="6" height="6" rx="1"/></svg>
+                <span class="mm-btn-label">{{ activeModelName || 'Model' }}</span>
+                <svg class="pm-caret" width="8" height="8" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2"><polyline points="6 15 12 9 18 15"/></svg>
+              </button>
+
+              <div class="mm-shell" :class="{ open: modelMenuOpen }" :aria-hidden="modelMenuOpen ? 'false' : 'true'">
+                <div class="mm-inner">
+                  <div class="mm-card">
+                    <div class="mm-hdr">
+                      <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.7"><rect x="4" y="4" width="16" height="16" rx="3"/><rect x="9" y="9" width="6" height="6" rx="1"/></svg>
+                      <span class="mm-title">Switch model</span>
+                      <button class="mm-dock-link" type="button" @click="openLlmDock">
+                        <span>LLM Panel</span>
+                        <svg width="10" height="10" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><line x1="7" y1="17" x2="17" y2="7"/><polyline points="7 7 17 7 17 17"/></svg>
+                      </button>
+                    </div>
+
+                    <div class="mm-body" v-if="llm.providers.length">
+                      <div
+                        v-for="(p, idx) in llm.providers"
+                        :key="p.slug || `${p.name}-${idx}`"
+                        class="mm-group"
+                        :class="{ current: idx === activeProviderIndex, unready: !isProviderReady(p) }"
+                      >
+                        <div class="mm-prov">
+                          <span class="mm-prov-badge">{{ p.name.slice(0, 1).toUpperCase() }}</span>
+                          <span class="mm-prov-name">{{ p.name }}</span>
+                          <span v-if="idx === activeProviderIndex" class="mm-prov-tag on">Active</span>
+                          <span v-else-if="!isProviderReady(p)" class="mm-prov-tag">Not ready</span>
+                        </div>
+
+                        <div v-if="p.models.length" class="mm-models">
+                          <button
+                            v-for="m in p.models"
+                            :key="`${idx}-${m}`"
+                            class="mm-opt"
+                            :class="{ active: isCurrentModel(idx, m), disabled: !isProviderReady(p) }"
+                            type="button"
+                            :disabled="switchingModel"
+                            @click="pickModel(idx, m)"
+                          >
+                            <span class="mm-opt-dot"></span>
+                            <span class="mm-opt-label">{{ m }}</span>
+                            <span class="mm-check">
+                              <svg width="9" height="9" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="3.4"><polyline points="20 6 9 17 4 12"/></svg>
+                            </span>
+                          </button>
+                        </div>
+                        <div v-else class="mm-empty-models">No models yet — add one in LLM Panel</div>
+                      </div>
+                    </div>
+                    <div class="mm-empty" v-else>
+                      <span>No model providers configured</span>
+                      <button class="btn btn-primary btn-sm" type="button" @click="openLlmDock">Open LLM Panel</button>
+                    </div>
+
+                    <div class="mm-hint">
+                      <span v-if="activeProvider && activeModelName">
+                        Next message: <b>{{ activeProvider.name }}</b> · <code>{{ activeModelName }}</code>
+                      </span>
+                      <span v-else>
+                        Configure an active provider and model in the right-dock LLM panel
+                      </span>
+                    </div>
+                  </div>
+                </div>
+              </div>
+            </div>
             <input ref="fileInput" class="attach-input" type="file" multiple @change="onPicked" />
             <div class="perm-wrap" id="permWrap" data-mode="manual">
             <button class="tool-btn on tip" data-tip="Permission mode" id="permModeBtn" aria-expanded="false">
@@ -118,9 +229,26 @@
 </template>
 
 <script setup lang="ts">
-import { computed, onMounted, ref } from 'vue'
+import { computed, onBeforeUnmount, onMounted, ref } from 'vue'
 import { streamState } from '../data/stream'
-import { sendPrompt, interruptSession } from '../data/wire'
+import { sessionState } from '../data/store'
+import { llm, isProviderReady } from '../data/panels'
+import {
+  sendPrompt,
+  interruptSession,
+  refreshSessionList,
+  refreshLlm,
+  switchModel,
+  switchProvider
+} from '../data/wire'
+import {
+  forwardState,
+  isSelectableItem,
+  toggleForwardMode,
+  exitForwardMode,
+  selectAllSelectable,
+  clearSelectedMessages
+} from '../data/forward'
 import {
   fileDrop,
   fileIcon,
@@ -152,8 +280,107 @@ const activeDetail = computed<ImageDetail | null>(() => {
 })
 
 const fileInput = ref<HTMLInputElement | null>(null)
+const modelWrapEl = ref<HTMLElement | null>(null)
+const modelMenuOpen = ref(false)
+const switchingModel = ref(false)
 
 const streaming = computed(() => streamState.streaming)
+const selectedCount = computed(() => forwardState.selectedIds.length)
+const selectableTotal = computed(() => streamState.items.filter(isSelectableItem).length)
+const canEnterForward = computed(() => Boolean(sessionState.activeId) && selectableTotal.value > 0)
+const allSelected = computed(() => selectableTotal.value > 0 && selectedCount.value >= selectableTotal.value)
+
+const activeProviderIndex = computed(() => {
+  const i = llm.providers.findIndex(p => p.current)
+  return i >= 0 ? i : 0
+})
+const activeProvider = computed(() => llm.providers[activeProviderIndex.value])
+const activeModelName = computed(() => llm.model || '')
+const modelBtnTip = computed(() => {
+  if (activeProvider.value && activeModelName.value) {
+    return `Model: ${activeProvider.value.name} · ${activeModelName.value}`
+  }
+  return 'Switch model'
+})
+
+function isCurrentModel(idx: number, model: string): boolean {
+  return idx === activeProviderIndex.value && model === activeModelName.value
+}
+
+function toggleModelMenu(): void {
+  const next = !modelMenuOpen.value
+  modelMenuOpen.value = next
+  if (next && (!llm.loaded || !llm.providers.length)) {
+    void refreshLlm()
+  }
+}
+
+function openLlmDock(): void {
+  modelMenuOpen.value = false
+  const nav = (window as unknown as { __pebbleNav?: { tab?: (name: string) => void } }).__pebbleNav
+  nav?.tab?.('llm')
+}
+
+async function pickModel(idx: number, model: string): Promise<void> {
+  const provider = llm.providers[idx]
+  if (!provider) return
+  if (!isProviderReady(provider)) {
+    const toast = (window as unknown as { __pebbleToast?: (t: string, m: string, k?: string) => void }).__pebbleToast
+    toast?.('Provider not ready', 'Add a Base URL and at least one model in the right-dock LLM panel first.', 'warn')
+    return
+  }
+  if (isCurrentModel(idx, model)) {
+    modelMenuOpen.value = false
+    return
+  }
+  modelMenuOpen.value = false
+  switchingModel.value = true
+  try {
+    if (idx === activeProviderIndex.value) {
+      await switchModel(model)
+    } else {
+      await switchProvider(idx, model)
+    }
+  } finally {
+    switchingModel.value = false
+  }
+}
+
+function onDocClick(e: MouseEvent): void {
+  if (!modelMenuOpen.value) return
+  const target = e.target as Node | null
+  if (target && modelWrapEl.value?.contains(target)) return
+  modelMenuOpen.value = false
+}
+
+function onDocKeydown(e: KeyboardEvent): void {
+  if (e.key === 'Escape' && modelMenuOpen.value) {
+    modelMenuOpen.value = false
+  }
+}
+
+function onToggleForward(): void {
+  toggleForwardMode()
+}
+
+function cancelForward(): void {
+  exitForwardMode()
+}
+
+function toggleSelectAll(): void {
+  if (allSelected.value) {
+    clearSelectedMessages()
+  } else {
+    selectAllSelectable(streamState.items)
+  }
+}
+
+function openForwardDialog(): void {
+  if (!forwardState.selectedIds.length) return
+  forwardState.targetSessionId = ''
+  forwardState.pickerOpen = true
+  void refreshSessionList()
+}
 
 /* The composer owns the two buttons now. The runtime script used to toggle
    `hidden` from a local `running` flag that started at true, which is why the
@@ -186,5 +413,14 @@ function onPicked(e: Event): void {
   input.value = ''
 }
 
-onMounted(() => { installDropZone() })
+onMounted(() => {
+  installDropZone()
+  document.addEventListener('click', onDocClick, true)
+  document.addEventListener('keydown', onDocKeydown)
+})
+
+onBeforeUnmount(() => {
+  document.removeEventListener('click', onDocClick, true)
+  document.removeEventListener('keydown', onDocKeydown)
+})
 </script>

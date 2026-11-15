@@ -74,6 +74,9 @@
 <!-- ================= CONFIRM SHEET ================= -->
 <ConfirmSheet />
 
+<!-- ================= FORWARD SESSION DIALOG ================= -->
+<ForwardSessionDialog />
+
 <!-- TOASTS -->
 <ToastStack />
 </template>
@@ -101,5 +104,6 @@ import DropOverlay from './components/DropOverlay.vue'
 import ConversationMenu from './components/ConversationMenu.vue'
 import MessageSearch from './components/MessageSearch.vue'
 import ConfirmSheet from './components/ConfirmSheet.vue'
+import ForwardSessionDialog from './components/ForwardSessionDialog.vue'
 import ToastStack from './components/ToastStack.vue'
 </script>

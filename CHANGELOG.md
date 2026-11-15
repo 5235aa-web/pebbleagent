@@ -7,6 +7,13 @@ which is what the in-app update sheet shows before installing. Add the section
 before running `npm run release`; the release stops if it is missing, because a
 feed with empty notes tells the user nothing.
 
+## 1.3.0
+
+- Batch forward messages across sessions within the same project. A new Forward button beside the attachment button switches the transcript into multi-select mode for user messages, assistant replies and compaction summary cards, with a batch bar above the composer and a target session picker that supports filtering and creating new sessions.
+- Selected messages are merged chronologically into one payload: read-only tool calls are excluded, only edit, write and code-execution tool records are retained with summarized arguments and details capped at 600 characters per call, and compaction summary cards are forwarded in full without truncation.
+- Forwarded payloads render in a dedicated collapsible card showing the source session, structured sections with Markdown formatting, and expandable tool records instead of raw bubble text. Confirming a forward switches straight to the target session and immediately submits the merged message to run the agent.
+- Switch models directly from the composer toolbar. A new model selector beside the Forward button opens upward to list configured providers and their models, stays in sync with the right-dock LLM panel (with a shortcut to open it), and applies the chosen model starting on the very next message.
+
 ## 1.2.9
 
 - Compacting a long conversation is no longer reported as a failure just because it takes a while. The client used to stop waiting after two minutes and say nothing had been folded, even when the run was still working and finished a minute later; it now waits long enough, and when it does give up it checks what actually happened before saying anything.

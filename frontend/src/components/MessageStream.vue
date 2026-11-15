@@ -1,6 +1,6 @@
 <template>
       <div class="stream-body" id="streamBody">
-        <div class="stream-inner stagger" id="streamInner" @click="onStreamClick">
+        <div class="stream-inner stagger" id="streamInner" :class="{ 'select-mode': forwardState.active }" @click="onStreamClick">
           <div v-if="!stream.length" class="stream-empty">
             <b>No transcript yet</b>
             <span>Send a message to start a session.</span>
@@ -22,6 +22,28 @@
               @skip="settle => onClarifySkip(item, settle)"
             />
             <StreamMessage v-else-if="item.blocks" :item="item" />
+            <div
+              v-else-if="item.kind === 'message' || item.kind === 'summary'"
+              class="msg-row-wrap"
+              :class="{
+                'is-selectable': forwardState.active && isSelectableItem(item),
+                'is-selected': forwardState.active && isMessageSelected(item.id),
+                'is-user-row': item.className.includes('user'),
+                'is-summary-row': item.kind === 'summary'
+              }"
+              @click.capture="onRowCaptureClick(item, $event)"
+            >
+              <span
+                v-if="forwardState.active && isSelectableItem(item)"
+                class="fwd-check"
+                :class="{ checked: isMessageSelected(item.id) }"
+                aria-hidden="true"
+              >
+                <svg v-if="isMessageSelected(item.id)" width="10" height="10" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="3"><polyline points="20 6 9 17 4 12"/></svg>
+              </span>
+              <ForwardedMessageCard v-if="item.forwarded" :item="item" />
+              <div v-else :class="item.className" v-bind="item.attrs" v-html="item.innerHTML"></div>
+            </div>
             <div v-else :class="item.className" v-bind="item.attrs" v-html="item.innerHTML"></div>
           </template>
         </div>
@@ -33,8 +55,10 @@ import { computed } from 'vue'
 /* The jump button is its own component: it observes the scroll surface owned by
    this one, and keeping it separate stops every new row from re-rendering it. */
 import { streamState } from '../data/stream'
+import { forwardState, isSelectableItem, isMessageSelected, toggleSelectMessage } from '../data/forward'
 import { toggleCompact, respondClarify, skipClarify, copyMessage, deleteMessage, openExternalUrl, toast } from '../data/wire'
 import StreamMessage from './StreamMessage.vue'
+import ForwardedMessageCard from './ForwardedMessageCard.vue'
 import CompactDivider from './CompactDivider.vue'
 import ClarifyCard from './ClarifyCard.vue'
 import type { StreamItem } from '../data/stream'
@@ -85,6 +109,13 @@ function onStreamClick(ev: MouseEvent) {
     return
   }
   deleteMessage(id)
+}
+
+function onRowCaptureClick(item: StreamItem, ev: MouseEvent) {
+  if (!forwardState.active || !isSelectableItem(item)) return
+  ev.preventDefault()
+  ev.stopPropagation()
+  toggleSelectMessage(item.id)
 }
 
 function onClarifySkip(item: StreamItem, settle: (ok: boolean) => void) {

@@ -168,7 +168,9 @@ watch(
     }
   }
 )
-import { permissions, plan, sessions, sessionState, projects, setCatalog, catalog, bucketFor, type Session, type SessionGroup } from './store'
+import { permissions, plan, sessions, sessionState, projects, setCatalog, catalog, bucketFor, selectSession, type Session, type SessionGroup } from './store'
+import { forwardState, exitForwardMode } from './forward'
+import { parseForwardedPayload } from './forwarded'
 import { usage, files, mcp, ledger, context, llm, notes, pairing, search, image, isOpenCodeProvider, isProviderReady, type BillRow, type ClarifyQuestion, type ClarifyAnswer, type LlmProvider } from './panels'
 import type { StreamItem } from './stream'
 import { renderUserBubble, nowClock, nowStamp, clockOf, escapeHtml, type AttachmentView, type ToolCallView, type ToolState } from './render'
@@ -188,6 +190,29 @@ function stampNow(): string {
   const d = new Date()
   const p = (n: number) => String(n).padStart(2, '0')
   return `${d.getFullYear()}-${p(d.getMonth() + 1)}-${p(d.getDate())} ${p(d.getHours())}:${p(d.getMinutes())}:${p(d.getSeconds())}`
+}
+
+/** 构造用户消息流条目；若为批量转发消息，则附带结构化 payload 以渲染专用转发卡片。 */
+function makeUserStreamItem(
+  id: string,
+  text: string,
+  attachments: AttachmentView[],
+  time: string,
+  stamp: string,
+  tokens?: number
+): StreamItem {
+  const forwarded = !attachments.length ? parseForwardedPayload(text) ?? undefined : undefined
+  return {
+    id,
+    kind: 'message',
+    className: 'msg user',
+    attrs: {},
+    innerHTML: forwarded ? '' : renderUserBubble(text, attachments, time, tokens, id),
+    plain: text,
+    time,
+    stamp,
+    forwarded
+  }
 }
 
 let pendingUser: string | null = null
@@ -435,15 +460,9 @@ function onEvent(ev: GatewayEvent) {
           }))
         : []
       const rowId = String(p.message_id ?? nextId('user'))
-      streamState.items.push({
-        id: rowId,
-        kind: 'message',
-        className: 'msg user',
-        attrs: {},
-        innerHTML: renderUserBubble(text, attachments, nowClock(), Number(p.tokens) || undefined, rowId),
-        plain: text,
-        stamp: stampNow()
-      })
+      streamState.items.push(
+        makeUserStreamItem(rowId, text, attachments, nowClock(), stampNow(), Number(p.tokens) || undefined)
+      )
       return
     }
 
@@ -572,6 +591,17 @@ function onEvent(ev: GatewayEvent) {
       const title = String(p.title ?? '')
       const row = sessions.find(s => s.id === sid || s.id === sessionState.activeId)
       if (row && title) row.title = title
+      return
+    }
+
+    case 'message.forwarded': {
+      const targetSid = String(p.target_session_id ?? '')
+      const msgId = Number(p.message_id ?? 0)
+      void refreshSessionList()
+      if (targetSid && msgId && msgId !== lastLocalForwardMsgId) {
+        const curSid = streamState.sessionId || sessionState.activeId
+        if (curSid === targetSid) void loadSession(targetSid)
+      }
       return
     }
 
@@ -929,7 +959,7 @@ function buildHistory(messages: Array<Record<string, unknown>>, only?: CompactSe
     if (m.role === 'user') {
       const text = String(m.text ?? '')
       if (!text) return
-      sink.push({ id, kind: 'message', className: 'msg user', attrs: {}, innerHTML: renderUserBubble(text, [], time, undefined, id), plain: text, stamp: String(m.created_at ?? '') })
+      sink.push(makeUserStreamItem(id, text, [], time, String(m.created_at ?? '')))
       return
     }
     if (m.role !== 'assistant') return
@@ -1180,6 +1210,7 @@ function countGrouped(value: unknown): number {
 
 export async function loadSession(sessionId: string): Promise<void> {
   if (!gateway.connected) return
+  exitForwardMode()
   try {
     const result = await gateway.request<{
       session_id?: string
@@ -1522,15 +1553,9 @@ export function sendPrompt(text: string, attachments: WireAttachment[] = []): bo
     size: byteLabel(a.size),
     kind: (a.detail ? 'image' : 'file') as AttachmentView['kind']
   }))
-  streamState.items.push({
-    id: pendingId,
-    kind: 'message',
-    className: 'msg user',
-    attrs: {},
-    innerHTML: renderUserBubble(body, views, nowClock(), undefined, pendingId),
-    plain: body,
-    stamp: stampNow()
-  })
+  streamState.items.push(
+    makeUserStreamItem(pendingId, body, views, nowClock(), stampNow())
+  )
   streamState.streaming = true
   pinTranscript()
   return true
@@ -2303,6 +2328,7 @@ export function deleteProvider(index: number): Promise<boolean> {
       }
       notify('Deleted', p.name + ' removed from the provider config.', 'warn')
       await refreshLlm()
+      if (llm.model) streamState.model = llm.model
       return true
     })
     .catch(e => {
@@ -2364,6 +2390,7 @@ export function switchProvider(index: number, model: string): Promise<boolean> {
         return false
       }
       await refreshLlm()
+      if (llm.model) streamState.model = llm.model
       return true
     })
     .catch(async e => {
@@ -2464,6 +2491,63 @@ export function deleteMessage(itemId: string): void {
       notify('Delete failed', 'The gateway refused to remove this message.', 'err')
       void loadSession(sid)
     })
+}
+
+let lastLocalForwardMsgId = 0
+
+/** 将当前会话选中的消息合并打包，切换至目标会话并立即作为一条消息发送给 Agent。 */
+export async function forwardMessages(targetSessionId: string, messageIds: string[]): Promise<boolean> {
+  const sourceSid = streamState.sessionId || sessionState.activeId
+  const numericIds = messageIds.filter(id => /^\d+$/.test(id)).map(Number)
+  if (!sourceSid || !targetSessionId || !numericIds.length) {
+    notify('Cannot forward', 'Please select valid source messages and a target session.', 'warn')
+    return false
+  }
+  if (!gateway.connected) {
+    notify('Cannot forward', 'Not connected to the gateway.', 'err')
+    return false
+  }
+  if (forwardState.submitting) return false
+  forwardState.submitting = true
+  try {
+    const res = await gateway.request<{
+      ok?: boolean
+      target_session_id?: string
+      forwarded_count?: number
+      content?: string
+    }>('message.forward', {
+      source_session_id: sourceSid,
+      target_session_id: targetSessionId,
+      message_ids: numericIds,
+      prepare_only: true
+    })
+    const content = String(res?.content ?? '').trim()
+    if (!content) {
+      notify('Forward failed', 'No forwardable content in the selected messages.', 'err')
+      return false
+    }
+    const count = Number(res?.forwarded_count ?? numericIds.length)
+    exitForwardMode()
+    selectSession(targetSessionId)
+    await loadSession(targetSessionId)
+    const sent = sendPrompt(content)
+    void refreshSessionList()
+    if (!sent) {
+      notify('Send failed', 'Switched to the target session, but failed to trigger the Agent prompt.', 'err')
+      return false
+    }
+    notify('Forwarded & sent', `Merged and sent ${count} ${count === 1 ? 'message' : 'messages'} to the target session Agent.`, 'ok')
+    return true
+  } catch (e) {
+    notify(
+      'Forward failed',
+      e instanceof Error ? e.message : 'The gateway refused the forward request.',
+      'err'
+    )
+    return false
+  } finally {
+    forwardState.submitting = false
+  }
 }
 
 /** Pulls the file changes for the session on screen.
@@ -2736,7 +2820,7 @@ async function fetchSessions(): Promise<Array<Record<string, unknown>> | null> {
   }
 }
 
-async function refreshSessionList(): Promise<void> {
+export async function refreshSessionList(): Promise<void> {
   sessionState.listState = 'loading'
   const list = await fetchSessions()
   if (list === null) {
@@ -3328,6 +3412,7 @@ export async function switchProject(path: string): Promise<boolean> {
   }
   projects.active = path
   sessionState.projectPath = path
+  exitForwardMode()
   /* The switch already landed. A reload that fails afterwards must not be
      reported as a refusal, or the panel contradicts the gateway. */
   try {

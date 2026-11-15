@@ -289,6 +289,88 @@ class SessionStore:
             raise
         return (cur.lastrowid, msg_uuid)
 
+    def add_forwarded_user_message(self, session_id: str, content: str, msg_uuid: str = "", preview: str = "") -> tuple:
+        """在目标会话原子插入一条转发消息并更新计数与时间戳。"""
+        conn = _get_db()
+        now = time.time()
+        if not msg_uuid:
+            msg_uuid = str(uuid.uuid4())
+        preview_text = (preview or content.strip().splitlines()[0] if content.strip() else "")[:120]
+        try:
+            conn.execute("BEGIN")
+            row = conn.execute(
+                "SELECT COALESCE(MAX(sort_order), -1) + 1 AS n FROM messages WHERE session_id=?",
+                (session_id,),
+            ).fetchone()
+            order = row["n"] if row else 0
+            cur = conn.execute(
+                "INSERT INTO messages (session_id, role, content, msg_uuid, sort_order, created_at) VALUES (?, 'user', ?, ?, ?, ?)",
+                (session_id, content, msg_uuid, order, now),
+            )
+            conn.execute(
+                "UPDATE sessions SET message_count = message_count + 1, updated_at = ?, "
+                "preview = CASE WHEN preview = '' THEN ? ELSE preview END WHERE id=?",
+                (now, preview_text, session_id),
+            )
+            conn.commit()
+            return (cur.lastrowid, msg_uuid)
+        except Exception:
+            conn.rollback()
+            raise
+
+    def get_messages_by_ids(self, session_id: str, message_ids: list) -> tuple[list[dict], dict[str, str]]:
+        """按会话和消息 ID 列表读取原始消息（按 sort_order 升序）及关联工具输出映射。"""
+        clean_ids: list[int] = []
+        seen: set[int] = set()
+        for raw_id in message_ids or []:
+            try:
+                mid = int(raw_id)
+            except (TypeError, ValueError):
+                continue
+            if mid > 0 and mid not in seen:
+                seen.add(mid)
+                clean_ids.append(mid)
+        if not clean_ids:
+            return ([], {})
+
+        conn = _get_db()
+        placeholders = ",".join("?" for _ in clean_ids)
+        rows = conn.execute(
+            f"SELECT id, role, content, reasoning, tool_name, tool_context, tool_call_id, tool_calls, "
+            f"is_compacted, is_compact_summary, interrupted, created_at "
+            f"FROM messages WHERE session_id=? AND id IN ({placeholders}) "
+            f"ORDER BY sort_order ASC, id ASC",
+            [session_id, *clean_ids],
+        ).fetchall()
+
+        tool_rows = conn.execute(
+            "SELECT tool_call_id, content FROM messages WHERE session_id=? AND role='tool' AND tool_call_id!=''",
+            (session_id,),
+        ).fetchall()
+        tool_outputs = {
+            str(r["tool_call_id"]): str(r["content"] or "")
+            for r in tool_rows
+            if r["tool_call_id"]
+        }
+
+        result = []
+        for r in rows:
+            result.append({
+                "message_id": r["id"],
+                "role": r["role"],
+                "content": r["content"] or "",
+                "reasoning": r["reasoning"] or "",
+                "tool_name": r["tool_name"] or "",
+                "tool_context": r["tool_context"] or "",
+                "tool_call_id": r["tool_call_id"] or "",
+                "tool_calls": r["tool_calls"] or "",
+                "is_compacted": bool(r["is_compacted"]),
+                "is_compact_summary": bool(r["is_compact_summary"]),
+                "interrupted": bool(r["interrupted"]),
+                "created_at": r["created_at"],
+            })
+        return (result, tool_outputs)
+
     def add_tool_message(self, session_id: str, tool_name: str, tool_context: str, tool_call_id: str = "", msg_uuid: str = "", output: str = "") -> tuple:
         conn = _get_db()
         now = time.time()
