@@ -998,6 +998,63 @@ def _persist_interrupted_reply(
         return False, None
 
 
+def _resolve_provider_generation_settings(data: dict, active_model: str) -> tuple:
+    """Resolve (reasoning_effort, thinking_enabled, temperature, top_p) for the active model."""
+    reasoning_effort = None
+    thinking_enabled = True
+    temperature = None
+    top_p = None
+    providers_list = data.get("providers") or []
+    if not isinstance(providers_list, list) or not providers_list:
+        return reasoning_effort, thinking_enabled, temperature, top_p
+    try:
+        idx = int(data.get("activeProviderIndex", 0))
+    except (TypeError, ValueError):
+        idx = 0
+    if not (0 <= idx < len(providers_list)):
+        idx = 0
+
+    from agent_core.llm_client import provider_ready
+    prov = providers_list[idx]
+    active_models = [str(m).strip() for m in (prov.get("models") or []) if str(m).strip()]
+    if active_model and not (provider_ready(prov) and active_model in active_models):
+        owner = next(
+            (p for p in providers_list
+             if provider_ready(p) and active_model in [str(m).strip() for m in (p.get("models") or []) if str(m).strip()]),
+            None,
+        )
+        if owner is not None:
+            prov = owner
+
+    re_val = prov.get("reasoning_effort")
+    reasoning_effort = str(re_val).strip() if re_val else None
+    thinking_enabled = prov.get("thinking_enabled") is not False
+
+    mt = prov.get("model_thinking")
+    if active_model and isinstance(mt, dict):
+        m_cfg = mt.get(active_model)
+        if isinstance(m_cfg, dict):
+            m_re = m_cfg.get("reasoning_effort")
+            if m_re:
+                reasoning_effort = str(m_re).strip()
+            if "thinking_enabled" in m_cfg and m_cfg.get("thinking_enabled") is not None:
+                thinking_enabled = m_cfg.get("thinking_enabled") is not False
+
+    temp_val = prov.get("temperature")
+    if temp_val is not None:
+        try:
+            temperature = float(temp_val)
+        except (TypeError, ValueError):
+            logger.debug("[Server] Ignoring invalid temperature: %r", temp_val)
+    tp_val = prov.get("topP")
+    if tp_val is not None:
+        try:
+            top_p = float(tp_val)
+        except (TypeError, ValueError):
+            logger.debug("[Server] Ignoring invalid topP: %r", tp_val)
+    return reasoning_effort, thinking_enabled, temperature, top_p
+
+
 def handle_prompt_submit(
     sid: str,
     text: str,
@@ -1033,21 +1090,9 @@ def handle_prompt_submit(
     top_p = None
     try:
         data = _read_providers()
-        providers_list = data.get("providers", [])
-        idx = data.get("activeProviderIndex", 0)
-        if providers_list and 0 <= idx < len(providers_list):
-            prov = providers_list[idx]
-            re_val = prov.get("reasoning_effort")
-            reasoning_effort = str(re_val).strip() if re_val else None
-            thinking_enabled = prov.get("thinking_enabled") is not False
-            temp_val = prov.get("temperature")
-            if temp_val is not None:
-                try: temperature = float(temp_val)
-                except (TypeError, ValueError): logger.debug("[Server] Ignoring invalid temperature: %r", temp_val)
-            tp_val = prov.get("topP")
-            if tp_val is not None:
-                try: top_p = float(tp_val)
-                except (TypeError, ValueError): logger.debug("[Server] Ignoring invalid topP: %r", tp_val)
+        reasoning_effort, thinking_enabled, temperature, top_p = _resolve_provider_generation_settings(
+            data, str(llm_config.get("model") or "").strip()
+        )
     except Exception as e:
         logger.warning(f"[Server] Failed to load provider generation settings: {e}")
 

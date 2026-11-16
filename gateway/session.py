@@ -494,13 +494,28 @@ class SessionStore:
         conn = _get_db()
         try:
             conn.execute("BEGIN")
-            # 获取当前最大 sort_order
-            row = conn.execute(
-                "SELECT COALESCE(MAX(sort_order), -1) FROM messages WHERE session_id=?",
-                (session_id,)
+            total_row = conn.execute(
+                "SELECT COUNT(*) FROM messages WHERE session_id=?",
+                (session_id,),
             ).fetchone()
-            max_order = row[0] if row else 0
-            cutoff = max(0, max_order - kept_count)
+            total = total_row[0] if total_row else 0
+            if total < 2:
+                conn.rollback()
+                return False
+
+            # Locate the cutoff by actual row rank instead of MAX(sort_order) - kept_count:
+            # delete_message leaves gaps in sort_order, which shifted arithmetic cutoffs
+            # onto or past the kept user message.
+            keep = max(1, min(int(kept_count or 1), total - 1))
+            row = conn.execute(
+                "SELECT sort_order FROM messages WHERE session_id=? "
+                "ORDER BY sort_order DESC, id DESC LIMIT 1 OFFSET ?",
+                (session_id, keep - 1),
+            ).fetchone()
+            if not row:
+                conn.rollback()
+                return False
+            cutoff = row[0] - 1
 
             # Mark every message covered by the new summary. Messages stay in
             # storage for UI/export/search, but context builders skip them.

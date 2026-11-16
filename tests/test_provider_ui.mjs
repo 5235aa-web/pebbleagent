@@ -10,7 +10,13 @@
           tests/test_provider_ui.mjs      (exit 0 = pass)
 */
 import assert from 'node:assert/strict'
-import { isOpenCodeProvider, isProviderReady } from '../frontend/src/data/panels.ts'
+import {
+  isOpenCodeProvider,
+  isProviderReady,
+  resolveModelThinking,
+  getModelThinkingLevel,
+  thinkingShortLabel
+} from '../frontend/src/data/panels.ts'
 
 let passed = 0
 const failures = []
@@ -60,6 +66,25 @@ check('a provider needs both a base url and a model', () => {
   assert.equal(isProviderReady({ baseUrl: 'https://example.com/v1', models: [] }), false)
   assert.equal(isProviderReady({ baseUrl: '   ', models: ['m'] }), false)
   assert.equal(isProviderReady(null), false)
+})
+
+check('per-model thinking falls back to provider defaults', () => {
+  const provider = {
+    reasoningEffort: 'medium',
+    thinkingEnabled: true,
+    modelThinking: {
+      'm-low': { reasoningEffort: 'low', thinkingEnabled: true },
+      'm-off': { reasoningEffort: 'max', thinkingEnabled: false },
+      'm-partial': { thinkingEnabled: false }
+    }
+  }
+  assert.deepEqual(resolveModelThinking(provider, 'm-default'), { thinkingEnabled: true, reasoningEffort: 'medium' })
+  assert.equal(getModelThinkingLevel(provider, 'm-default'), 'medium')
+  assert.equal(getModelThinkingLevel(provider, 'm-low'), 'low')
+  assert.equal(getModelThinkingLevel(provider, 'm-off'), 'off')
+  assert.deepEqual(resolveModelThinking(provider, 'm-partial'), { thinkingEnabled: false, reasoningEffort: 'medium' })
+  assert.equal(thinkingShortLabel('medium'), 'med')
+  assert.equal(thinkingShortLabel('off'), 'off')
 })
 
 console.log()

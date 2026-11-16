@@ -171,7 +171,7 @@ watch(
 import { permissions, plan, sessions, sessionState, projects, setCatalog, catalog, bucketFor, selectSession, type Session, type SessionGroup } from './store'
 import { forwardState, exitForwardMode } from './forward'
 import { parseForwardedPayload } from './forwarded'
-import { usage, files, mcp, ledger, context, llm, notes, pairing, search, image, isOpenCodeProvider, isProviderReady, type BillRow, type ClarifyQuestion, type ClarifyAnswer, type LlmProvider } from './panels'
+import { usage, files, mcp, ledger, context, llm, notes, pairing, search, image, isOpenCodeProvider, isProviderReady, resolveModelThinking, type BillRow, type ClarifyQuestion, type ClarifyAnswer, type LlmProvider, type ModelThinkingConfig, type ThinkingLevel } from './panels'
 import type { StreamItem } from './stream'
 import { renderUserBubble, nowClock, nowStamp, clockOf, escapeHtml, type AttachmentView, type ToolCallView, type ToolState } from './render'
 import { markPreviewChanged, mergePreviewComments, clearComments } from './preview'
@@ -2025,6 +2025,40 @@ function textOf(v: unknown): string {
   return typeof v === 'string' ? v : ''
 }
 
+function modelThinkingFromWire(raw: unknown): Record<string, ModelThinkingConfig> {
+  if (!raw || typeof raw !== 'object' || Array.isArray(raw)) return {}
+  const out: Record<string, ModelThinkingConfig> = {}
+  for (const [k, v] of Object.entries(raw as Record<string, unknown>)) {
+    const model = k.trim()
+    if (!model || !v || typeof v !== 'object' || Array.isArray(v)) continue
+    const cfg = v as Record<string, unknown>
+    const item: ModelThinkingConfig = {}
+    const effort = textOf(cfg.reasoning_effort).trim()
+    if (effort) item.reasoningEffort = effort
+    if (typeof cfg.thinking_enabled === 'boolean') item.thinkingEnabled = cfg.thinking_enabled
+    if (item.reasoningEffort || typeof item.thinkingEnabled === 'boolean') {
+      out[model] = item
+    }
+  }
+  return out
+}
+
+function modelThinkingToWire(mt: Record<string, ModelThinkingConfig> | undefined, models: string[]): Record<string, { reasoning_effort?: string; thinking_enabled?: boolean }> {
+  if (!mt) return {}
+  const allowed = new Set(models)
+  const out: Record<string, { reasoning_effort?: string; thinking_enabled?: boolean }> = {}
+  for (const [m, cfg] of Object.entries(mt)) {
+    if (!allowed.has(m) || !cfg) continue
+    const row: { reasoning_effort?: string; thinking_enabled?: boolean } = {}
+    if (cfg.reasoningEffort) row.reasoning_effort = cfg.reasoningEffort
+    if (typeof cfg.thinkingEnabled === 'boolean') row.thinking_enabled = cfg.thinkingEnabled
+    if (row.reasoning_effort || typeof row.thinking_enabled === 'boolean') {
+      out[m] = row
+    }
+  }
+  return out
+}
+
 /** Reads the agent list and the model stack behind the LLM pane.
 
     The two calls are independent: a failing `agent.list` leaves the provider
@@ -2045,6 +2079,7 @@ function providerFromWire(p: Record<string, unknown>, existing?: LlmProvider): L
     topP: numOf(p.topP, 1),
     reasoningEffort: textOf(p.reasoning_effort) || 'high',
     thinkingEnabled: p.thinking_enabled !== false,
+    modelThinking: modelThinkingFromWire(p.model_thinking),
     extraHeaders: JSON.stringify(
       p.extraHeaders && typeof p.extraHeaders === 'object' ? p.extraHeaders : {},
       null,
@@ -2074,6 +2109,7 @@ function providerEditSnapshot(p: LlmProvider): string {
     topP: p.topP,
     reasoningEffort: p.reasoningEffort,
     thinkingEnabled: p.thinkingEnabled,
+    modelThinking: p.modelThinking,
     extraHeaders: p.extraHeaders,
     sessionHeader: p.sessionHeader,
     reasoningMode: p.reasoningMode,
@@ -2106,12 +2142,18 @@ export async function refreshLlm(): Promise<void> {
 
     const idx = llm.providers.findIndex(p => p.current)
     const active = idx >= 0 ? llm.providers[idx] : llm.providers[0]
+    /* The backend returns the effective model (active provider's fallback
+       included). With no providers at all there is no model to keep; an empty
+       list must clear the header instead of leaving a stale name. */
+    const effectiveModel = provs.length && typeof opts.model === 'string' ? opts.model : ''
+    llm.model = effectiveModel
     if (active) {
+      const resolvedThinking = resolveModelThinking(active, effectiveModel)
       llm.provider = active.name
       llm.temperature = active.temperature
       llm.topP = active.topP
-      llm.reasoningEffort = active.reasoningEffort
-      llm.thinkingEnabled = active.thinkingEnabled
+      llm.reasoningEffort = resolvedThinking.reasoningEffort
+      llm.thinkingEnabled = resolvedThinking.thinkingEnabled
       llm.reasoningMode = active.reasoningMode
       llm.maxEffort = active.maxEffort
       llm.sessionHeader = active.sessionHeader
@@ -2130,10 +2172,6 @@ export async function refreshLlm(): Promise<void> {
       llm.extraHeaders = '{}'
       streamState.model = ''
     }
-    /* The backend returns the effective model (active provider's fallback
-       included). With no providers at all there is no model to keep; an empty
-       list must clear the header instead of leaving a stale name. */
-    llm.model = provs.length && typeof opts.model === 'string' ? opts.model : ''
     if (typeof opts.currency === 'string' && opts.currency) llm.currency = opts.currency
     if (opts.pricing && typeof opts.pricing === 'object') llm.pricing = opts.pricing as typeof llm.pricing
     llm.loaded = true
@@ -2164,11 +2202,90 @@ export function switchModel(model: string): Promise<boolean> {
       }
       llm.model = model
       streamState.model = model
+      const active = llm.providers.find(p => p.current) ?? llm.providers[0]
+      if (active) {
+        const resolved = resolveModelThinking(active, model)
+        llm.reasoningEffort = resolved.reasoningEffort
+        llm.thinkingEnabled = resolved.thinkingEnabled
+      }
       return true
     })
     .catch(e => {
       notify('Switch failed', e instanceof Error ? e.message : 'The gateway refused the model switch.', 'err')
       void refreshLlm()
+      return false
+    })
+}
+
+/** Updates thinking settings for a specific model on a provider card. */
+export function setModelThinking(
+  index: number,
+  model: string,
+  patch: ThinkingLevel | { thinkingEnabled?: boolean; reasoningEffort?: string }
+): Promise<boolean> {
+  if (!gateway.connected) return Promise.resolve(false)
+  const p = llm.providers[index]
+  if (!p || !model) {
+    notify('Settings not saved', 'That provider or model no longer exists.', 'err')
+    return Promise.resolve(false)
+  }
+
+  const prevMap = { ...p.modelThinking }
+  const prevEntry = p.modelThinking[model] ? { ...p.modelThinking[model] } : undefined
+  const prevLlmEffort = llm.reasoningEffort
+  const prevLlmEnabled = llm.thinkingEnabled
+
+  const resolvedPatch: { thinkingEnabled?: boolean; reasoningEffort?: string } =
+    typeof patch === 'string'
+      ? patch === 'off'
+        ? { thinkingEnabled: false }
+        : { thinkingEnabled: true, reasoningEffort: patch }
+      : patch
+
+  const nextEntry: ModelThinkingConfig = { ...(prevEntry ?? {}) }
+  if (typeof resolvedPatch.thinkingEnabled === 'boolean') {
+    nextEntry.thinkingEnabled = resolvedPatch.thinkingEnabled
+  }
+  if (resolvedPatch.reasoningEffort) {
+    nextEntry.reasoningEffort = resolvedPatch.reasoningEffort
+  }
+
+  p.modelThinking = { ...p.modelThinking, [model]: nextEntry }
+  const isActiveTarget = p.current && llm.model === model
+  if (isActiveTarget) {
+    const resolved = resolveModelThinking(p, model)
+    llm.reasoningEffort = resolved.reasoningEffort
+    llm.thinkingEnabled = resolved.thinkingEnabled
+  }
+
+  const payload: Record<string, unknown> = { index, model }
+  if (typeof resolvedPatch.thinkingEnabled === 'boolean') {
+    payload.thinking_enabled = resolvedPatch.thinkingEnabled
+  }
+  if (resolvedPatch.reasoningEffort) {
+    payload.reasoning_effort = resolvedPatch.reasoningEffort
+  }
+
+  return gateway.request<{ ok?: boolean; error?: string }>('model.params.set', payload)
+    .then(res => {
+      if (res?.ok === false) {
+        p.modelThinking = prevMap
+        if (isActiveTarget) {
+          llm.reasoningEffort = prevLlmEffort
+          llm.thinkingEnabled = prevLlmEnabled
+        }
+        notify('Settings not saved', res.error || 'The gateway refused the thinking change.', 'err')
+        return false
+      }
+      return true
+    })
+    .catch(e => {
+      p.modelThinking = prevMap
+      if (isActiveTarget) {
+        llm.reasoningEffort = prevLlmEffort
+        llm.thinkingEnabled = prevLlmEnabled
+      }
+      notify('Settings not saved', e instanceof Error ? e.message : 'The gateway refused the thinking change.', 'err')
       return false
     })
 }
@@ -2279,6 +2396,7 @@ export function saveProvider(index: number): Promise<boolean> {
       topP: p.topP,
       reasoning_effort: p.reasoningEffort,
       thinking_enabled: p.thinkingEnabled,
+      model_thinking: modelThinkingToWire(p.modelThinking, models),
       ...shaping
     }
   }).then(async res => {

@@ -36,7 +36,7 @@
 
 <script setup lang="ts">
 import { computed, nextTick, onBeforeUnmount, onMounted, ref, watch } from 'vue'
-import { streamState } from '../data/stream'
+import { streamRowEl, streamState } from '../data/stream'
 import { dateOf } from '../data/render'
 import type { StreamItem } from '../data/stream'
 
@@ -107,16 +107,8 @@ function bodyEl(): HTMLElement | null {
   return document.getElementById('streamBody')
 }
 
-/* The row anchor resolves by position: every item renders exactly one root node
-   inside `#streamInner` in item order, so the child at the item's index is the
-   row without threading an attribute through three child components. */
-function rowEl(index: number): HTMLElement | null {
-  const inner = document.getElementById('streamInner')
-  return (inner?.children[index] as HTMLElement | undefined) ?? null
-}
-
 function jumpTo(mark: Mark): void {
-  const el = rowEl(mark.index)
+  const el = streamRowEl(mark.index)
   if (!el) return
   el.scrollIntoView({ behavior: 'smooth', block: 'center' })
 }
@@ -134,7 +126,7 @@ function syncActive(): void {
   const line = body.getBoundingClientRect().top
   let current = marks.value[0].index
   for (const mark of marks.value) {
-    const el = rowEl(mark.index)
+    const el = streamRowEl(mark.index)
     if (!el) continue
     if (el.getBoundingClientRect().bottom > line) { current = mark.index; break }
     current = mark.index

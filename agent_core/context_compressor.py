@@ -984,24 +984,19 @@ def is_prompt_too_long_error(error: Any) -> Tuple[bool, Optional[int], Optional[
 # 核心压缩函数
 # ============================================================================
 
-# How much of the final turn survives a compaction. The unit is a whole turn,
-# not a message count: one request plus its assistants and tool calls stays
-# together, capped so a turn that ran fifty tools cannot swallow the context.
-MAX_KEPT_TURN_MESSAGES = 20
-
-
 def _trailing_turn(dialog_messages: List[Message]) -> List[Message]:
     """Return the last complete turn: newest user message through the end.
 
     What survives compaction should be one intact unit of work. Slicing by a raw
     message count breaks that unit in tool-heavy sessions, where ninety percent of
-    the rows are tool results and "keep the newest two" keeps two shell echoes.
+    the rows are tool results and a fixed tail cap drops the user prompt at the
+    head of the turn while leaving trailing tool echoes and the assistant reply.
     """
     if not dialog_messages:
         return []
     start = 0
     for i in range(len(dialog_messages) - 1, -1, -1):
-        if dialog_messages[i].role == "user":
+        if dialog_messages[i].role == "user" and not dialog_messages[i].is_compact_summary:
             start = i
             break
     kept = dialog_messages[start:]
@@ -1010,8 +1005,6 @@ def _trailing_turn(dialog_messages: List[Message]) -> List[Message]:
     # collapsing a single-turn conversation down to its last tool echo.
     if len(kept) >= len(dialog_messages):
         kept = dialog_messages[1:]
-    if len(kept) > MAX_KEPT_TURN_MESSAGES:
-        kept = kept[-MAX_KEPT_TURN_MESSAGES:]
     return kept
 
 

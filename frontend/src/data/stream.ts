@@ -75,3 +75,27 @@ export function clearStream() {
   streamState.items.splice(0, streamState.items.length)
   streamState.streaming = false
 }
+
+/**
+ * Resolves the visible layout box for the transcript item at `index`.
+ * Forward-selectable rows wrap their bubble in `.msg-row-wrap`, which uses
+ * `display: contents` outside select mode and has no box for scrollIntoView
+ * or getBoundingClientRect.
+ */
+export function streamRowEl(index: number): HTMLElement | null {
+  const inner = document.getElementById('streamInner')
+  let el = (inner?.children[index] as HTMLElement | undefined) ?? null
+  while (el && window.getComputedStyle(el).display === 'contents') {
+    let next: HTMLElement | null = null
+    for (let i = el.children.length - 1; i >= 0; i--) {
+      const child = el.children[i] as HTMLElement
+      if (!child.classList.contains('fwd-check')) {
+        next = child
+        break
+      }
+    }
+    if (!next) return el
+    el = next
+  }
+  return el
+}

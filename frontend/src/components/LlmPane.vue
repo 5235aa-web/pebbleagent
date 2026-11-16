@@ -84,7 +84,7 @@
           </div>
 
           <div class="lm-sec">
-            <div class="lm-h">reasoning<span>effort</span></div>
+            <div class="lm-h">reasoning<span>{{ reasoningScopeLabel }}</span></div>
             <div class="lm-steps" id="lmSteps">
               <button
                 v-for="step in EFFORTS"
@@ -150,8 +150,8 @@
 
 <script setup lang="ts">
 import { computed, ref, watch } from 'vue'
-import { llm, isOpenCodeProvider, isProviderReady, type LlmProvider } from '../data/panels'
-import { switchAgent, switchModel, setModelParams, saveProvider, deleteProvider, addProvider, switchProvider } from '../data/wire'
+import { llm, isOpenCodeProvider, isProviderReady, resolveModelThinking, type LlmProvider } from '../data/panels'
+import { switchAgent, switchModel, setModelParams, setModelThinking, saveProvider, deleteProvider, addProvider, switchProvider } from '../data/wire'
 import { askConfirm } from '../data/confirm'
 
 const EFFORTS = [
@@ -219,8 +219,28 @@ const selectedTopP = computed({
   get: () => selectedProvider.value?.topP ?? 1,
   set: v => { const p = selectedProvider.value; if (p) { p.topP = v; markDirty() } }
 })
-const selectedReasoningEffort = computed(() => selectedProvider.value?.reasoningEffort ?? 'high')
-const selectedThinkingEnabled = computed(() => selectedProvider.value?.thinkingEnabled !== false)
+const activeScopedModel = computed(() => {
+  const p = selectedProvider.value
+  if (!p || !isActiveSelection.value || !llm.model) return ''
+  return p.models.includes(llm.model) ? llm.model : ''
+})
+const reasoningScopeLabel = computed(() => activeScopedModel.value || 'effort')
+const selectedReasoningEffort = computed(() => {
+  const p = selectedProvider.value
+  if (!p) return 'high'
+  if (activeScopedModel.value) {
+    return resolveModelThinking(p, activeScopedModel.value).reasoningEffort
+  }
+  return p.reasoningEffort ?? 'high'
+})
+const selectedThinkingEnabled = computed(() => {
+  const p = selectedProvider.value
+  if (!p) return true
+  if (activeScopedModel.value) {
+    return resolveModelThinking(p, activeScopedModel.value).thinkingEnabled
+  }
+  return p.thinkingEnabled !== false
+})
 const selectedSessionHeader = computed({
   get: () => selectedProvider.value?.sessionHeader ?? '',
   set: v => { const p = selectedProvider.value; if (p) { p.sessionHeader = v; markDirty() } }
@@ -242,6 +262,10 @@ function isActiveModel(model: string): boolean {
 function pickEffort(key: string) {
   const p = selectedProvider.value
   if (!p) return
+  if (activeScopedModel.value) {
+    void setModelThinking(effectiveSelectedIndex.value, activeScopedModel.value, { reasoningEffort: key })
+    return
+  }
   p.reasoningEffort = key
   p.dirty = true
   void setModelParams(effectiveSelectedIndex.value)
@@ -250,6 +274,12 @@ function pickEffort(key: string) {
 function toggleThinking() {
   const p = selectedProvider.value
   if (!p) return
+  if (activeScopedModel.value) {
+    void setModelThinking(effectiveSelectedIndex.value, activeScopedModel.value, {
+      thinkingEnabled: !selectedThinkingEnabled.value
+    })
+    return
+  }
   p.thinkingEnabled = !p.thinkingEnabled
   p.dirty = true
   void setModelParams(effectiveSelectedIndex.value)

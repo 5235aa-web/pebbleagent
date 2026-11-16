@@ -9,7 +9,51 @@ from agent_core.llm_client import is_opencode_provider, provider_ready
 logger = logging.getLogger(__name__)
 
 _SHAPING_KEYS = ("extraHeaders", "sessionHeader", "reasoningMode", "maxEffort")
+_VALID_EFFORTS = ("low", "medium", "high", "max")
 _BASE_URL_RE = re.compile(r"^https?://", re.IGNORECASE)
+
+
+def _normalize_model_thinking(srv, raw_map, allowed_models=None) -> dict:
+    """Validate and normalize per-model thinking overrides on a provider."""
+    if not isinstance(raw_map, dict):
+        return {}
+    allowed = set(allowed_models) if allowed_models is not None else None
+    out: dict = {}
+    for raw_model, raw_cfg in raw_map.items():
+        model = str(raw_model or "").strip()
+        if not model or (allowed is not None and model not in allowed):
+            continue
+        if not isinstance(raw_cfg, dict):
+            continue
+        entry: dict = {}
+        effort = str(raw_cfg.get("reasoning_effort") or "").strip()
+        if effort in _VALID_EFFORTS:
+            entry["reasoning_effort"] = effort
+        if "thinking_enabled" in raw_cfg and raw_cfg.get("thinking_enabled") is not None:
+            enabled = srv._bool(raw_cfg.get("thinking_enabled"))
+            if enabled is not None:
+                entry["thinking_enabled"] = enabled
+        if entry:
+            out[model] = entry
+    return out
+
+
+def resolve_model_thinking(provider: dict | None, model: str) -> tuple[bool, str | None]:
+    """Resolve effective (thinking_enabled, reasoning_effort) for a provider + model."""
+    prov = provider if isinstance(provider, dict) else {}
+    re_val = prov.get("reasoning_effort")
+    effort = str(re_val).strip() if re_val else None
+    enabled = prov.get("thinking_enabled") is not False
+    mt = prov.get("model_thinking")
+    if model and isinstance(mt, dict):
+        entry = mt.get(model)
+        if isinstance(entry, dict):
+            m_re = entry.get("reasoning_effort")
+            if m_re:
+                effort = str(m_re).strip()
+            if "thinking_enabled" in entry and entry.get("thinking_enabled") is not None:
+                enabled = entry.get("thinking_enabled") is not False
+    return enabled, effort
 
 
 def _ok(rid, **extra):
@@ -203,10 +247,11 @@ def handle(ctx, method):
         providers_out = []
         for i, p in enumerate(providers_raw):
             opencode = is_opencode_provider(p.get("provider"))
+            models_list = _models(p)
             providers_out.append({
                 "name": p.get("provider", f"Provider {i}"),
                 "slug": p.get("id", f"p{i}"),
-                "models": _models(p),
+                "models": models_list,
                 "authenticated": bool(p.get("apiKey")),
                 "is_current": i == effective_idx,
                 "ready": provider_ready(p),
@@ -216,6 +261,7 @@ def handle(ctx, method):
                 "topP": p.get("topP"),
                 "reasoning_effort": p.get("reasoning_effort"),
                 "thinking_enabled": p.get("thinking_enabled") is not False,
+                "model_thinking": _normalize_model_thinking(srv, p.get("model_thinking"), models_list),
                 "extraHeaders": (p.get("extraHeaders") or {}) if opencode else {},
                 "sessionHeader": (p.get("sessionHeader") or "") if opencode else "",
                 "reasoningMode": (p.get("reasoningMode") or "thinking") if opencode else "thinking",
@@ -319,6 +365,13 @@ def handle(ctx, method):
         if existing:
             merged["id"] = existing.get("id") or parsed["id"]
 
+        raw_mt = provider_data.get("model_thinking") if "model_thinking" in provider_data else existing.get("model_thinking")
+        clean_mt = _normalize_model_thinking(srv, raw_mt, parsed["models"])
+        if clean_mt:
+            merged["model_thinking"] = clean_mt
+        else:
+            merged.pop("model_thinking", None)
+
         # Request shaping is an OpenCode-only feature. Remove it when a card is
         # renamed to another provider so hidden values cannot keep affecting it.
         if is_opencode_provider(parsed["provider"]):
@@ -391,6 +444,7 @@ def handle(ctx, method):
         top_p = params.get("topP")
         reasoning_effort = params.get("reasoning_effort")
         thinking_enabled = srv._bool(params.get("thinking_enabled"))
+        model = str(params.get("model") or "").strip()
         data = srv._read_providers()
         providers = data.get("providers") or []
         if "index" in params and params.get("index") is not None:
@@ -404,14 +458,38 @@ def handle(ctx, method):
             return _err(rid, "provider index out of range")
 
         provider = providers[idx]
-        if temperature is not None:
-            provider["temperature"] = temperature
-        if top_p is not None:
-            provider["topP"] = top_p
-        if reasoning_effort is not None:
-            provider["reasoning_effort"] = reasoning_effort
-        if thinking_enabled is not None:
-            provider["thinking_enabled"] = thinking_enabled
+        if model:
+            models_list = _models(provider)
+            if model not in models_list:
+                return _err(rid, f"model {model!r} does not belong to provider")
+            mt = _normalize_model_thinking(srv, provider.get("model_thinking"), models_list)
+            entry = dict(mt.get(model) or {})
+            if reasoning_effort is not None:
+                effort = str(reasoning_effort).strip()
+                if effort and effort not in _VALID_EFFORTS:
+                    return _err(rid, f"invalid reasoning_effort: {effort!r}")
+                if effort:
+                    entry["reasoning_effort"] = effort
+            if thinking_enabled is not None:
+                entry["thinking_enabled"] = thinking_enabled
+            if entry:
+                mt[model] = entry
+                provider["model_thinking"] = mt
+            else:
+                mt.pop(model, None)
+                if mt:
+                    provider["model_thinking"] = mt
+                else:
+                    provider.pop("model_thinking", None)
+        else:
+            if temperature is not None:
+                provider["temperature"] = temperature
+            if top_p is not None:
+                provider["topP"] = top_p
+            if reasoning_effort is not None:
+                provider["reasoning_effort"] = reasoning_effort
+            if thinking_enabled is not None:
+                provider["thinking_enabled"] = thinking_enabled
         data["providers"] = providers
         srv._write_providers(data)
         return _ok(rid, index=idx)

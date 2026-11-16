@@ -137,6 +137,225 @@
   opacity: 0;
 }
 
+/* ---- collapsible agent process drawer (thinking + tools) ---- */
+
+.proc-wrap {
+  margin: 2px 0 10px;
+}
+
+.proc-bar {
+  display: inline-flex;
+  align-items: center;
+  gap: 7px;
+  max-width: 100%;
+  padding: 2px 0;
+  border: none;
+  border-radius: 4px;
+  background: none;
+  outline: none;
+  text-align: left;
+  cursor: pointer;
+  user-select: none;
+  transition: color .18s var(--ease), opacity .18s var(--ease);
+}
+
+.proc-bar:focus,
+.proc-bar:active {
+  outline: none;
+}
+
+.proc-bar:focus-visible {
+  outline: none;
+  text-decoration: underline;
+  text-decoration-color: var(--accent);
+  text-underline-offset: 4px;
+}
+
+.proc-dot {
+  position: relative;
+  width: 8px;
+  height: 8px;
+  flex: 0 0 auto;
+  display: grid;
+  place-items: center;
+}
+
+.proc-dot i {
+  width: 5px;
+  height: 5px;
+  border-radius: 50%;
+  background: var(--faint);
+  opacity: .75;
+  transition: background .2s var(--ease), box-shadow .2s var(--ease), opacity .2s var(--ease);
+}
+
+.proc-bar:hover .proc-dot i,
+.proc-bar.open .proc-dot i {
+  background: var(--accent);
+  opacity: 1;
+}
+
+.proc-dot.err i {
+  background: var(--err);
+  opacity: 1;
+}
+
+.proc-dot.live i {
+  background: var(--accent);
+  opacity: 1;
+  box-shadow: 0 0 8px var(--accent);
+  animation: proc-dot-pulse 1.5s var(--ease) infinite;
+}
+
+@keyframes proc-dot-pulse {
+  0%, 100% { transform: scale(.85); opacity: .6; }
+  50% { transform: scale(1.15); opacity: 1; }
+}
+
+.proc-label {
+  flex: 0 0 auto;
+  font-family: var(--font-mono);
+  font-size: 11px;
+  font-weight: 500;
+  line-height: 1.4;
+  color: var(--muted);
+  letter-spacing: -.01em;
+  transition: color .18s var(--ease);
+}
+
+.proc-bar:hover .proc-label,
+.proc-bar.open .proc-label {
+  color: var(--ink-2);
+}
+
+.proc-bar.is-live .proc-label {
+  font-weight: 600;
+  background: linear-gradient(
+    90deg,
+    var(--muted) 0%,
+    var(--ink) 38%,
+    var(--accent) 50%,
+    var(--ink) 62%,
+    var(--muted) 100%
+  );
+  background-size: 220% 100%;
+  -webkit-background-clip: text;
+  background-clip: text;
+  color: transparent;
+  animation: proc-shimmer 1.75s linear infinite;
+}
+
+@keyframes proc-shimmer {
+  0% { background-position: 120% 0; }
+  100% { background-position: -100% 0; }
+}
+
+.proc-detail {
+  flex: 0 1 auto;
+  min-width: 0;
+  max-width: 340px;
+  font-family: var(--font-mono);
+  font-size: 10.5px;
+  line-height: 1.4;
+  color: var(--faint);
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  transition: color .18s var(--ease);
+}
+
+.proc-bar:hover .proc-detail {
+  color: var(--muted);
+}
+
+.proc-detail.err {
+  color: var(--err);
+}
+
+.proc-caret {
+  flex: 0 0 auto;
+  color: var(--faint);
+  opacity: .75;
+  transition: transform .22s var(--ease-spring), color .18s var(--ease), opacity .18s var(--ease);
+}
+
+.proc-bar:hover .proc-caret,
+.proc-bar.open .proc-caret {
+  color: var(--accent);
+  opacity: 1;
+}
+
+.proc-bar.open .proc-caret {
+  transform: rotate(90deg);
+}
+
+.proc-panel {
+  margin: 6px 0 0 3.5px;
+  padding: 4px 0 2px 13px;
+  border-left: 1.5px solid var(--line);
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+}
+
+.proc-panel .thinking {
+  margin-bottom: 8px;
+}
+
+.proc-anchor {
+  display: flex;
+  align-items: center;
+  gap: 7px;
+  margin: 4px 0 8px;
+  min-width: 0;
+}
+
+.pa-rule {
+  height: 1px;
+  width: 14px;
+  flex: 0 0 auto;
+  background: var(--line);
+}
+
+.pa-rule:last-child {
+  flex: 1 1 auto;
+  width: auto;
+  background: linear-gradient(to right, var(--line), transparent);
+}
+
+.pa-tag {
+  flex: 0 0 auto;
+  font-family: var(--font-mono);
+  font-size: 8px;
+  font-weight: 700;
+  letter-spacing: .12em;
+  text-transform: uppercase;
+  color: var(--faint);
+}
+
+.pa-text {
+  flex: 0 1 auto;
+  min-width: 0;
+  max-width: 420px;
+  font-size: 11px;
+  font-style: italic;
+  color: var(--muted);
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .proc-dot.live i,
+  .proc-bar.is-live .proc-label {
+    animation: none;
+  }
+  .proc-bar.is-live .proc-label {
+    background: none;
+    color: var(--accent);
+  }
+}
+
 /* ---- hidden shells must not eat clicks ----
 
    `.stage` fades itself out with opacity 0 + pointer-events: none, but the

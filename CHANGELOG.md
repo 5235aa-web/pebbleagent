@@ -7,6 +7,12 @@ which is what the in-app update sheet shows before installing. Add the section
 before running `npm run release`; the release stops if it is missing, because a
 feed with empty notes tells the user nothing.
 
+## 1.3.1
+
+- Collapsible process status bar on agent replies. Each assistant message now folds all reasoning blocks and tool calls into a single expandable status line under the message header, showing live progress (`Thinking…`, `Calling <tool>…`, `Responding…`) while streaming and summarized counts (plus failure counts) once settled, with lightweight reply anchors preserving interleaved order when expanded. Rendered as clean, borderless inline text without a background box or duration badge.
+- Compaction no longer drops the last user message. Tool-heavy turns with more than 18 tool calls used to slice off the user prompt at the head of the turn via a 20-row tail cap, leaving only the assistant reply below the compaction divider; the full trailing turn from the last user prompt through the end is now kept intact.
+- Compaction cutoffs now survive deleted messages and stay aligned across databases. `SessionStore.insert_compaction_result` locates the boundary by row rank rather than `MAX(sort_order) - kept_count` so `sort_order` gaps no longer swallow the kept user row, and the `agent_chat.db` sync count excludes `tool` rows so both stores retain the same trailing turn.
+
 ## 1.3.0
 
 - Batch forward messages across sessions within the same project. A new Forward button beside the attachment button switches the transcript into multi-select mode for user messages, assistant replies and compaction summary cards, with a batch bar above the composer and a target session picker that supports filtering and creating new sessions.

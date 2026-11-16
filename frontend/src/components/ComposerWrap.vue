@@ -116,10 +116,11 @@
               >
                 <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.7"><rect x="4" y="4" width="16" height="16" rx="3"/><rect x="9" y="9" width="6" height="6" rx="1"/></svg>
                 <span class="mm-btn-label">{{ activeModelName || 'Model' }}</span>
+                <span v-if="activeModelName" class="mm-btn-effort" :class="{ off: activeThinkingLevel === 'off' }">{{ thinkingShortLabel(activeThinkingLevel) }}</span>
                 <svg class="pm-caret" width="8" height="8" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2"><polyline points="6 15 12 9 18 15"/></svg>
               </button>
 
-              <div class="mm-shell" :class="{ open: modelMenuOpen }" :aria-hidden="modelMenuOpen ? 'false' : 'true'">
+              <div ref="modelShellEl" class="mm-shell" :class="{ open: modelMenuOpen }" :aria-hidden="modelMenuOpen ? 'false' : 'true'">
                 <div class="mm-inner">
                   <div class="mm-card">
                     <div class="mm-hdr">
@@ -131,7 +132,7 @@
                       </button>
                     </div>
 
-                    <div class="mm-body" v-if="llm.providers.length">
+                    <div class="mm-body" v-if="llm.providers.length" @scroll="clearHoverPopover">
                       <div
                         v-for="(p, idx) in llm.providers"
                         :key="p.slug || `${p.name}-${idx}`"
@@ -150,13 +151,28 @@
                             v-for="m in p.models"
                             :key="`${idx}-${m}`"
                             class="mm-opt"
-                            :class="{ active: isCurrentModel(idx, m), disabled: !isProviderReady(p) }"
+                            :class="{
+                              active: isCurrentModel(idx, m),
+                              disabled: !isProviderReady(p),
+                              hovered: hoveredTarget?.idx === idx && hoveredTarget?.model === m
+                            }"
                             type="button"
                             :disabled="switchingModel"
                             @click="pickModel(idx, m)"
+                            @mouseenter="onModelHover(idx, m, $event)"
+                            @mouseleave="scheduleHoverClose"
                           >
                             <span class="mm-opt-dot"></span>
-                            <span class="mm-opt-label">{{ m }}</span>
+                            <span class="mm-opt-label" :title="m">{{ m }}</span>
+                            <span
+                              class="mm-opt-effort"
+                              :class="{ off: modelThinkingLevel(p, m) === 'off' }"
+                              :title="`Thinking: ${thinkingShortLabel(modelThinkingLevel(p, m))}`"
+                              @click.stop="toggleHoverPopover(idx, m, $event)"
+                            >
+                              <span>{{ thinkingShortLabel(modelThinkingLevel(p, m)) }}</span>
+                              <svg width="8" height="8" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2"><polyline points="9 6 15 12 9 18"/></svg>
+                            </span>
                             <span class="mm-check">
                               <svg width="9" height="9" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="3.4"><polyline points="20 6 9 17 4 12"/></svg>
                             </span>
@@ -172,11 +188,44 @@
 
                     <div class="mm-hint">
                       <span v-if="activeProvider && activeModelName">
-                        Next message: <b>{{ activeProvider.name }}</b> · <code>{{ activeModelName }}</code>
+                        Next message: <b>{{ activeProvider.name }}</b> · <code>{{ activeModelName }}</code> · <code>{{ thinkingShortLabel(activeThinkingLevel) }}</code>
                       </span>
                       <span v-else>
                         Configure an active provider and model in the right-dock LLM panel
                       </span>
+                    </div>
+                  </div>
+                </div>
+
+                <div
+                  v-if="modelMenuOpen && hoveredTarget"
+                  class="mm-sub"
+                  :class="{ flip: hoveredTarget.flipLeft }"
+                  :style="{ top: hoveredTarget.top + 'px' }"
+                  @mouseenter="cancelHoverClose"
+                  @mouseleave="scheduleHoverClose"
+                >
+                  <div class="mm-sub-card">
+                    <div class="mm-sub-hdr">
+                      <span class="mm-sub-title">Thinking</span>
+                      <span class="mm-sub-model" :title="hoveredTarget.model">{{ hoveredTarget.model }}</span>
+                    </div>
+                    <div class="mm-sub-body" role="menu" :aria-label="`Thinking effort for ${hoveredTarget.model}`">
+                      <button
+                        v-for="lvl in THINKING_LEVELS"
+                        :key="lvl.key"
+                        class="mm-sub-opt"
+                        :class="{ on: hoveredThinkingLevel === lvl.key, off: lvl.key === 'off' }"
+                        type="button"
+                        :disabled="switchingModel"
+                        @click.stop="pickModelEffort(hoveredTarget.idx, hoveredTarget.model, lvl.key)"
+                      >
+                        <span class="mm-sub-bars" :data-lvl="lvl.key"><i></i><i></i><i></i><i></i></span>
+                        <span class="mm-sub-label">{{ lvl.key === 'medium' ? 'medium' : lvl.key }}</span>
+                        <span class="mm-check">
+                          <svg width="9" height="9" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="3.4"><polyline points="20 6 9 17 4 12"/></svg>
+                        </span>
+                      </button>
                     </div>
                   </div>
                 </div>
@@ -232,14 +281,23 @@
 import { computed, onBeforeUnmount, onMounted, ref } from 'vue'
 import { streamState } from '../data/stream'
 import { sessionState } from '../data/store'
-import { llm, isProviderReady } from '../data/panels'
+import {
+  llm,
+  isProviderReady,
+  THINKING_LEVELS,
+  getModelThinkingLevel,
+  thinkingShortLabel,
+  type LlmProvider,
+  type ThinkingLevel
+} from '../data/panels'
 import {
   sendPrompt,
   interruptSession,
   refreshSessionList,
   refreshLlm,
   switchModel,
-  switchProvider
+  switchProvider,
+  setModelThinking
 } from '../data/wire'
 import {
   forwardState,
@@ -281,8 +339,11 @@ const activeDetail = computed<ImageDetail | null>(() => {
 
 const fileInput = ref<HTMLInputElement | null>(null)
 const modelWrapEl = ref<HTMLElement | null>(null)
+const modelShellEl = ref<HTMLElement | null>(null)
 const modelMenuOpen = ref(false)
 const switchingModel = ref(false)
+const hoveredTarget = ref<{ idx: number; model: string; top: number; flipLeft: boolean } | null>(null)
+let hoverCloseTimer = 0
 
 const streaming = computed(() => streamState.streaming)
 const selectedCount = computed(() => forwardState.selectedIds.length)
@@ -296,26 +357,102 @@ const activeProviderIndex = computed(() => {
 })
 const activeProvider = computed(() => llm.providers[activeProviderIndex.value])
 const activeModelName = computed(() => llm.model || '')
+const activeThinkingLevel = computed<ThinkingLevel>(() => {
+  if (!activeProvider.value || !activeModelName.value) return 'high'
+  return getModelThinkingLevel(activeProvider.value, activeModelName.value)
+})
 const modelBtnTip = computed(() => {
   if (activeProvider.value && activeModelName.value) {
-    return `Model: ${activeProvider.value.name} · ${activeModelName.value}`
+    return `Model: ${activeProvider.value.name} · ${activeModelName.value} · thinking: ${thinkingShortLabel(activeThinkingLevel.value)}`
   }
-  return 'Switch model'
+  return 'Switch model & thinking'
 })
+
+const hoveredThinkingLevel = computed<ThinkingLevel>(() => {
+  if (!hoveredTarget.value) return 'high'
+  const p = llm.providers[hoveredTarget.value.idx]
+  return p ? getModelThinkingLevel(p, hoveredTarget.value.model) : 'high'
+})
+
+function modelThinkingLevel(provider: LlmProvider, model: string): ThinkingLevel {
+  return getModelThinkingLevel(provider, model)
+}
 
 function isCurrentModel(idx: number, model: string): boolean {
   return idx === activeProviderIndex.value && model === activeModelName.value
 }
 
+function cancelHoverClose(): void {
+  if (hoverCloseTimer) {
+    window.clearTimeout(hoverCloseTimer)
+    hoverCloseTimer = 0
+  }
+}
+
+function clearHoverPopover(): void {
+  cancelHoverClose()
+  hoveredTarget.value = null
+}
+
+function scheduleHoverClose(): void {
+  cancelHoverClose()
+  hoverCloseTimer = window.setTimeout(() => {
+    hoverCloseTimer = 0
+    hoveredTarget.value = null
+  }, 140)
+}
+
+function positionPopoverForRow(idx: number, model: string, rowEl: HTMLElement | null): void {
+  const shellEl = modelShellEl.value
+  if (!rowEl || !shellEl) return
+  const rowRect = rowEl.getBoundingClientRect()
+  const shellRect = shellEl.getBoundingClientRect()
+  const estHeight = 178
+  const rawTop = rowRect.top - shellRect.top - 4
+  const maxByShell = Math.max(0, shellRect.height - estHeight)
+  const maxByViewport = Math.max(0, window.innerHeight - shellRect.top - estHeight - 10)
+  const top = Math.max(0, Math.min(rawTop, Math.min(maxByShell + 16, maxByViewport)))
+  const flipLeft = shellRect.right + 166 > window.innerWidth && shellRect.left > 170
+  hoveredTarget.value = { idx, model, top, flipLeft }
+}
+
+function onModelHover(idx: number, model: string, e: MouseEvent): void {
+  if (!modelMenuOpen.value) return
+  cancelHoverClose()
+  positionPopoverForRow(idx, model, e.currentTarget as HTMLElement | null)
+}
+
+function toggleHoverPopover(idx: number, model: string, e: MouseEvent): void {
+  if (!modelMenuOpen.value) return
+  cancelHoverClose()
+  if (hoveredTarget.value?.idx === idx && hoveredTarget.value?.model === model) {
+    hoveredTarget.value = null
+    return
+  }
+  const badgeEl = e.currentTarget as HTMLElement | null
+  const rowEl = badgeEl?.closest('.mm-opt') as HTMLElement | null
+  positionPopoverForRow(idx, model, rowEl)
+}
+
+async function pickModelEffort(idx: number, model: string, level: ThinkingLevel): Promise<void> {
+  const provider = llm.providers[idx]
+  if (!provider) return
+  if (getModelThinkingLevel(provider, model) === level) return
+  await setModelThinking(idx, model, level)
+}
+
 function toggleModelMenu(): void {
   const next = !modelMenuOpen.value
   modelMenuOpen.value = next
-  if (next && (!llm.loaded || !llm.providers.length)) {
+  if (!next) {
+    clearHoverPopover()
+  } else if (!llm.loaded || !llm.providers.length) {
     void refreshLlm()
   }
 }
 
 function openLlmDock(): void {
+  clearHoverPopover()
   modelMenuOpen.value = false
   const nav = (window as unknown as { __pebbleNav?: { tab?: (name: string) => void } }).__pebbleNav
   nav?.tab?.('llm')
@@ -330,9 +467,11 @@ async function pickModel(idx: number, model: string): Promise<void> {
     return
   }
   if (isCurrentModel(idx, model)) {
+    clearHoverPopover()
     modelMenuOpen.value = false
     return
   }
+  clearHoverPopover()
   modelMenuOpen.value = false
   switchingModel.value = true
   try {
@@ -350,11 +489,13 @@ function onDocClick(e: MouseEvent): void {
   if (!modelMenuOpen.value) return
   const target = e.target as Node | null
   if (target && modelWrapEl.value?.contains(target)) return
+  clearHoverPopover()
   modelMenuOpen.value = false
 }
 
 function onDocKeydown(e: KeyboardEvent): void {
   if (e.key === 'Escape' && modelMenuOpen.value) {
+    clearHoverPopover()
     modelMenuOpen.value = false
   }
 }
@@ -420,6 +561,7 @@ onMounted(() => {
 })
 
 onBeforeUnmount(() => {
+  cancelHoverClose()
   document.removeEventListener('click', onDocClick, true)
   document.removeEventListener('keydown', onDocKeydown)
 })

@@ -271,6 +271,53 @@ def main() -> int:
           read_providers()["providers"][0].get("temperature") is None,
           f"{read_providers()['providers'][0]}")
 
+    # ---- per-model thinking effort via model.params.set + resolve ----
+    providers([
+        {"id": "a", "provider": "deepseek", "apiKey": "ka",
+         "baseUrl": "https://deepseek.example/v1", "models": ["deepseek-flash", "deepseek-pro"],
+         "reasoning_effort": "high", "thinking_enabled": True},
+    ], 0)
+    agent("deepseek-flash")
+    r_m1 = call("model.params.set", {"index": 0, "model": "deepseek-flash",
+                                     "reasoning_effort": "low", "thinking_enabled": True})["result"]
+    r_m2 = call("model.params.set", {"index": 0, "model": "deepseek-pro",
+                                     "reasoning_effort": "max", "thinking_enabled": False})["result"]
+    check("per-model params.set succeeds for both models",
+          r_m1.get("ok") is True and r_m2.get("ok") is True, f"{r_m1} / {r_m2}")
+    saved_p = read_providers()["providers"][0]
+    check("provider-level fallback stays unchanged",
+          saved_p.get("reasoning_effort") == "high" and saved_p.get("thinking_enabled") is True,
+          f"{saved_p}")
+    check("per-model thinking map stores distinct values",
+          saved_p.get("model_thinking") == {
+              "deepseek-flash": {"reasoning_effort": "low", "thinking_enabled": True},
+              "deepseek-pro": {"reasoning_effort": "max", "thinking_enabled": False},
+          },
+          f"{saved_p.get('model_thinking')}")
+    opts_mt = call("model.options")["result"]["providers"][0].get("model_thinking")
+    check("model.options exposes model_thinking",
+          opts_mt == {
+              "deepseek-flash": {"reasoning_effort": "low", "thinking_enabled": True},
+              "deepseek-pro": {"reasoning_effort": "max", "thinking_enabled": False},
+          },
+          f"{opts_mt}")
+    bad_m = call("model.params.set", {"index": 0, "model": "unknown-model", "reasoning_effort": "low"})["result"]
+    check("per-model params.set rejects unknown model", bad_m.get("ok") is False, f"{bad_m}")
+    bad_e = call("model.params.set", {"index": 0, "model": "deepseek-flash", "reasoning_effort": "ultra"})["result"]
+    check("per-model params.set rejects invalid effort", bad_e.get("ok") is False, f"{bad_e}")
+    re_f, te_f, _, _ = srv._resolve_provider_generation_settings(read_providers(), "deepseek-flash")
+    re_p, te_p, _, _ = srv._resolve_provider_generation_settings(read_providers(), "deepseek-pro")
+    check("prompt settings resolve deepseek-flash override", re_f == "low" and te_f is True, f"{re_f}, {te_f}")
+    check("prompt settings resolve deepseek-pro override", re_p == "max" and te_p is False, f"{re_p}, {te_p}")
+    call("model.provider.save", {"index": 0, "provider": {
+        "slug": "a", "name": "deepseek", "apiKey": "ka",
+        "baseUrl": "https://deepseek.example/v1", "models": ["deepseek-flash"],
+    }})
+    saved_after = read_providers()["providers"][0].get("model_thinking")
+    check("provider save preserves kept model and prunes removed model",
+          saved_after == {"deepseek-flash": {"reasoning_effort": "low", "thinking_enabled": True}},
+          f"{saved_after}")
+
     # ---- atomic writes leave no temp files and keep one backup ----
     leftovers = list(pathlib.Path(TMP).glob("*.tmp"))
     check("atomic write leaves no temp files", not leftovers, f"{leftovers}")

@@ -168,6 +168,32 @@ def main() -> int:
     msgs9.append({"role": "assistant", "content": "done"})
     run_case("tool-heavy turn", msgs9, True, 14)
 
+    # --- Scenario 9b: sessions.db tool-heavy turn (> 20 rows) still keeps the user prompt ---
+    # Previously MAX_KEPT_TURN_MESSAGES=20 sliced from the tail and dropped kept[0]
+    # (the user message), leaving only tool rows + assistant below the divider.
+    msgs9b = [
+        {"role": "user", "content": "old request"},
+        {"role": "assistant", "content": "old answer"},
+        {"role": "user", "content": "final user prompt"},
+    ]
+    for i in range(25):
+        msgs9b.append({"role": "tool", "content": "tool %d" % i,
+                       "tool_call_id": "tc%d" % i, "name": "read_file"})
+    msgs9b.append({"role": "assistant", "content": "final assistant answer"})
+    res9b = manual_compress(messages=msgs9b, max_tokens=30000, recent_messages=2,
+                            llm_client=FakeClient())
+    comp9b = res9b.get("compressed_messages", [])
+    check("25-tool turn succeeds", bool(res9b.get("success")))
+    check("25-tool turn keeps all 27 rows (user + 25 tools + assistant)", len(comp9b) == 29,
+          "len=%d" % len(comp9b))
+    check("25-tool turn preserves user prompt after summary",
+          len(comp9b) >= 3 and comp9b[2].get("role") == "user"
+          and comp9b[2].get("content") == "final user prompt",
+          str(comp9b[2] if len(comp9b) >= 3 else None))
+    check("25-tool turn preserves assistant reply at end",
+          len(comp9b) >= 1 and comp9b[-1].get("role") == "assistant"
+          and comp9b[-1].get("content") == "final assistant answer")
+
     # --- Scenario 10: no model means visible failure, never a rule-built shell ---
     print("=== no llm client ===")
     bare_msgs = make_msgs(6)

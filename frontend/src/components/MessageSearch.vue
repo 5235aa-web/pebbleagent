@@ -34,7 +34,7 @@
 
 <script setup lang="ts">
 import { computed, nextTick, onBeforeUnmount, onMounted, ref } from 'vue'
-import { streamState } from '../data/stream'
+import { streamRowEl, streamState } from '../data/stream'
 
 /* Search runs over the transcript already on screen, the way the old shell did
    it: substring match per row, previewed around the hit. It is not a gateway
@@ -126,8 +126,7 @@ function jump(hit: LocalHit): void {
   /* Rows render one root node per item in order, so the index resolves to an
      element without an anchor attribute on every row component. */
   void nextTick().then(() => {
-    const row = document.getElementById('streamInner')?.children[hit.idx] as HTMLElement | undefined
-    row?.scrollIntoView({ behavior: 'smooth', block: 'center' })
+    streamRowEl(hit.idx)?.scrollIntoView({ behavior: 'smooth', block: 'center' })
   })
 }
 

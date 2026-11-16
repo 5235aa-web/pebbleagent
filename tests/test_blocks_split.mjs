@@ -11,7 +11,13 @@
           tests/test_blocks_split.mjs      (exit 0 = pass)
 */
 import assert from 'node:assert/strict'
-import { splitBlocks, LiveBuilder } from '../frontend/src/data/blocks.ts'
+import {
+  splitBlocks,
+  LiveBuilder,
+  proseOnlyBlocks,
+  summarizeAgentProcess,
+  buildProcessTimeline
+} from '../frontend/src/data/blocks.ts'
 
 let passed = 0
 const failures = []
@@ -208,6 +214,64 @@ check('LiveBuilder restarts its block counter after reset', () => {
   lb.reset()
   lb.push('b\n\n')
   assert.equal(lb.blocks[0].id, 'r-m0-t0')
+})
+
+/* ---- process summarization & interleaved prose timeline ---- */
+
+check('summarizeAgentProcess reports no process for pure-prose blocks', () => {
+  const blocks = [{ kind: 'text', id: 't0', html: '<p>Hello</p>' }]
+  const s = summarizeAgentProcess(blocks, false)
+  assert.equal(s.hasProcess, false)
+  assert.equal(proseOnlyBlocks(blocks).length, 1)
+})
+
+check('summarizeAgentProcess reports live thinking and running tool actions', () => {
+  const thinkingLive = [{ kind: 'thinking', id: 'th0', text: 'pondering', live: true }]
+  assert.equal(summarizeAgentProcess(thinkingLive, true).label, 'Thinking…')
+
+  const toolLive = [
+    { kind: 'thinking', id: 'th0', text: 'pondering', live: false },
+    { kind: 'tool', id: 'tl0', call: { name: 'read_file', arg: 'wire.ts', status: 'running' } }
+  ]
+  const sTool = summarizeAgentProcess(toolLive, true)
+  assert.equal(sTool.isLive, true)
+  assert.equal(sTool.label, 'Calling read_file…')
+  assert.equal(sTool.detail, 'wire.ts')
+
+  const proseLive = [
+    { kind: 'thinking', id: 'th0', text: 'pondering', live: false },
+    { kind: 'tool', id: 'tl0', call: { name: 'read_file', arg: 'wire.ts', status: 'completed', durationS: 0.4 } },
+    { kind: 'raw', id: 'r0', paras: ['Done!'], caret: true }
+  ]
+  const sResp = summarizeAgentProcess(proseLive, true)
+  assert.equal(sResp.label, 'Responding…')
+  assert.equal(sResp.detail, 'Thought · 1 tool')
+})
+
+check('summarizeAgentProcess reports settled counts and failures', () => {
+  const settled = [
+    { kind: 'thinking', id: 'th0', text: 'a', live: false },
+    { kind: 'tool', id: 'tl0', call: { name: 'read_file', status: 'completed', durationS: 0.5 } },
+    { kind: 'tool', id: 'tl1', call: { name: 'execute_shell', status: 'failed', durationS: 1.25 } }
+  ]
+  const s = summarizeAgentProcess(settled, false)
+  assert.equal(s.hasProcess, true)
+  assert.equal(s.isLive, false)
+  assert.equal(s.label, 'Thought · 2 tools')
+  assert.equal(s.detail, '1 failed')
+})
+
+check('buildProcessTimeline inserts reply anchors only for interleaved prose', () => {
+  const blocks = [
+    { kind: 'thinking', id: 'th0', text: 'step 1', live: false },
+    { kind: 'text', id: 'p0', html: '<p>Let me check <code>wire.ts</code> first.</p>' },
+    { kind: 'tool', id: 'tl0', call: { name: 'read_file', status: 'completed' } },
+    { kind: 'text', id: 'p1', html: '<p>Final answer here.</p>' }
+  ]
+  assert.deepEqual(proseOnlyBlocks(blocks).map(b => b.id), ['p0', 'p1'])
+  const timeline = buildProcessTimeline(blocks)
+  assert.deepEqual(timeline.map(e => e.kind), ['block', 'anchor', 'block'])
+  assert.equal(timeline[1].kind === 'anchor' ? timeline[1].preview : '', 'Let me check wire.ts first.')
 })
 
 console.log(`\nRESULT: PASS=${passed} FAIL=${failures.length}`)

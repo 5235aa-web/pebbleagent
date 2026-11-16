@@ -14,7 +14,7 @@
       <span class="tr-dur">{{ dur }}</span>
       <span class="tr-state">{{ stateWord }}</span>
     </div>
-    <div class="tr-body" v-if="inner"><div><div class="tr-out" v-html="inner"></div></div></div>
+    <div class="tr-body" v-if="open && inner"><div><div class="tr-out" v-html="inner"></div></div></div>
   </div>
 </template>
 

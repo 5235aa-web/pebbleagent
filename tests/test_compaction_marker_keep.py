@@ -69,6 +69,34 @@ def main() -> int:
     check("old summary compacted", "summary one" not in texts2, str(texts2))
     check("new summary present", "summary two" in texts2, str(texts2))
 
+    # SessionStore: sort_order gaps from delete_message must not swallow the kept user row
+    from gateway.session import SessionStore
+    store = SessionStore()
+    sess = store.create(title="gap test")
+    sid = sess["session_id"]
+    store.add_user_message(sid, "u1")
+    store.add_assistant_message(sid, "a1")
+    store.add_user_message(sid, "u2")
+    gap_id, _ = store.add_tool_message(sid, "read_file", "foo")
+    store.add_assistant_message(sid, "a2")
+    store.delete_message(sid, gap_id)  # leaves sort_order gap between u2 (2) and a2 (4)
+
+    ok_s = store.insert_compaction_result(
+        sid,
+        {"content": "[COMPACT_BOUNDARY:sess1]"},
+        {"content": "session summary"},
+        kept_count=2,
+    )
+    check("SessionStore insert_compaction_result returns true", ok_s)
+    ctx = store.get_messages_for_context(sid)
+    ctx_roles_texts = [(m.get("role"), m.get("text")) for m in ctx]
+    check("SessionStore keeps both u2 and a2 across sort_order gap",
+          ("user", "u2") in ctx_roles_texts and ("assistant", "a2") in ctx_roles_texts,
+          str(ctx_roles_texts))
+    check("SessionStore compacted u1 and a1",
+          ("user", "u1") not in ctx_roles_texts and ("assistant", "a1") not in ctx_roles_texts,
+          str(ctx_roles_texts))
+
     print()
     if failed:
         print("FAILED: %d checks" % failed)

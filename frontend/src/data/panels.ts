@@ -344,6 +344,21 @@ export interface LlmAgent {
   current: boolean
 }
 
+export type ThinkingLevel = 'off' | 'low' | 'medium' | 'high' | 'max'
+
+export const THINKING_LEVELS: ReadonlyArray<{ key: ThinkingLevel; label: string }> = [
+  { key: 'off', label: 'off' },
+  { key: 'low', label: 'low' },
+  { key: 'medium', label: 'med' },
+  { key: 'high', label: 'high' },
+  { key: 'max', label: 'max' }
+]
+
+export interface ModelThinkingConfig {
+  reasoningEffort?: string
+  thinkingEnabled?: boolean
+}
+
 export interface LlmProvider {
   name: string
   slug: string
@@ -357,6 +372,7 @@ export interface LlmProvider {
   topP: number
   reasoningEffort: string
   thinkingEnabled: boolean
+  modelThinking: Record<string, ModelThinkingConfig>
   extraHeaders: string
   sessionHeader: string
   reasoningMode: string
@@ -365,6 +381,37 @@ export interface LlmProvider {
       the object instead of replacing it, so a reconnect cannot discard a
       half-typed key or base url. */
   dirty: boolean
+}
+
+/** Resolve effective thinking settings for a specific model under a provider. */
+export function resolveModelThinking(
+  provider: Pick<LlmProvider, 'reasoningEffort' | 'thinkingEnabled' | 'modelThinking'> | null | undefined,
+  model: string
+): { thinkingEnabled: boolean; reasoningEffort: string } {
+  const baseEffort = String(provider?.reasoningEffort || '').trim() || 'high'
+  const baseEnabled = provider ? provider.thinkingEnabled !== false : true
+  const override = model && provider?.modelThinking ? provider.modelThinking[model] : undefined
+  if (!override) return { thinkingEnabled: baseEnabled, reasoningEffort: baseEffort }
+  const effort = String(override.reasoningEffort || '').trim() || baseEffort
+  const enabled = typeof override.thinkingEnabled === 'boolean' ? override.thinkingEnabled : baseEnabled
+  return { thinkingEnabled: enabled, reasoningEffort: effort }
+}
+
+/** Map a provider + model's effective thinking settings to the 5-state level. */
+export function getModelThinkingLevel(
+  provider: Pick<LlmProvider, 'reasoningEffort' | 'thinkingEnabled' | 'modelThinking'> | null | undefined,
+  model: string
+): ThinkingLevel {
+  const { thinkingEnabled, reasoningEffort } = resolveModelThinking(provider, model)
+  if (!thinkingEnabled) return 'off'
+  if (reasoningEffort === 'low' || reasoningEffort === 'medium' || reasoningEffort === 'high' || reasoningEffort === 'max') {
+    return reasoningEffort
+  }
+  return 'high'
+}
+
+export function thinkingShortLabel(level: ThinkingLevel): string {
+  return level === 'medium' ? 'med' : level
 }
 
 export const llm = reactive({

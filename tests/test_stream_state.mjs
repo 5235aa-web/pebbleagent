@@ -16,7 +16,8 @@ import {
   streamState,
   replaceStream,
   appendStream,
-  clearStream
+  clearStream,
+  streamRowEl
 } from '../frontend/src/data/stream.ts'
 
 let passed = 0
@@ -136,6 +137,66 @@ check('clearStream settles a live row', () => {
   streamState.streaming = true
   clearStream()
   assert.equal(streamState.streaming, false)
+})
+
+/* ---- streamRowEl ---- */
+
+function fakeEl(display, classes = [], children = []) {
+  return {
+    display,
+    classList: { contains: name => classes.includes(name) },
+    children,
+    firstElementChild: children[0] ?? null
+  }
+}
+
+function withFakeDom(innerChildren, fn) {
+  const prevDoc = globalThis.document
+  const prevWin = globalThis.window
+  globalThis.document = {
+    getElementById: id => (id === 'streamInner' ? { children: innerChildren } : null)
+  }
+  globalThis.window = {
+    getComputedStyle: el => ({ display: el.display })
+  }
+  try {
+    fn()
+  } finally {
+    globalThis.document = prevDoc
+    globalThis.window = prevWin
+  }
+}
+
+check('streamRowEl returns the row directly when it has a layout box', () => {
+  const agentRow = fakeEl('flex', ['msg', 'agent'])
+  withFakeDom([agentRow], () => {
+    assert.equal(streamRowEl(0), agentRow)
+  })
+})
+
+check('streamRowEl unwraps display:contents wrapper to the inner message box', () => {
+  const bubble = fakeEl('flex', ['msg', 'user'])
+  const wrap = fakeEl('contents', ['msg-row-wrap', 'is-user-row'], [bubble])
+  withFakeDom([wrap], () => {
+    assert.equal(streamRowEl(0), bubble)
+  })
+})
+
+check('streamRowEl skips fwd-check and returns wrapper when selectable', () => {
+  const checkBox = fakeEl('inline-grid', ['fwd-check'])
+  const bubble = fakeEl('flex', ['msg', 'user'])
+  const contentsWrap = fakeEl('contents', ['msg-row-wrap'], [checkBox, bubble])
+  const flexWrap = fakeEl('flex', ['msg-row-wrap', 'is-selectable'], [checkBox, bubble])
+  withFakeDom([contentsWrap, flexWrap], () => {
+    assert.equal(streamRowEl(0), bubble)
+    assert.equal(streamRowEl(1), flexWrap)
+  })
+})
+
+check('streamRowEl returns null when streamInner or index is missing', () => {
+  withFakeDom([], () => {
+    assert.equal(streamRowEl(0), null)
+  })
 })
 
 console.log(`\nRESULT: PASS=${passed} FAIL=${failures.length}`)

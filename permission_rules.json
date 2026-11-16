@@ -1,5 +1,5 @@
 {
-  "mode": "readonly",
+  "mode": "auto",
   "allow": [
     "read_file",
     "list_directory",

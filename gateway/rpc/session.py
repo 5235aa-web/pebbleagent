@@ -376,10 +376,17 @@ def handle(ctx, method):
                 None
                 )
                 if boundary and summary:
-                    kept_count = max(0, len(compressed) - 2)  # 减去 boundary 和 summary
+                    summary_idx = next(
+                        (i for i, msg in enumerate(compressed) if msg.get("is_compact_summary")),
+                        -1,
+                    )
+                    kept_msgs = compressed[summary_idx + 1:] if summary_idx >= 0 else []
+                    kept_count = len(kept_msgs)
+                    # agent_chat.db only stores user/assistant rows (no tool rows), so
+                    # exclude tool rows when deriving how many rows agent_chat.db should keep.
                     kept_agent = max(1, sum(
-                        1 for msg in compressed
-                        if msg.get("role") != "system"
+                        1 for msg in kept_msgs
+                        if msg.get("role") in ("user", "assistant")
                         and not msg.get("is_compact_summary")
                     ))
 
