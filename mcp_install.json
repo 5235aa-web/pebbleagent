@@ -5,53 +5,35 @@
       "download_url": "https://nodejs.org/dist/v22.12.0/node-v22.12.0-x64.msi",
       "download_label": "Download Node.js 22.12 LTS",
       "description": "Required to run npx-based MCP servers"
-    },
-    "uv": {
-      "check_command": "uvx",
-      "download_url": "https://docs.astral.sh/uv/getting-started/installation/",
-      "download_label": "Install uv (official guide)",
-      "description": "Required to run uvx-based MCP servers (Blender MCP)"
     }
   },
   "servers": {
     "github": {
       "type": "npx",
-      "package": "@modelcontextprotocol/server-github",
+      "package": "@modelcontextprotocol/server-github@2025.4.8",
       "requires": ["node"],
       "description": "GitHub repo/issue/PR operations"
     },
-    "think-tool": {
-      "type": "npx",
-      "package": "@cgize/mcp-think-tool",
-      "requires": ["node"],
-      "description": "Structured reasoning workspace (record/retrieve/clear/analyze thoughts)"
-    },
     "chrome-devtools": {
       "type": "npx",
-      "package": "chrome-devtools-mcp@latest",
+      "package": "chrome-devtools-mcp@1.11.0",
+      "args": ["-y", "chrome-devtools-mcp@1.11.0", "--headless"],
       "requires": ["node", "chrome"],
       "description": "Chrome browser automation"
     },
-    "time": {
-      "type": "npx",
-      "package": "time-mcp",
-      "requires": ["node"],
-      "description": "Time zone & clock tools"
-    },
     "codebase-memory": {
       "type": "download",
-      "url": "https://github.com/DeusData/codebase-memory-mcp/releases/latest",
+      "version": "v0.12.1",
+      "url": "https://github.com/DeusData/codebase-memory-mcp/releases/download/v0.12.1/codebase-memory-mcp-windows-{arch}.zip",
       "install_dir": "~/.pebble/mcp",
       "exe_name": "codebase-memory-mcp.exe",
-      "asset_pattern": "codebase-memory-mcp-windows-{arch}\\.zip$",
+      "asset_pattern": "^codebase-memory-mcp-windows-{arch}\\.zip$",
+      "sha256": {
+        "amd64": "4e4e0f16b45233af5c757a1fcbe3c3b16e9056375b1fbe2ce020b6de75dedcc0",
+        "arm64": "934ab6bd67a76c6ebd9e110d87b7090ffd629919bedaeddabe5a19175038b063"
+      },
       "requires": [],
-      "description": "Codebase memory management (after download, write the exe path into .mcp.json). Note: automatic download requires a sha256 field (release hash) here; without it the download is refused and you can install manually via the 'path' option."
-    },
-    "blender": {
-      "type": "uvx",
-      "package": "mcp-for-blender",
-      "requires": ["uv"],
-      "description": "Blender 3D scene control (requires Blender 3.0+; install the addon via uvx mcp-for-blender install-addon and enable it in Blender)"
+      "description": "Codebase memory management (v0.12.1, sha256-verified; supports online download to a custom directory or manual executable path)"
     }
   }
 }

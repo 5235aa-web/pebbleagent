@@ -144,6 +144,7 @@ export interface McpServer {
   on: boolean
   open: boolean
   state: string
+  error: string
   chips: string[]
   more: number
   /* Every tool the server exposes. `chips` is only the first four, which is
@@ -157,6 +158,9 @@ export interface McpServer {
   /* Declared in mcp_install.json, so the row can offer Install instead of only
      reporting what is missing. */
   installable: boolean
+  installType: string
+  installDir: string
+  prereqLinks: Record<string, { label: string; url: string }>
   /* True only when the server's env carries a credential variable. Drawing the
      token field unconditionally put "paste token" on stdio servers that never
      read one. */
@@ -164,6 +168,7 @@ export interface McpServer {
   /* The env variable the credential belongs in (GITHUB_PERSONAL_ACCESS_TOKEN
      and friends). Writing a fixed MCP_TOKEN handed github a key it never reads. */
   tokenEnv: string
+  tokenConfigured: boolean
   token: string
 }
 

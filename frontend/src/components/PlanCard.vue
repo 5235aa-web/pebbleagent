@@ -1,5 +1,5 @@
 <template>
-      <aside class="plan-card" id="planCard" :aria-hidden="!plan.open">
+      <aside ref="cardEl" class="plan-card" id="planCard" :aria-hidden="!plan.open">
         <span class="plan-fold"></span>
         <span class="plan-glow"></span>
         <header class="plan-head">
@@ -41,9 +41,17 @@
 </template>
 
 <script setup lang="ts">
-import { computed } from 'vue'
+import { computed, ref, watch } from 'vue'
 import { plan, planProgress } from '../data/store'
 import { closePlan } from '../data/wire'
 
+const cardEl = ref<HTMLElement | null>(null)
 const progress = computed(() => planProgress())
+
+watch(() => plan.open, (open) => {
+  if (!open && cardEl.value) {
+    cardEl.value.style.setProperty('--rx', '0deg')
+    cardEl.value.style.setProperty('--ry', '0deg')
+  }
+})
 </script>

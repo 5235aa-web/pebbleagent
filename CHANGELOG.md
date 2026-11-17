@@ -7,6 +7,13 @@ which is what the in-app update sheet shows before installing. Add the section
 before running `npm run release`; the release stops if it is missing, because a
 feed with empty notes tells the user nothing.
 
+## 1.3.3
+
+- Streamlined bundled MCP servers down to three core integrations (`github`, `codebase-memory`, `chrome-devtools`). Removed `time`, `think-tool`, `blender` and the `uv` prerequisite from `.mcp.json` and `mcp_install.json` so fresh installs ship only the active MCP toolset.
+- Complete download, custom path, and token status flow in the MCP panel. Pinned `codebase-memory` (`v0.12.1`) in `mcp_install.json` with per-architecture (`amd64` / `arm64`) SHA-256 verification and direct release download URLs, added `Download` (with configurable install directory defaulting to `~/.pebble/mcp`) and `Set path` (accepting either an `.exe` file or containing folder) controls in `McpPanel.vue`, surfaced missing prerequisite download links (e.g. Node.js 18+) and runtime errors, preserved expanded server rows across refreshes, fixed token configured status (`token_configured`) so saved credentials no longer keep showing `not set`, fixed `installMcpServer` swallowing `ok: false` backend errors silently, and fixed the `UnboundLocalError` in `mcp.install_server` for `npx` / `uvx` entries.
+- Redesigned the right-dock LLM configuration panel (`LlmPane.vue`). Reorganized Agent selection, Provider cards (with `+ New` in the header and `active` / `draft` / `no key` / `unsaved` indicators), and the selected provider workspace into a cleaner, more readable layout with larger inputs, an API key `Show` / `Hide` toggle, auto-expanded credentials for draft or unauthenticated cards, scoped reasoning controls, and an `OpenCode Go` request-shaping card (`Session Header`, `Max Effort`, `Reasoning Mode`, and live-validated `Extra Headers` JSON) that appears only for OpenCode-family providers.
+- Fixed the Command Palette `Toggle task list` close button. Opening the task list from the palette now drives `plan.open` in the reactive store instead of toggling `.plan-open` directly on `.stream`, so clicking the card's `×` button closes it reliably even when the list is empty.
+
 ## 1.3.2
 
 - In-place segmented process status bars on agent replies. Replaced the single top-level process bar and reply-anchor timeline with contiguous `[thinking / tool]` grouping (`groupMessageSegments`), rendering each process run in place before the prose it produced. Only the trailing active segment animates while streaming so earlier settled segments stay quiet, and messages with multiple process segments gain an `Expand all` / `Collapse all` toggle in the header.

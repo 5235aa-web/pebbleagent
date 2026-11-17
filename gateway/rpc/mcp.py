@@ -82,6 +82,18 @@ def _requires_token(env) -> bool:
     return bool(_token_env(env))
 
 
+def _is_secret_configured(env, token_env: str = "") -> bool:
+    """env 里的凭据是否已填写真实值（排除空值和占位符）。"""
+    import re as _re
+    key = token_env or _token_env(env)
+    if not key or not isinstance(env, dict):
+        return False
+    val = env.get(key)
+    if not isinstance(val, str) or not val.strip():
+        return False
+    return not _re.search(r"x{4,}|YOUR_|_HERE|REPLACE_WITH", val)
+
+
 def _prereq_ready(name: str) -> bool:
     """mcp_install.json 的 requires 条目是否已满足。"""
     key = str(name or "").lower()
@@ -188,7 +200,10 @@ def handle(ctx, method):
                     sn = t.server_name or "unknown"
                     server_tools.setdefault(sn, []).append(t.name)
 
-            installable = _installable_server_names(srv)
+            install_info = _install_info(srv)
+            install_servers = install_info.get("servers") or {}
+            install_prereqs = install_info.get("prerequisites") or {}
+            installable = set(install_servers)
             for name, scoped in all_configs.items():
                 raw = getattr(scoped, "config", scoped)
                 # 隐藏无法连接也无法安装的失效配置（如占位符命令）
@@ -205,6 +220,25 @@ def handle(ctx, method):
                 ready, missing = _command_readiness(
                     getattr(raw, "command", None), getattr(raw, "args", None)
                 )
+                raw_env = getattr(raw, "env", None)
+                token_env = _token_env(raw_env)
+                entry_meta = install_servers.get(name) if isinstance(install_servers.get(name), dict) else {}
+                install_type = str(entry_meta.get("type") or "")
+                install_dir = ""
+                if install_type == "download":
+                    cmd_str = str(getattr(raw, "command", "") or "").strip()
+                    if cmd_str and "REPLACE_WITH" not in cmd_str and os.path.isabs(cmd_str):
+                        install_dir = os.path.dirname(cmd_str)
+                    else:
+                        install_dir = os.path.abspath(os.path.expanduser(str(entry_meta.get("install_dir") or "~/.pebble/mcp")))
+                prereq_links = {}
+                for m_key in missing:
+                    p_meta = install_prereqs.get(m_key)
+                    if isinstance(p_meta, dict) and p_meta.get("download_url"):
+                        prereq_links[m_key] = {
+                            "label": str(p_meta.get("download_label") or m_key),
+                            "url": str(p_meta.get("download_url") or ""),
+                        }
                 servers.append({
                     "name": name,
                     "transport": getattr(raw, "type", None) or "stdio",
@@ -217,9 +251,13 @@ def handle(ctx, method):
                     "error": getattr(conn, "error", None) if conn else None,
                     "ready": ready,
                     "missing": missing,
-                    "requires_token": _requires_token(getattr(raw, "env", None)),
-                    "token_env": _token_env(getattr(raw, "env", None)),
+                    "requires_token": bool(token_env),
+                    "token_env": token_env,
+                    "token_configured": _is_secret_configured(raw_env, token_env),
                     "installable": name in installable,
+                    "install_type": install_type,
+                    "install_dir": install_dir,
+                    "prereq_links": prereq_links,
                 })
             tools_list = [
                 {"server": s["name"], "name": tn}
@@ -572,31 +610,33 @@ def handle(ctx, method):
         安全解压到 install_dir → exe 路径写入 ~/.pebble/.mcp.json → 热重连。
         手动模式：参数 path 指定本地 exe 路径（跳过下载）。"""
         server_name = str(params.get("server") or "").strip()
-        manual_path = str(params.get("path") or "").strip()
+        manual_path = str(params.get("path") or "").strip().strip('"').strip("'")
+        install_dir = str(params.get("install_dir") or "").strip().strip('"').strip("'")
         # 1. 读 mcp_install.json 条目
-        install_info = {}
-        for p in [srv._DATA_DIR / "mcp_install.json", srv._PROJECT_ROOT / "mcp_install.json"]:
-            if p.exists():
-                try:
-                    with open(p, "r", encoding="utf-8") as f:
-                        install_info = json.load(f)
-                    break
-                except Exception:
-                    continue
+        install_info = _install_info(srv)
         entry = (install_info.get("servers") or {}).get(server_name)
         if not isinstance(entry, dict):
             return {"id": rid, "error": {"code": -32602, "message": f"server '{server_name}' is not declared in mcp_install.json"}}
 
         entry_type = str(entry.get("type") or "").strip()
+        exe_path = ""
         if entry_type == "download":
-            # 2. 获取 exe 路径（手动或自动）
+            exe_name = str(entry.get("exe_name") or "").strip()
+            # 2. 获取 exe 路径（手动指定文件/目录，或自动下载）
             if manual_path:
-                exe_path = manual_path
-                if not os.path.isfile(exe_path):
-                    return {"id": rid, "error": {"code": -32602, "message": f"file not found: {exe_path}"}}
+                resolved = os.path.abspath(os.path.expandvars(os.path.expanduser(manual_path)))
+                if os.path.isdir(resolved) and exe_name:
+                    candidate = os.path.join(resolved, exe_name)
+                    if os.path.isfile(candidate):
+                        resolved = candidate
+                if not os.path.isfile(resolved):
+                    return {"id": rid, "result": {"ok": False, "error": f"executable not found: {resolved}"}}
+                exe_path = resolved
             else:
                 try:
-                    exe_path = srv._install_download_server(server_name, entry)
+                    exe_path = srv._install_download_server(
+                        server_name, entry, install_dir_override=install_dir
+                    )
                 except Exception as e:
                     logger.error(f"[Server] MCP install failed for '{server_name}': {e}")
                     return {"id": rid, "result": {"ok": False, "error": str(e)}}
@@ -607,7 +647,11 @@ def handle(ctx, method):
             if not package:
                 return {"id": rid, "result": {"ok": False, "error": f"'{server_name}' declares no package"}}
             command = "npx" if entry_type == "npx" else "uvx"
-            args = ["-y", package] if entry_type == "npx" else [package]
+            declared_args = entry.get("args")
+            if isinstance(declared_args, list) and declared_args:
+                args = [str(a) for a in declared_args]
+            else:
+                args = ["-y", package] if entry_type == "npx" else [package]
             ready, missing = _command_readiness(command, args)
             if not ready:
                 hints = {
@@ -621,13 +665,21 @@ def handle(ctx, method):
         else:
             return {"id": rid, "result": {"ok": False,
                                           "error": f"'{server_name}' has an unsupported install type: {entry_type or 'none'}"}}
-        # 3. 合并写入 ~/.pebble/.mcp.json（保留其他服务器）
+        # 3. 合并写入 ~/.pebble/.mcp.json（保留其他服务器，以及当前服务器已保存的 env）
         try:
             user_mcp_path = srv._DATA_DIR / ".mcp.json"
             # Only this entry is written; see the note in mcp.set_secret.
             data = _read_json_object(user_mcp_path)
             if not isinstance(data.get("mcpServers"), dict):
                 data["mcpServers"] = {}
+            existing = data["mcpServers"].get(server_name)
+            if isinstance(existing, dict) and isinstance(existing.get("env"), dict) and "env" not in config:
+                config["env"] = existing["env"]
+            elif "env" not in config:
+                bundled = _read_json_object(srv._PROJECT_ROOT / ".mcp.json")
+                b_entry = (bundled.get("mcpServers") or {}).get(server_name)
+                if isinstance(b_entry, dict) and isinstance(b_entry.get("env"), dict):
+                    config["env"] = b_entry["env"]
             data["mcpServers"][server_name] = config
             srv._atomic_write_json(user_mcp_path, data)
             # Installed through the UI, so it is approved by definition.
@@ -661,8 +713,9 @@ def handle(ctx, method):
                     reconnected = True
         except Exception as e:
             logger.warning(f"[Server] MCP install hot-apply failed (applies on next restart): {e}")
-        logger.info(f"[Server] MCP server installed: {server_name} -> {exe_path}")
-        return {"id": rid, "result": {"ok": True, "exe_path": exe_path, "reconnected": reconnected}}
+        target_desc = exe_path or f"{config['command']} {' '.join(config.get('args') or [])}".strip()
+        logger.info(f"[Server] MCP server installed: {server_name} -> {target_desc}")
+        return {"id": rid, "result": {"ok": True, "exe_path": exe_path, "command": target_desc, "reconnected": reconnected}}
 
     if method == "mcp.install_info":
         """检查 MCP 前置依赖安装状态，返回安装指南"""

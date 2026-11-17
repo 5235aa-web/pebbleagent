@@ -397,6 +397,11 @@ function cancelPlanHide(): void {
   planHideTimer = 0
 }
 
+export function openPlan(): void {
+  cancelPlanHide()
+  plan.open = true
+}
+
 /** Also wired to the card's own close button, which has to beat the timer. */
 export function closePlan(): void {
   cancelPlanHide()
@@ -1891,26 +1896,43 @@ export async function refreshMcp(): Promise<void> {
   try {
     const mc = await gateway.request<Record<string, unknown>>('mcp.list', {})
     const list = Array.isArray(mc.servers) ? (mc.servers as Array<Record<string, unknown>>) : []
+    const wasOpen = new Set(mcp.servers.filter(s => s.open).map(s => s.name))
     mcp.servers = list.map(s => {
       const names = Array.isArray(s.tool_names) ? (s.tool_names as string[]) : []
+      const name = String(s.name ?? 'server')
+      const tokenConfigured = Boolean(s.token_configured)
+      const rawLinks = s.prereq_links && typeof s.prereq_links === 'object'
+        ? (s.prereq_links as Record<string, Record<string, unknown>>)
+        : {}
+      const prereqLinks: Record<string, { label: string; url: string }> = {}
+      for (const [k, v] of Object.entries(rawLinks)) {
+        if (v && typeof v === 'object' && v.url) {
+          prereqLinks[k] = { label: String(v.label ?? k), url: String(v.url) }
+        }
+      }
       return {
-        name: String(s.name ?? 'server'),
+        name,
         transport: String(s.transport ?? 'stdio'),
-        logo: String(s.name ?? 'S').slice(0, 1).toUpperCase(),
+        logo: name.slice(0, 1).toUpperCase(),
         cmd: String(s.command ?? ''),
         tools: Number(s.tools ?? names.length),
         on: Boolean(s.enabled),
-        open: false,
+        open: wasOpen.has(name),
         state: s.error ? 'err' : 'ok',
+        error: String(s.error ?? ''),
         chips: names.slice(0, 4),
         more: Math.max(0, names.length - 4),
         toolNames: names,
         ready: Boolean(s.ready ?? true),
         missing: Array.isArray(s.missing) ? (s.missing as string[]) : [],
         installable: Boolean(s.installable),
+        installType: String(s.install_type ?? ''),
+        installDir: String(s.install_dir ?? ''),
+        prereqLinks,
         requiresToken: Boolean(s.requires_token),
         tokenEnv: String(s.token_env ?? ''),
-        token: ''
+        tokenConfigured,
+        token: tokenConfigured ? 'configured' : ''
       }
     })
     mcp.running = list.filter(s => s.connected).length
@@ -1970,15 +1992,31 @@ export function toggleMcpServer(name: string, enabled: boolean): void {
     .catch(() => { if (srv) srv.on = prev })
 }
 
-export function installMcpServer(name: string): void {
-  if (!gateway.connected || !name) return
-  void gateway.request('mcp.install_server', { server: name })
-    .then(() => { void refreshMcp() })
-    .catch((e) => {
-      /* A missing prerequisite (Node, uv) is the common failure and the backend
-         names it; swallowing it left the Install button looking dead. */
-      notify('Install failed', e instanceof Error ? e.message : 'The server refused the install.', 'err')
-    })
+export async function installMcpServer(
+  name: string,
+  options?: { path?: string; installDir?: string }
+): Promise<boolean> {
+  if (!gateway.connected || !name) return false
+  const params: Record<string, unknown> = { server: name }
+  if (options?.path?.trim()) params.path = options.path.trim()
+  if (options?.installDir?.trim()) params.install_dir = options.installDir.trim()
+  try {
+    /* Downloading a ~50MB release archive can exceed the default 120s RPC
+       deadline on slower connections. */
+    const res = await gateway.request<Record<string, unknown>>('mcp.install_server', params, 180_000)
+    if (res && res.ok === false) {
+      notify('Install failed', String(res.error || 'The server refused the install.'), 'err')
+      return false
+    }
+    await refreshMcp()
+    const target = String(res?.exe_path || res?.command || name)
+    notify('MCP configured', `${name} -> ${target}`, 'ok')
+    return true
+  } catch (e) {
+    /* A missing prerequisite (Node, uv) or invalid path is reported here. */
+    notify('Install failed', e instanceof Error ? e.message : 'The server refused the install.', 'err')
+    return false
+  }
 }
 
 /** Approves the project-level .mcp.json, which also hot-loads its servers. */
@@ -3377,9 +3415,20 @@ export function writeFileBase64(path: string, dataBase64: string): Promise<boole
 
 export function setMcpSecret(server: string, envKey: string, value: string): Promise<boolean> {
   if (!gateway.connected) return Promise.resolve(false)
-  return gateway.request('mcp.set_secret', { server, env_key: envKey, value })
-    .then(() => { void refreshMcp(); return true })
-    .catch(() => false)
+  return gateway.request<Record<string, unknown>>('mcp.set_secret', { server, env_key: envKey, value })
+    .then((res) => {
+      if (res && res.ok === false) {
+        notify('Token not saved', String(res.error || 'Failed to save secret.'), 'err')
+        return false
+      }
+      void refreshMcp()
+      notify('Token saved', `${server} (${envKey}) updated.`, 'ok')
+      return true
+    })
+    .catch((e) => {
+      notify('Token not saved', e instanceof Error ? e.message : 'Failed to save secret.', 'err')
+      return false
+    })
 }
 
 export async function getMcpInstallInfo(): Promise<Array<Record<string, unknown>>> {

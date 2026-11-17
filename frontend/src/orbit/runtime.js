@@ -3,7 +3,7 @@
    original imperative code operates on the same nodes it always did. */
 import { createTheme } from "./theme.js";
 import { selectSession, plan, permissions, settlePermission, dropPermission, pendingPermissions, sessionState } from "../data/store";
-import { decidePermission, loadSession, sendPrompt, interruptSession, renameSession, deleteSession, toggleSessionPin, syncPermissionMode, setPermissionMode, createSession, exportSession, exportSessionMarkdown } from "../data/wire";
+import { decidePermission, loadSession, sendPrompt, interruptSession, renameSession, deleteSession, toggleSessionPin, syncPermissionMode, setPermissionMode, createSession, exportSession, exportSessionMarkdown, openPlan, closePlan } from "../data/wire";
 import { askConfirm } from "../data/confirm";
 import { previewState, reloadPreview, capturePreview } from "../data/preview";
 import { gateway } from "../data/gateway";
@@ -80,8 +80,7 @@ export function initOrbit() {
     stage: function () { setStageOpen(true); },
     tab: function (name) { ensureRightOpen(); selectTab(name); },
     plan: function () {
-      var stream = document.querySelector(".stream");
-      setPlanOpen(!(stream && stream.classList.contains("plan-open")));
+      setPlanOpen(!plan.open);
     },
     newSession: newSession
   };
@@ -260,18 +259,17 @@ export function initOrbit() {
   });
 
   /* ---------------- live plan slip ---------------- */
-  var streamEl = document.querySelector(".stream");
   var planCard = document.getElementById("planCard");
 
-  /* The card's own close button is wired in PlanCard.vue now. This function
-     only serves the command palette's "Toggle task list", and it drives the
-     class the CSS reads instead of a store plain JS cannot reach. */
+  /* StreamPane binds `.plan-open` to `plan.open`, so the command palette
+     must drive the reactive store rather than toggling `.plan-open` directly
+     on `.stream` (which left `plan.open === false` and made `#planClose` a
+     no-op). */
   function setPlanOpen(open) {
-    if (!streamEl || !planCard) return;
-    streamEl.classList.toggle("plan-open", open);
-    if (!open) {
-      planCard.style.setProperty("--rx", "0deg");
-      planCard.style.setProperty("--ry", "0deg");
+    if (open) {
+      openPlan();
+    } else {
+      closePlan();
     }
   }
 

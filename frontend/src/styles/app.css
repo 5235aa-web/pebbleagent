@@ -719,6 +719,32 @@
   font-style: italic;
 }
 
+.mc-srv-body .mc-token + .mc-token {
+  margin-top: 6px;
+}
+
+.mc-tk-v {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.mc-err-row .mc-tk-l {
+  color: var(--err);
+}
+
+.mc-err-row .mc-tk-v {
+  color: var(--err);
+  white-space: normal;
+  word-break: break-word;
+}
+
+a.mc-tk-e {
+  text-decoration: none;
+  display: inline-flex;
+  align-items: center;
+}
+
 /* The notes view borrows the ledger sheet's frame but not its two-column grid. */
 .agent-notes {
   display: block;
@@ -2991,4 +3017,810 @@ input.attach-input[type="file"] {
 
 .island:not(.busy) .eq i {
   animation: none;
+}
+
+/* ---- LLM config pane redesign ----
+
+   orbit.css is frozen; scoping under `.llm-pane` keeps NotesPane / UsagePane
+   untouched while replacing the cramped 8px controls with a calm, structured
+   card layout. `.dr-pane` toggles visibility via `.on`, so flex layout is
+   applied only to `.llm-pane.on`. */
+
+.llm-pane.on {
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+  padding-bottom: 6px;
+}
+
+.llm-pane .lm-card-sec {
+  display: flex;
+  flex-direction: column;
+  gap: 7px;
+}
+
+.llm-pane .lm-sec-head {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 8px;
+}
+
+.llm-pane .lm-sec-title {
+  font-family: var(--font-mono);
+  font-size: 10px;
+  font-weight: 600;
+  letter-spacing: .10em;
+  text-transform: uppercase;
+  color: var(--muted);
+}
+
+.llm-pane .lm-sec-meta {
+  font-family: var(--font-mono);
+  font-size: 10px;
+  color: var(--faint);
+}
+
+.llm-pane .lm-add-btn {
+  height: 22px;
+  padding: 0 9px;
+  border-radius: 999px;
+  border: 1px dashed var(--line-strong);
+  background: transparent;
+  font-family: var(--font-mono);
+  font-size: 10px;
+  font-weight: 600;
+  color: var(--muted);
+  transition: border-color .18s var(--ease), color .18s var(--ease), background .18s var(--ease);
+}
+
+.llm-pane .lm-add-btn:hover {
+  border-color: var(--accent);
+  color: var(--accent);
+  background: var(--accent-soft-2);
+}
+
+/* Agents */
+.llm-pane .lm-agents {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 7px;
+}
+
+.llm-pane .lm-agent {
+  position: relative;
+  display: flex;
+  align-items: center;
+  gap: 9px;
+  padding: 9px 10px;
+  border-radius: 10px;
+  border: 1px solid var(--line);
+  background: var(--surface);
+  text-align: left;
+  min-width: 0;
+  transition: border-color .18s var(--ease), background .18s var(--ease), transform .18s var(--ease);
+}
+
+.llm-pane .lm-agent:hover {
+  transform: translateY(-1px);
+  border-color: var(--line-strong);
+}
+
+.llm-pane .lm-agent.on {
+  border-color: var(--accent);
+  background: var(--accent-soft-2);
+}
+
+.llm-pane .lm-avatar {
+  width: 26px;
+  height: 26px;
+  border-radius: 7px;
+  display: grid;
+  place-items: center;
+  flex: 0 0 auto;
+  background: var(--a);
+  color: #fff;
+  font-family: var(--font-mono);
+  font-size: 10.5px;
+  font-weight: 700;
+}
+
+.llm-pane .lm-agent-info {
+  display: flex;
+  flex-direction: column;
+  gap: 1px;
+  min-width: 0;
+  flex: 1 1 auto;
+}
+
+.llm-pane .lm-aname {
+  font-size: 11.5px;
+  font-weight: 600;
+  color: var(--ink);
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+.llm-pane .lm-adesc {
+  font-size: 9.5px;
+  color: var(--faint);
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+.llm-pane .lm-apick {
+  position: static;
+  flex: 0 0 auto;
+  color: var(--accent);
+  font-size: 11px;
+  font-weight: 700;
+}
+
+/* Providers grid */
+.llm-pane .lm-prov {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 7px;
+  margin-bottom: 0;
+}
+
+.llm-pane .lm-pcard {
+  position: relative;
+  display: flex;
+  flex-direction: column;
+  gap: 3px;
+  padding: 9px 10px;
+  border-radius: 10px;
+  border: 1px solid var(--line);
+  background: var(--surface);
+  text-align: left;
+  overflow: hidden;
+  min-width: 0;
+  transition: border-color .18s var(--ease), background .18s var(--ease), transform .18s var(--ease);
+}
+
+.llm-pane .lm-pcard:hover {
+  transform: translateY(-1px);
+  border-color: var(--line-strong);
+}
+
+.llm-pane .lm-pcard.on {
+  border-color: var(--accent);
+  background: var(--surface);
+}
+
+.llm-pane .lm-pcard.sel {
+  border-style: dashed;
+  border-color: var(--accent);
+  background: var(--surface-2);
+}
+
+.llm-pane .lm-pcard-top {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 6px;
+  margin-bottom: 2px;
+}
+
+.llm-pane .lm-brand {
+  width: 22px;
+  height: 22px;
+  border-radius: 6px;
+  display: grid;
+  place-items: center;
+  background: var(--b);
+  color: #fff;
+  font-family: var(--font-mono);
+  font-size: 10.5px;
+  font-weight: 700;
+}
+
+.llm-pane .lm-pbadge {
+  font-family: var(--font-mono);
+  font-size: 8.5px;
+  font-weight: 600;
+  letter-spacing: .04em;
+  text-transform: uppercase;
+  padding: 1px 6px;
+  border-radius: 999px;
+  border: 1px solid var(--line);
+  color: var(--muted);
+  background: var(--surface-2);
+}
+
+.llm-pane .lm-pbadge.active {
+  color: var(--accent);
+  border-color: transparent;
+  background: var(--accent-soft);
+}
+
+.llm-pane .lm-pbadge.draft,
+.llm-pane .lm-pbadge.warn {
+  color: var(--warn);
+  border-color: transparent;
+  background: var(--warn-soft);
+}
+
+.llm-pane .lm-pname {
+  font-family: var(--font-mono);
+  font-size: 11px;
+  font-weight: 600;
+  color: var(--ink);
+  margin-top: 0;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+.llm-pane .lm-pmeta {
+  font-size: 9.5px;
+  color: var(--faint);
+}
+
+/* Selected provider surface panel */
+.llm-pane .lm-panel {
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+  padding: 12px;
+  border-radius: 12px;
+  border: 1px solid var(--line);
+  background: var(--surface);
+}
+
+.llm-pane .lm-panel-head {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 8px;
+  padding-bottom: 9px;
+  border-bottom: 1px solid var(--line-2);
+}
+
+.llm-pane .lm-panel-title {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  min-width: 0;
+}
+
+.llm-pane .lm-panel-title strong {
+  font-family: var(--font-mono);
+  font-size: 12px;
+  font-weight: 650;
+  color: var(--ink);
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+.llm-pane .lm-pill {
+  font-family: var(--font-mono);
+  font-size: 9px;
+  font-weight: 600;
+  padding: 1px 6px;
+  border-radius: 999px;
+  background: var(--surface-3);
+  color: var(--muted);
+  flex: 0 0 auto;
+}
+
+.llm-pane .lm-pill.ok {
+  background: var(--ok-soft);
+  color: var(--ok);
+}
+
+.llm-pane .lm-pill.warn {
+  background: var(--warn-soft);
+  color: var(--warn);
+}
+
+.llm-pane .lm-dirty-dot {
+  width: 6px;
+  height: 6px;
+  border-radius: 50%;
+  background: var(--warn);
+  flex: 0 0 auto;
+}
+
+.llm-pane .lm-cred-toggle {
+  height: 24px;
+  padding: 0 9px;
+  border-radius: 6px;
+  border: 1px solid var(--line);
+  background: var(--surface-2);
+  font-family: var(--font-mono);
+  font-size: 10px;
+  color: var(--ink-2);
+  flex: 0 0 auto;
+  transition: border-color .18s var(--ease), color .18s var(--ease), background .18s var(--ease);
+}
+
+.llm-pane .lm-cred-toggle:hover {
+  border-color: var(--accent);
+  color: var(--accent);
+}
+
+.llm-pane .lm-pnote {
+  margin: 0;
+  padding: 8px 10px;
+  border: 1px dashed rgba(184, 121, 31, .35);
+  border-radius: 8px;
+  background: var(--warn-soft);
+  font-family: var(--font-sans);
+  font-size: 10.5px;
+  line-height: 1.45;
+  color: var(--warn);
+}
+
+/* Credentials & stacked fields */
+.llm-pane .lm-cred-box {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  padding: 10px;
+  border-radius: 9px;
+  border: 1px solid var(--line-2);
+  background: var(--surface-2);
+}
+
+.llm-pane .lm-field {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+  margin: 0;
+}
+
+.llm-pane .lm-field-lbl {
+  font-family: var(--font-mono);
+  font-size: 9.5px;
+  font-weight: 600;
+  letter-spacing: .06em;
+  text-transform: uppercase;
+  color: var(--muted);
+}
+
+.llm-pane .lm-field input,
+.llm-pane .lm-key-wrap input {
+  width: 100%;
+  height: 30px;
+  padding: 0 9px;
+  border-radius: 7px;
+  border: 1px solid var(--line);
+  background: var(--surface);
+  font-family: var(--font-mono);
+  font-size: 11px;
+  color: var(--ink);
+  transition: border-color .18s var(--ease), box-shadow .18s var(--ease);
+}
+
+.llm-pane .lm-field input:focus,
+.llm-pane .lm-key-wrap input:focus {
+  outline: none;
+  border-color: var(--accent);
+  box-shadow: 0 0 0 2px var(--accent-soft-2);
+}
+
+.llm-pane .lm-key-wrap {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+}
+
+.llm-pane .lm-key-wrap input {
+  flex: 1 1 auto;
+  min-width: 0;
+}
+
+.llm-pane .lm-key-eye {
+  height: 30px;
+  padding: 0 9px;
+  border-radius: 7px;
+  border: 1px solid var(--line);
+  background: var(--surface);
+  font-family: var(--font-mono);
+  font-size: 10px;
+  color: var(--muted);
+  flex: 0 0 auto;
+}
+
+.llm-pane .lm-key-eye:hover {
+  border-color: var(--line-strong);
+  color: var(--ink);
+}
+
+/* Blocks inside provider card */
+.llm-pane .lm-block {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  padding-top: 10px;
+  border-top: 1px solid var(--line-2);
+}
+
+/* Models */
+.llm-pane .lm-models {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 5px;
+  margin: 0;
+  padding: 0;
+}
+
+.llm-pane .lm-chip {
+  display: inline-flex;
+  align-items: center;
+  gap: 5px;
+  height: 26px;
+  padding: 0 5px 0 9px;
+  border-radius: 7px;
+  border: 1px solid var(--line);
+  background: var(--surface-2);
+  font-family: var(--font-mono);
+  font-size: 10.5px;
+  color: var(--ink-2);
+  max-width: 100%;
+  cursor: pointer;
+  transition: border-color .16s var(--ease), background .16s var(--ease), color .16s var(--ease);
+}
+
+.llm-pane .lm-chip:hover {
+  border-color: var(--line-strong);
+  color: var(--ink);
+}
+
+.llm-pane .lm-chip.on {
+  border-color: var(--accent);
+  background: var(--accent-soft);
+  color: var(--accent);
+  font-weight: 600;
+}
+
+.llm-pane .lm-chip-dot {
+  width: 5px;
+  height: 5px;
+  border-radius: 50%;
+  background: var(--accent);
+  flex: 0 0 auto;
+}
+
+.llm-pane .lm-chip-txt {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.llm-pane .lm-mx {
+  width: 17px;
+  height: 17px;
+  border-radius: 4px;
+  display: grid;
+  place-items: center;
+  font-size: 13px;
+  line-height: 1;
+  flex: 0 0 auto;
+}
+
+.llm-pane .lm-madd {
+  display: flex;
+  gap: 6px;
+  margin: 0;
+}
+
+.llm-pane .lm-madd input {
+  flex: 1 1 auto;
+  min-width: 0;
+  height: 28px;
+  padding: 0 9px;
+  border-radius: 7px;
+  border: 1px dashed var(--line-strong);
+  background: var(--surface-2);
+  font-family: var(--font-mono);
+  font-size: 10.5px;
+  color: var(--ink);
+}
+
+.llm-pane .lm-madd input:focus {
+  outline: none;
+  border-style: solid;
+  border-color: var(--accent);
+  background: var(--surface);
+}
+
+.llm-pane .lm-madd button {
+  width: 28px;
+  height: 28px;
+  border-radius: 7px;
+  border: 1px solid var(--line);
+  background: var(--surface-2);
+  color: var(--accent);
+  font-size: 14px;
+  font-weight: 600;
+}
+
+.llm-pane .lm-madd button:hover {
+  border-color: var(--accent);
+  background: var(--accent-soft-2);
+}
+
+/* Sampling sliders */
+.llm-pane .lm-gauge {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  margin-bottom: 2px;
+}
+
+.llm-pane .lm-k {
+  width: 44px;
+  font-family: var(--font-mono);
+  font-size: 10.5px;
+  color: var(--ink-2);
+}
+
+.llm-pane .lm-v {
+  width: 38px;
+  font-family: var(--font-mono);
+  font-size: 11px;
+  font-weight: 650;
+  font-variant-numeric: tabular-nums;
+  color: var(--accent);
+}
+
+/* Reasoning & thinking */
+.llm-pane .lm-scope-pill {
+  font-family: var(--font-mono);
+  font-size: 9.5px;
+  color: var(--muted);
+  background: var(--surface-2);
+  border: 1px solid var(--line);
+  border-radius: 999px;
+  padding: 1px 8px;
+  max-width: 190px;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.llm-pane .lm-think {
+  padding: 8px 10px;
+  border-radius: 8px;
+  border: 1px solid var(--line);
+  background: var(--surface-2);
+  margin-bottom: 0;
+  transition: border-color .18s var(--ease), background .18s var(--ease);
+}
+
+.llm-pane .lm-think:hover {
+  border-color: var(--line-strong);
+}
+
+.llm-pane .lm-think.on {
+  border-color: rgba(214, 78, 42, .3);
+  background: var(--accent-soft-2);
+}
+
+.llm-pane .lm-tlabel {
+  font-size: 11.5px;
+  font-weight: 600;
+}
+
+.llm-pane .lm-tstate {
+  font-size: 10px;
+}
+
+.llm-pane .lm-steps {
+  display: grid;
+  grid-template-columns: repeat(4, 1fr);
+  gap: 6px;
+  height: auto;
+  margin-bottom: 0;
+  transition: opacity .18s var(--ease);
+}
+
+.llm-pane .lm-steps.is-off {
+  opacity: .45;
+}
+
+.llm-pane .lm-step {
+  position: static;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: flex-end;
+  gap: 5px;
+  height: 50px;
+  padding: 6px 4px;
+  border-radius: 8px;
+  border: 1px solid var(--line);
+  background: var(--surface-2);
+  transition: border-color .18s var(--ease), background .18s var(--ease);
+}
+
+.llm-pane .lm-step:hover {
+  border-color: var(--line-strong);
+  background: var(--surface-3);
+}
+
+.llm-pane .lm-step.on {
+  border-color: var(--accent);
+  background: var(--accent-soft-2);
+  box-shadow: none;
+}
+
+.llm-pane .lm-step-bar {
+  width: 18px;
+  height: 22px;
+  display: flex;
+  align-items: flex-end;
+  justify-content: center;
+}
+
+.llm-pane .lm-step-bar i {
+  position: static;
+  width: 100%;
+  min-height: 4px;
+  margin: 0;
+  border-radius: 3px;
+  background: var(--line-strong);
+  opacity: 1;
+  transition: background .18s var(--ease);
+}
+
+.llm-pane .lm-step.on .lm-step-bar i {
+  background: var(--accent);
+}
+
+.llm-pane .lm-step-lbl {
+  position: static;
+  font-family: var(--font-mono);
+  font-size: 9.5px;
+  font-weight: 600;
+  color: var(--muted);
+}
+
+.llm-pane .lm-step.on .lm-step-lbl {
+  color: var(--accent);
+}
+
+/* OpenCode Go request shaping card */
+.llm-pane .lm-opencode {
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+  padding: 11px;
+  border-radius: 10px;
+  border: 1px solid rgba(31, 122, 110, .28);
+  background: linear-gradient(180deg, var(--teal-soft), transparent 65%), var(--surface-2);
+}
+
+.llm-pane .lm-opencode-tag {
+  font-family: var(--font-mono);
+  font-size: 9px;
+  font-weight: 600;
+  padding: 1px 7px;
+  border-radius: 999px;
+  background: var(--teal-soft);
+  color: var(--teal);
+}
+
+.llm-pane .lm-seg-group {
+  display: flex;
+  flex-direction: column;
+  gap: 5px;
+}
+
+.llm-pane .lm-seg-head {
+  display: flex;
+  align-items: baseline;
+  justify-content: space-between;
+  gap: 8px;
+}
+
+.llm-pane .lm-seg-head span {
+  font-family: var(--font-mono);
+  font-size: 9.5px;
+  font-weight: 600;
+  text-transform: uppercase;
+  letter-spacing: .06em;
+  color: var(--muted);
+}
+
+.llm-pane .lm-seg-head small {
+  font-family: var(--font-mono);
+  font-size: 9.5px;
+  color: var(--faint);
+}
+
+.llm-pane .lm-seg-head small.is-err {
+  color: var(--err);
+  font-weight: 600;
+}
+
+.llm-pane .lm-modes {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 5px;
+  padding: 3px;
+  border-radius: 8px;
+  border: 1px solid var(--line);
+  background: var(--surface);
+}
+
+.llm-pane .lm-modes button {
+  height: 26px;
+  border-radius: 5px;
+  border: 1px solid transparent;
+  font-family: var(--font-mono);
+  font-size: 10.5px;
+  font-weight: 500;
+  color: var(--muted);
+  background: transparent;
+  transition: background .16s var(--ease), color .16s var(--ease), border-color .16s var(--ease);
+}
+
+.llm-pane .lm-modes button:hover {
+  color: var(--ink);
+}
+
+.llm-pane .lm-modes button.on {
+  border-color: var(--accent);
+  color: var(--accent);
+  background: var(--accent-soft);
+  font-weight: 650;
+}
+
+.llm-pane .lm-ta {
+  width: 100%;
+  margin: 0;
+  min-height: 62px;
+  padding: 8px 9px;
+  border-radius: 7px;
+  border: 1px solid var(--line);
+  background: var(--surface);
+  font-family: var(--font-mono);
+  font-size: 10.5px;
+  line-height: 1.5;
+  color: var(--ink);
+  resize: vertical;
+}
+
+/* Footer actions */
+.llm-pane .lm-foot {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  margin-top: 2px;
+  padding-top: 10px;
+  border-top: 1px solid var(--line-2);
+}
+
+.llm-pane .lm-del {
+  height: 31px;
+  padding: 0 12px;
+  border-radius: 8px;
+  font-size: 11px;
+  font-weight: 600;
+}
+
+.llm-pane .lm-save {
+  height: 31px;
+  padding: 0 15px;
+  border-radius: 8px;
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  font-size: 11px;
+  font-weight: 650;
+}
+
+.llm-pane .lm-save-dot {
+  width: 6px;
+  height: 6px;
+  border-radius: 50%;
+  background: currentColor;
+  opacity: .85;
 }

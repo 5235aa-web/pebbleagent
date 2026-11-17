@@ -208,12 +208,25 @@ def _safe_extract_zip(zip_path: str, dest_dir: str) -> list:
     return extracted
 
 
-def _install_download_server(server_name: str, entry: dict) -> str:
+def _resolve_sha256_for_arch(entry: dict, arch: str) -> str:
+    """从 mcp_install.json 条目解析当前架构的 sha256（支持字符串或按架构映射的字典）。"""
+    raw = entry.get("sha256")
+    if isinstance(raw, dict):
+        return str(raw.get(arch) or "").strip().lower()
+    return str(raw or "").strip().lower()
+
+
+def _install_download_server(server_name: str, entry: dict, install_dir_override: str = "") -> str:
     """执行 download 类型 MCP 服务器的自动安装（下载 + 解压 + 落位），返回 exe 绝对路径"""
     import re as _re
     import zipfile
+    arch = _detect_arch()
     url = str(entry.get("url") or "").strip()
-    install_dir = os.path.expanduser(str(entry.get("install_dir") or "~/.pebble/mcp"))
+    raw_dir = str(install_dir_override or "").strip().strip('"').strip("'")
+    if raw_dir:
+        install_dir = os.path.abspath(os.path.expandvars(os.path.expanduser(raw_dir)))
+    else:
+        install_dir = os.path.abspath(os.path.expanduser(str(entry.get("install_dir") or "~/.pebble/mcp")))
     exe_name = str(entry.get("exe_name") or "").strip()
     asset_pattern = str(entry.get("asset_pattern") or "").strip()
     if not url or not exe_name:
@@ -221,19 +234,29 @@ def _install_download_server(server_name: str, entry: dict) -> str:
     os.makedirs(install_dir, exist_ok=True)
     exe_target = os.path.join(install_dir, exe_name)
 
-    # GitHub releases 页面/API → 解析最新版本资产直链
-    m = _re.search(r"github\.com/([\w.-]+)/([\w.-]+)/releases", url)
-    if m:
-        api_url = f"https://api.github.com/repos/{m.group(1)}/{m.group(2)}/releases/latest"
-        pattern = (asset_pattern or ".*").replace("{arch}", _detect_arch())
-        _, url = _resolve_github_release_asset(api_url, pattern)
+    # 直链下载（/releases/download/<tag>/<asset>）或 GitHub releases 页面/API 解析
+    if "/releases/download/" in url:
+        url = url.replace("{arch}", arch)
+    else:
+        tag_m = _re.search(r"github\.com/([\w.-]+)/([\w.-]+)/releases/tag/([^/?#]+)", url)
+        latest_m = _re.search(r"github\.com/([\w.-]+)/([\w.-]+)/releases(?:/latest)?/?$", url)
+        if tag_m:
+            api_url = f"https://api.github.com/repos/{tag_m.group(1)}/{tag_m.group(2)}/releases/tags/{tag_m.group(3)}"
+            pattern = (asset_pattern or ".*").replace("{arch}", arch)
+            _, url = _resolve_github_release_asset(api_url, pattern)
+        elif latest_m:
+            api_url = f"https://api.github.com/repos/{latest_m.group(1)}/{latest_m.group(2)}/releases/latest"
+            pattern = (asset_pattern or ".*").replace("{arch}", arch)
+            _, url = _resolve_github_release_asset(api_url, pattern)
+        else:
+            url = url.replace("{arch}", arch)
 
     tmp_dl = os.path.join(install_dir, f"_download_{server_name}.tmp")
     logger.info(f"[Server] Downloading MCP server '{server_name}' from {url}")
     try:
         _download_file(url, tmp_dl)
-        # 完整性校验：mcp_install.json 配置了 sha256 则强制比对；未配置则记录警告
-        expected = str(entry.get("sha256") or "").strip().lower()
+        # 完整性校验：mcp_install.json 配置了 sha256 则强制比对；未配置则拒绝下载
+        expected = _resolve_sha256_for_arch(entry, arch)
         if expected:
             actual = _sha256_file(tmp_dl)
             if actual != expected:

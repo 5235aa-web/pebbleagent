@@ -1,151 +1,259 @@
 <template>
-        <div class="dr-pane" data-pane="llm" data-live="1">
-          <div class="lm-sec">
-            <div class="lm-h">agent<span>{{ llm.agents.length }} available</span></div>
-            <div class="lm-agents" id="lmAgents">
-              <button
-                v-for="a in llm.agents"
-                :key="a.name"
-                class="lm-agent"
-                :class="{ on: a.current }"
-                @click="switchAgent(a.name)"
-              >
-                <span class="lm-avatar" :style="{ '--a': a.tint }">{{ a.initial }}</span>
-                <span class="lm-aname">{{ a.name }}</span>
-                <span class="lm-adesc">{{ a.desc }}</span>
-                <span class="lm-apick">&#10003;</span>
-              </button>
-            </div>
-          </div>
+  <div class="dr-pane llm-pane" data-pane="llm" data-live="1">
+    <!-- Agent selector -->
+    <section class="lm-card-sec">
+      <div class="lm-sec-head">
+        <span class="lm-sec-title">Agent</span>
+        <span class="lm-sec-meta">{{ llm.agents.length }} available</span>
+      </div>
+      <div class="lm-agents" id="lmAgents">
+        <button
+          v-for="a in llm.agents"
+          :key="a.name"
+          type="button"
+          class="lm-agent"
+          :class="{ on: a.current }"
+          @click="switchAgent(a.name)"
+        >
+          <span class="lm-avatar" :style="{ '--a': a.tint }">{{ a.initial }}</span>
+          <span class="lm-agent-info">
+            <span class="lm-aname">{{ a.name }}</span>
+            <span class="lm-adesc">{{ a.desc }}</span>
+          </span>
+          <span v-if="a.current" class="lm-apick" aria-hidden="true">&#10003;</span>
+        </button>
+      </div>
+    </section>
 
-          <div class="lm-prov" id="lmProv">
+    <!-- Provider cards -->
+    <section class="lm-card-sec">
+      <div class="lm-sec-head">
+        <span class="lm-sec-title">Providers</span>
+        <button class="lm-add-btn" type="button" @click="createProvider">+ New</button>
+      </div>
+      <div class="lm-prov" id="lmProv">
+        <button
+          v-for="(p, i) in llm.providers"
+          :key="p.slug || p.name"
+          type="button"
+          class="lm-pcard"
+          :class="{ on: p.current, sel: i === effectiveSelectedIndex && !p.current }"
+          @click="selectProvider(i)"
+        >
+          <div class="lm-pcard-top">
+            <span class="lm-brand" :style="{ '--b': p.current ? 'var(--accent)' : 'var(--muted)' }">{{ (p.name || '?').slice(0, 1).toUpperCase() }}</span>
+            <span v-if="p.current" class="lm-pbadge active">active</span>
+            <span v-else-if="!isProviderReady(p)" class="lm-pbadge draft">draft</span>
+            <span v-else-if="!p.apiKey.trim()" class="lm-pbadge warn">no key</span>
+          </div>
+          <span class="lm-pname">{{ p.name || 'Unnamed' }}</span>
+          <span class="lm-pmeta">{{ p.models.length }} model{{ p.models.length === 1 ? '' : 's' }}{{ p.dirty ? ' · unsaved' : '' }}</span>
+          <span v-if="p.current" class="lm-glow"></span>
+        </button>
+      </div>
+    </section>
+
+    <!-- Selected provider workspace -->
+    <section v-if="selectedProvider" class="lm-panel">
+      <header class="lm-panel-head">
+        <div class="lm-panel-title">
+          <strong>{{ selectedProvider.name || 'New provider' }}</strong>
+          <span v-if="selectedProvider.current" class="lm-pill ok">Active</span>
+          <span v-else-if="!isProviderReady(selectedProvider)" class="lm-pill warn">Draft</span>
+          <span v-else class="lm-pill">Standby</span>
+          <span v-if="selectedProvider.dirty" class="lm-dirty-dot" title="Unsaved changes"></span>
+        </div>
+        <button
+          type="button"
+          class="lm-cred-toggle"
+          @click="credentialsOpen = !credentialsOpen"
+        >
+          {{ credentialsOpen ? 'Hide config' : 'Credentials' }}
+        </button>
+      </header>
+
+      <div v-if="!isProviderReady(selectedProvider)" class="lm-pnote">
+        Add a base URL and at least one model before this provider can become active.
+      </div>
+      <div v-else-if="!selectedProvider.apiKey.trim()" class="lm-pnote">
+        No API key set — local endpoints may work; hosted endpoints will reject requests.
+      </div>
+
+      <!-- Credentials (expanded automatically for drafts / missing keys) -->
+      <div v-if="credentialsOpen" class="lm-cred-box">
+        <label class="lm-field">
+          <span class="lm-field-lbl">Name</span>
+          <input v-model="editingName" placeholder="e.g. deepseek, opencode-go" spellcheck="false" />
+        </label>
+        <label class="lm-field">
+          <span class="lm-field-lbl">Base URL</span>
+          <input v-model="editingBaseUrl" placeholder="https://api.example.com/v1" spellcheck="false" />
+        </label>
+        <label class="lm-field">
+          <span class="lm-field-lbl">API Key</span>
+          <div class="lm-key-wrap">
+            <input
+              :type="showApiKey ? 'text' : 'password'"
+              v-model="editingApiKey"
+              placeholder="sk-..."
+              spellcheck="false"
+            />
             <button
-              v-for="(p, i) in llm.providers"
-              :key="p.slug || p.name"
-              class="lm-pcard"
-              :class="{ on: p.current, sel: i === effectiveSelectedIndex && !p.current }"
-              @click="selectProvider(i)"
-            >
-              <span class="lm-brand" :style="{ '--b': 'var(--accent)' }">{{ p.name.slice(0, 1).toUpperCase() }}</span>
-              <span class="lm-pname">{{ p.name }}</span>
-              <span class="lm-pmeta">{{ p.models.length }} model{{ p.models.length === 1 ? '' : 's' }}{{ p.current ? ' · active' : '' }}{{ !isProviderReady(p) ? ' · not ready' : '' }}{{ isProviderReady(p) && !p.apiKey.trim() ? ' · no key' : '' }}</span>
-              <span v-if="p.current" class="lm-glow"></span>
-            </button>
-            <button class="lm-padd" type="button" @click="createProvider">
-              <span class="lm-padd-plus">+</span>
-              <span class="lm-pname">new provider</span>
-              <span class="lm-pmeta">base url · key · models</span>
-            </button>
+              type="button"
+              class="lm-key-eye"
+              :title="showApiKey ? 'Hide key' : 'Show key'"
+              @click="showApiKey = !showApiKey"
+            >{{ showApiKey ? 'Hide' : 'Show' }}</button>
           </div>
+        </label>
+      </div>
 
-          <div v-if="selectedProvider && !isProviderReady(selectedProvider)" class="lm-pnote">
-            draft card — add a base url and at least one model before it can become active
+      <!-- Models -->
+      <div class="lm-block">
+        <div class="lm-sec-head">
+          <span class="lm-sec-title">Models</span>
+          <span class="lm-sec-meta">{{ selectedModels.length ? 'click to switch' : 'none yet' }}</span>
+        </div>
+        <div class="lm-models" id="lmModels" v-if="selectedModels.length">
+          <span
+            v-for="m in selectedModels"
+            :key="m"
+            class="lm-chip"
+            :class="{ on: isActiveModel(m) }"
+            @click="chooseModel(m)"
+          >
+            <span class="lm-chip-dot" v-if="isActiveModel(m)"></span>
+            <span class="lm-chip-txt">{{ m }}</span>
+            <button class="lm-mx" type="button" title="Remove model" @click.stop="removeModel(m)">&#215;</button>
+          </span>
+        </div>
+        <div class="lm-madd">
+          <input v-model="newModel" placeholder="Add model id (e.g. gpt-4o)…" spellcheck="false" @keydown.enter.prevent="addModel" @blur="addModel" />
+          <button type="button" @click="addModel">+</button>
+        </div>
+      </div>
+
+      <!-- Sampling -->
+      <div class="lm-block">
+        <div class="lm-sec-head">
+          <span class="lm-sec-title">Sampling</span>
+          <span class="lm-sec-meta">drag to tune</span>
+        </div>
+        <div class="lm-gauge" data-k="temp" data-max="2" data-unit="">
+          <span class="lm-k">Temp</span>
+          <div class="lm-track">
+            <i :style="{ '--v': tempPct + '%' }"></i>
+            <b :style="{ '--v': tempPct + '%' }"></b>
+            <input type="range" min="0" max="2" step="0.1" v-model.number="selectedTemperature" @change="saveSampling" :disabled="!selectedProvider" />
           </div>
-          <div v-else-if="selectedProvider && !selectedProvider.apiKey.trim()" class="lm-pnote">
-            no api key — local endpoints may work; hosted endpoints will reject requests
+          <span class="lm-v">{{ selectedTemperature.toFixed(1) }}</span>
+        </div>
+        <div class="lm-gauge" data-k="topp" data-max="1" data-unit="">
+          <span class="lm-k">Top P</span>
+          <div class="lm-track">
+            <i :style="{ '--v': toppPct + '%' }"></i>
+            <b :style="{ '--v': toppPct + '%' }"></b>
+            <input type="range" min="0" max="1" step="0.05" v-model.number="selectedTopP" @change="saveSampling" :disabled="!selectedProvider" />
           </div>
+          <span class="lm-v">{{ selectedTopP.toFixed(2) }}</span>
+        </div>
+      </div>
 
-          <details class="lm-det">
-            <summary>credentials <span>name · base url · api key</span></summary>
-            <label class="lm-f"><span>name</span><input v-model="editingName" /></label>
-            <label class="lm-f"><span>base url</span><input v-model="editingBaseUrl" /></label>
-            <label class="lm-f"><span>api key</span><input type="password" v-model="editingApiKey" /></label>
-          </details>
+      <!-- Reasoning -->
+      <div class="lm-block">
+        <div class="lm-sec-head">
+          <span class="lm-sec-title">Reasoning</span>
+          <span class="lm-scope-pill">{{ reasoningScopeLabel }}</span>
+        </div>
+        <button type="button" class="lm-think" :class="{ on: selectedThinkingEnabled }" id="lmThink" @click="toggleThinking">
+          <span class="lm-tlabel">Thinking</span>
+          <span class="lm-tstate">{{ selectedThinkingEnabled ? 'Enabled' : 'Off' }}</span>
+          <span class="lm-tswitch"><i></i></span>
+        </button>
+        <div class="lm-steps" :class="{ 'is-off': !selectedThinkingEnabled }" id="lmSteps">
+          <button
+            v-for="step in EFFORTS"
+            :key="step.key"
+            type="button"
+            class="lm-step"
+            :class="{ on: selectedReasoningEffort === step.key }"
+            :data-e="step.key"
+            @click="pickEffort(step.key)"
+          >
+            <span class="lm-step-bar"><i :style="{ height: step.h }"></i></span>
+            <span class="lm-step-lbl">{{ step.label }}</span>
+          </button>
+        </div>
+      </div>
 
-          <div class="lm-sec">
-            <div class="lm-h">models<span>pick one</span></div>
-            <div class="lm-models" id="lmModels">
-              <span
-                v-for="m in selectedModels"
-                :key="m"
-                class="lm-chip"
-                :class="{ on: isActiveModel(m) }"
-                @click="chooseModel(m)"
-              >{{ m }}<button class="lm-mx" type="button" @click.stop="removeModel(m)">&#215;</button></span>
-            </div>
-            <div class="lm-madd">
-              <input v-model="newModel" placeholder="add model..." @keydown.enter.prevent="addModel" @blur="addModel" />
-              <button type="button" @click="addModel">+</button>
-            </div>
+      <!-- Request shaping for OpenCode Go style gateways. Shown only when
+           the selected provider belongs to the OpenCode family. -->
+      <div v-if="isOpencode" class="lm-opencode">
+        <div class="lm-sec-head">
+          <span class="lm-sec-title">OpenCode Go</span>
+          <span class="lm-opencode-tag">request shaping</span>
+        </div>
+
+        <label class="lm-field">
+          <span class="lm-field-lbl">Session Header</span>
+          <input v-model="selectedSessionHeader" placeholder="x-opencode-session" spellcheck="false" />
+        </label>
+
+        <div class="lm-seg-group">
+          <div class="lm-seg-head">
+            <span>Max Effort</span>
+            <small>{{ selectedMaxEffort === 'keep' ? 'send max verbatim' : 'clamp max to high' }}</small>
           </div>
-
-          <div class="lm-sec">
-            <div class="lm-h">sampling<span>drag to tune</span></div>
-            <div class="lm-gauge" data-k="temp" data-max="2" data-unit="">
-              <span class="lm-k">temp</span>
-              <div class="lm-track"><i :style="{ '--v': tempPct + '%' }"></i><b :style="{ '--v': tempPct + '%' }"></b><input type="range" min="0" max="2" step="0.1" v-model.number="selectedTemperature" @change="saveSampling" :disabled="!selectedProvider" /></div>
-              <span class="lm-v">{{ selectedTemperature.toFixed(1) }}</span>
-            </div>
-            <div class="lm-gauge" data-k="topp" data-max="1" data-unit="">
-              <span class="lm-k">top p</span>
-              <div class="lm-track"><i :style="{ '--v': toppPct + '%' }"></i><b :style="{ '--v': toppPct + '%' }"></b><input type="range" min="0" max="1" step="0.05" v-model.number="selectedTopP" @change="saveSampling" :disabled="!selectedProvider" /></div>
-              <span class="lm-v">{{ selectedTopP.toFixed(2) }}</span>
-            </div>
-          </div>
-
-          <div class="lm-sec">
-            <div class="lm-h">reasoning<span>{{ reasoningScopeLabel }}</span></div>
-            <div class="lm-steps" id="lmSteps">
-              <button
-                v-for="step in EFFORTS"
-                :key="step.key"
-                class="lm-step"
-                :class="{ on: selectedReasoningEffort === step.key }"
-                :data-e="step.key"
-                :style="{ height: step.h }"
-                @click="pickEffort(step.key)"
-              ><i></i><span>{{ step.label }}</span></button>
-            </div>
-            <button class="lm-think" :class="{ on: selectedThinkingEnabled }" id="lmThink" @click="toggleThinking">
-              <span class="lm-tlabel">thinking</span>
-              <span class="lm-tstate">{{ selectedThinkingEnabled ? 'enabled' : 'off' }}</span>
-              <span class="lm-tswitch"><i></i></span>
-            </button>
-          </div>
-
-          <!-- Request shaping for OpenCode Go style gateways. These controls
-               only apply to OpenCode; every other provider hides the divider
-               and the block instead of showing settings that do nothing. -->
-          <template v-if="isOpencode">
-            <div class="lm-sep"><span>opencode-go</span></div>
-
-            <label class="lm-f"><span>session hdr</span><input v-model="selectedSessionHeader" placeholder="x-opencode-session" /></label>
-
-            <div class="lm-f lm-f-stack">
-              <span>max effort</span>
-              <div class="lm-modes">
-                <button
-                  v-for="e in MAX_EFFORTS"
-                  :key="e"
-                  :class="{ on: selectedMaxEffort === e }"
-                  @click="pickMaxEffort(e)"
-                >{{ e }}</button>
-              </div>
-            </div>
-
-            <div class="lm-f lm-f-stack">
-              <span>reasoning mode</span>
-              <div class="lm-modes">
-                <button
-                  v-for="mode in MODES"
-                  :key="mode"
-                  :class="{ on: selectedReasoningMode === mode }"
-                  @click="pickMode(mode)"
-                >{{ mode }}</button>
-              </div>
-            </div>
-
-            <details class="lm-det">
-              <summary>extra headers <span>json</span></summary>
-              <textarea class="lm-ta" spellcheck="false" v-model="selectedExtraHeaders"></textarea>
-            </details>
-          </template>
-
-          <div class="lm-foot">
-            <button class="lm-del" id="lmDel" @click="onDelete" :disabled="!selectedProvider">Delete</button>
-            <button class="lm-save" id="llmSave" @click="onSave" :disabled="!selectedProvider">Save to JSON</button>
+          <div class="lm-modes">
+            <button
+              v-for="e in MAX_EFFORTS"
+              :key="e"
+              type="button"
+              :class="{ on: selectedMaxEffort === e }"
+              @click="pickMaxEffort(e)"
+            >{{ e }}</button>
           </div>
         </div>
+
+        <div class="lm-seg-group">
+          <div class="lm-seg-head">
+            <span>Reasoning Mode</span>
+            <small>{{ selectedReasoningMode === 'effort_only' ? 'reasoning_effort only' : 'include thinking block' }}</small>
+          </div>
+          <div class="lm-modes">
+            <button
+              v-for="mode in MODES"
+              :key="mode"
+              type="button"
+              :class="{ on: selectedReasoningMode === mode }"
+              @click="pickMode(mode)"
+            >{{ mode }}</button>
+          </div>
+        </div>
+
+        <div class="lm-seg-group">
+          <div class="lm-seg-head">
+            <span>Extra Headers (JSON)</span>
+            <small :class="{ 'is-err': Boolean(extraHeadersError) }">{{ extraHeadersError || 'valid json' }}</small>
+          </div>
+          <textarea
+            class="lm-ta"
+            spellcheck="false"
+            placeholder='{"User-Agent": "PebbleAgent/1.0"}'
+            v-model="selectedExtraHeaders"
+          ></textarea>
+        </div>
+      </div>
+
+      <footer class="lm-foot">
+        <button class="lm-del" id="lmDel" type="button" @click="onDelete" :disabled="!selectedProvider">Delete</button>
+        <button class="lm-save" id="llmSave" type="button" @click="onSave" :disabled="!selectedProvider">
+          <span v-if="selectedProvider.dirty" class="lm-save-dot"></span>
+          {{ saveButtonLabel }}
+        </button>
+      </footer>
+    </section>
+  </div>
 </template>
 
 <script setup lang="ts">
@@ -167,6 +275,8 @@ const MAX_EFFORTS = ['downgrade', 'keep']
 
 const newModel = ref('')
 const selectedIndex = ref(-1)
+const credentialsOpen = ref(false)
+const showApiKey = ref(false)
 
 const activeIndex = computed(() => {
   const i = llm.providers.findIndex(p => p.current)
@@ -188,6 +298,18 @@ const selectedProvider = computed<LlmProvider | undefined>(() => llm.providers[e
 const selectedModels = computed(() => selectedProvider.value?.models ?? [])
 const isOpencode = computed(() => isOpenCodeProvider(selectedProvider.value?.name || ''))
 const isActiveSelection = computed(() => effectiveSelectedIndex.value === activeIndex.value)
+
+/* Auto-open credentials when inspecting a draft or unauthenticated card so a
+   new user immediately sees Base URL & API Key without hunting in a collapse. */
+watch(
+  [effectiveSelectedIndex, () => selectedProvider.value?.slug],
+  () => {
+    showApiKey.value = false
+    const p = selectedProvider.value
+    credentialsOpen.value = Boolean(p && (!isProviderReady(p) || !p.apiKey.trim()))
+  },
+  { immediate: true }
+)
 
 function markDirty() {
   const p = selectedProvider.value
@@ -224,7 +346,7 @@ const activeScopedModel = computed(() => {
   if (!p || !isActiveSelection.value || !llm.model) return ''
   return p.models.includes(llm.model) ? llm.model : ''
 })
-const reasoningScopeLabel = computed(() => activeScopedModel.value || 'effort')
+const reasoningScopeLabel = computed(() => activeScopedModel.value || 'provider default')
 const selectedReasoningEffort = computed(() => {
   const p = selectedProvider.value
   if (!p) return 'high'
@@ -250,6 +372,26 @@ const selectedMaxEffort = computed(() => selectedProvider.value?.maxEffort ?? 'd
 const selectedExtraHeaders = computed({
   get: () => selectedProvider.value?.extraHeaders ?? '{}',
   set: v => { const p = selectedProvider.value; if (p) { p.extraHeaders = v; markDirty() } }
+})
+
+const extraHeadersError = computed(() => {
+  if (!isOpencode.value) return ''
+  try {
+    const parsed = JSON.parse(selectedExtraHeaders.value || '{}')
+    if (!parsed || typeof parsed !== 'object' || Array.isArray(parsed)) {
+      return 'must be a JSON object'
+    }
+    return ''
+  } catch {
+    return 'invalid JSON'
+  }
+})
+
+const saveButtonLabel = computed(() => {
+  const p = selectedProvider.value
+  if (!p) return 'Save'
+  if (isProviderReady(p) && !p.current) return 'Save & Activate'
+  return 'Save'
 })
 
 const tempPct = computed(() => Math.min(100, (selectedTemperature.value / 2) * 100))
@@ -321,7 +463,10 @@ function selectProvider(index: number) {
 
 async function createProvider() {
   const idx = await addProvider()
-  if (idx !== null) selectedIndex.value = idx
+  if (idx !== null) {
+    selectedIndex.value = idx
+    credentialsOpen.value = true
+  }
 }
 
 function chooseModel(model: string) {

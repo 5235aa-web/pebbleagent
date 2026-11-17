@@ -39,13 +39,13 @@
       </div>
 
       <div class="mc-rack">
-        <article class="mc-srv" v-for="(srv, i) in mcp.servers" :key="i" :class="[srv.on ? 'on' : '', srv.open ? 'open' : '', srv.state === 'err' ? 'err' : '']">
+        <article class="mc-srv" v-for="(srv, i) in mcp.servers" :key="srv.name || i" :class="[srv.on ? 'on' : '', srv.open ? 'open' : '', srv.state === 'err' ? 'err' : '']">
           <button class="mc-srv-head" @click="srv.open = !srv.open">
             <span class="mc-led"></span>
             <span class="mc-logo">{{ srv.logo }}</span>
             <span class="mc-srv-main">
               <span class="mc-name">{{ srv.name }}<span class="mc-tsp">{{ srv.transport }}</span></span>
-              <span class="mc-cmd">{{ srv.cmd }}</span>
+              <span class="mc-cmd">{{ displayCmd(srv) }}</span>
             </span>
             <span class="mc-count">{{ srv.tools }}</span>
             <span class="mc-sw" :class="{ on: srv.on }" @click.stop="toggleMcpServer(srv.name, !srv.on)"><i></i></span>
@@ -59,6 +59,7 @@
                 <span class="mc-tn" v-for="n in fullTools(srv)" :key="n">{{ n }}</span>
               </div>
             </div>
+
             <div class="mc-token" v-if="srv.requiresToken">
               <span class="mc-tk-l">{{ srv.tokenEnv || 'token' }}</span>
               <template v-if="editing === srv.name">
@@ -67,20 +68,77 @@
                 <button class="mc-tk-e" @click="editing = ''">Cancel</button>
               </template>
               <template v-else>
-                <span class="mc-tk-v" :class="{ unset: !srv.token }">{{ srv.token || 'not set' }}</span>
-                <button class="mc-tk-e" @click="startEdit(srv.name)">{{ srv.token ? 'Edit' : 'Set' }}</button>
+                <span class="mc-tk-v" :class="{ unset: !srv.tokenConfigured }">{{ srv.tokenConfigured ? 'configured' : 'not set' }}</span>
+                <button class="mc-tk-e" @click="startEdit(srv.name)">{{ srv.tokenConfigured ? 'Edit' : 'Set' }}</button>
               </template>
             </div>
+
+            <div class="mc-token" v-if="srv.installable && srv.installType === 'download'">
+              <span class="mc-tk-l">{{ downloadTarget === srv.name ? 'install dir' : pathTarget === srv.name ? 'exe path' : (srv.ready ? 'binary' : 'needs') }}</span>
+              <template v-if="downloadTarget === srv.name">
+                <input
+                  class="mc-tk-in"
+                  v-model="installDirDraft"
+                  placeholder="~/.pebble/mcp"
+                  spellcheck="false"
+                  :disabled="installing === srv.name"
+                  @keydown.enter.prevent="runDownload(srv)"
+                />
+                <button class="mc-tk-e" :disabled="installing === srv.name" @click="runDownload(srv)">
+                  {{ installing === srv.name ? 'Downloading…' : 'Confirm' }}
+                </button>
+                <button class="mc-tk-e" :disabled="installing === srv.name" @click="downloadTarget = ''">Cancel</button>
+              </template>
+              <template v-else-if="pathTarget === srv.name">
+                <input
+                  class="mc-tk-in"
+                  v-model="pathDraft"
+                  placeholder="C:\path\to\codebase-memory-mcp.exe or folder…"
+                  spellcheck="false"
+                  :disabled="installing === srv.name"
+                  @keydown.enter.prevent="saveManualPath(srv)"
+                />
+                <button class="mc-tk-e" :disabled="installing === srv.name" @click="saveManualPath(srv)">
+                  {{ installing === srv.name ? 'Saving…' : 'Save' }}
+                </button>
+                <button class="mc-tk-e" :disabled="installing === srv.name" @click="pathTarget = ''">Cancel</button>
+              </template>
+              <template v-else>
+                <span class="mc-tk-v" :class="{ unset: !srv.ready }">{{ srv.ready ? srv.cmd : 'not installed' }}</span>
+                <button class="mc-tk-e" :disabled="installing === srv.name" @click="startDownload(srv)">
+                  {{ installing === srv.name ? 'Downloading…' : (srv.ready ? 'Redownload' : 'Download') }}
+                </button>
+                <button class="mc-tk-e" :disabled="installing === srv.name" @click="startPath(srv)">
+                  {{ srv.ready ? 'Change path' : 'Set path' }}
+                </button>
+              </template>
+            </div>
+
             <div class="mc-token" v-else-if="!srv.ready">
               <span class="mc-tk-l">needs</span>
               <span class="mc-tk-v unset">{{ missingLabel(srv.missing) }}</span>
-              <button class="mc-tk-e" v-if="srv.installable" @click="installMcpServer(srv.name)">Install</button>
+              <a
+                v-for="(link, key) in srv.prereqLinks"
+                :key="key"
+                class="mc-tk-e"
+                :href="link.url"
+                target="_blank"
+                rel="noopener"
+              >{{ link.label }}</a>
+              <button class="mc-tk-e" v-if="srv.installable" :disabled="installing === srv.name" @click="runInstall(srv.name)">
+                {{ installing === srv.name ? 'Installing…' : 'Install' }}
+              </button>
+            </div>
+
+            <div class="mc-token mc-err-row" v-if="srv.state === 'err' && srv.error && srv.ready">
+              <span class="mc-tk-l">error</span>
+              <span class="mc-tk-v">{{ srv.error }}</span>
             </div>
           </div>
         </article>
       </div>
 
-      <div class="mc-opt">
+      <div class="mc-opt" v-if="mcp.available.length">
         <div class="mc-opt-h">Optional servers</div>
         <div class="mc-opt-row" v-for="opt in mcp.available" :key="opt.name">
           <span class="mc-opt-logo">{{ opt.name.slice(0, 1).toUpperCase() }}</span>
@@ -88,7 +146,9 @@
             <b>{{ opt.name }}</b>
             <small>{{ opt.desc }}<template v-if="opt.missing.length"> · needs {{ missingLabel(opt.missing) }}</template></small>
           </span>
-          <button class="mc-install" @click="installMcpServer(opt.name)">Install</button>
+          <button class="mc-install" :disabled="installing === opt.name" @click="runInstall(opt.name)">
+            {{ installing === opt.name ? 'Installing…' : 'Install' }}
+          </button>
         </div>
       </div>
     </div>
@@ -119,6 +179,11 @@ function fullTools(srv: McpServer): string[] {
 
 const editing = ref('')
 const secretDraft = ref('')
+const downloadTarget = ref('')
+const installDirDraft = ref('')
+const pathTarget = ref('')
+const pathDraft = ref('')
+const installing = ref('')
 
 /* Prerequisites arrive as identifiers (node / uv / path); the row spells them
    the way a reader would search for them. */
@@ -132,9 +197,61 @@ function missingLabel(missing: string[]): string {
   return missing.map(m => PREREQ_LABELS[m] ?? m).join(', ')
 }
 
+function displayCmd(srv: McpServer): string {
+  if (!srv.cmd || srv.cmd.includes('REPLACE_WITH')) {
+    return 'not installed — expand to download or set path'
+  }
+  return srv.cmd
+}
+
 function startEdit(server: string): void {
   editing.value = server
   secretDraft.value = ''
+}
+
+function startDownload(srv: McpServer): void {
+  pathTarget.value = ''
+  downloadTarget.value = srv.name
+  installDirDraft.value = srv.installDir || '~/.pebble/mcp'
+}
+
+function startPath(srv: McpServer): void {
+  downloadTarget.value = ''
+  pathTarget.value = srv.name
+  pathDraft.value = srv.ready && srv.cmd ? srv.cmd : ''
+}
+
+async function runDownload(srv: McpServer): Promise<void> {
+  if (installing.value) return
+  installing.value = srv.name
+  try {
+    const ok = await installMcpServer(srv.name, { installDir: installDirDraft.value })
+    if (ok) downloadTarget.value = ''
+  } finally {
+    installing.value = ''
+  }
+}
+
+async function saveManualPath(srv: McpServer): Promise<void> {
+  const value = pathDraft.value.trim()
+  if (!value || installing.value) return
+  installing.value = srv.name
+  try {
+    const ok = await installMcpServer(srv.name, { path: value })
+    if (ok) pathTarget.value = ''
+  } finally {
+    installing.value = ''
+  }
+}
+
+async function runInstall(name: string): Promise<void> {
+  if (installing.value) return
+  installing.value = name
+  try {
+    await installMcpServer(name)
+  } finally {
+    installing.value = ''
+  }
 }
 
 /** Writes the credential into the variable that server actually reads. The
