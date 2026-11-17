@@ -27,6 +27,22 @@
       "topP": 0.2,
       "reasoning_effort": "high",
       "thinking_enabled": true
+    },
+    {
+      "id": "teapotrouter",
+      "provider": "teapotrouter",
+      "apiKey": "sk-xxxx",
+      "baseUrl": "https://api.teapotrouter.com/v1",
+      "models": [
+        "claude-sonnet-5-5",
+        "claude-opus-5-5",
+        "claude-haiku-4-5",
+        "gpt-6.1-sol"
+      ],
+      "temperature": 0.2,
+      "topP": 0.2,
+      "reasoning_effort": "high",
+      "thinking_enabled": true
     }
   ],
   "activeProviderIndex": 0
