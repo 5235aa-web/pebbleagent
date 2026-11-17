@@ -1,5 +1,6 @@
 """Token usage and cost reporting."""
 
+import json
 import logging
 from datetime import datetime, timedelta, timezone
 
@@ -26,14 +27,30 @@ def _since_utc(rng: str):
     return start.astimezone(timezone.utc).strftime("%Y-%m-%d %H:%M:%S")
 
 
-def _empty_stats():
+def _pricing_currency_and_rate(srv) -> tuple:
+    from agent_core.chat.usage import DEFAULT_CNY_PER_USD, normalize_currency, resolve_cny_per_usd
+    for p in (srv._DATA_DIR / "model_pricing.json", srv._PROJECT_ROOT / "model_pricing.json"):
+        if p.exists():
+            try:
+                with open(p, "r", encoding="utf-8") as f:
+                    data = json.load(f)
+                if isinstance(data, dict):
+                    return normalize_currency(data.get("default_currency"), "CNY"), resolve_cny_per_usd(data)
+            except Exception:
+                continue
+    return "CNY", DEFAULT_CNY_PER_USD
+
+
+def _empty_stats(currency: str = "CNY", cny_per_usd: float = 6.67):
     return {
         "total_cost": 0.0,
         "total_input_tokens": 0,
         "total_cache_hit_tokens": 0,
         "total_output_tokens": 0,
         "api_calls": 0,
-        "currency": "CNY",
+        "currency": currency,
+        "cny_per_usd": cny_per_usd,
+        "cost_by_currency": {},
         "started_at": None,
         "ended_at": None,
         "models": [],
@@ -58,6 +75,7 @@ def handle(ctx, method):
         limit = max(1, min(limit, 500))
 
         from agent_core import agent_chat_history as history
+        base_cur, rate = _pricing_currency_and_rate(ctx.srv)
 
         conversation_id = None
         if rng == "session":
@@ -69,7 +87,7 @@ def handle(ctx, method):
                 logger.warning(f"[Usage] Failed to resolve conversation for {sid}: {e}")
                 conv = None
             if not conv:
-                return {"id": rid, "result": _empty_stats()}
+                return {"id": rid, "result": _empty_stats(base_cur, rate)}
             conversation_id = conv["id"]
 
         try:
@@ -77,6 +95,8 @@ def handle(ctx, method):
                 conversation_id=conversation_id,
                 since=_since_utc(rng),
                 limit=limit,
+                target_currency=base_cur,
+                cny_per_usd=rate,
             )
         except Exception as e:
             logger.warning(f"[Usage] Failed to read usage stats: {e}", exc_info=True)

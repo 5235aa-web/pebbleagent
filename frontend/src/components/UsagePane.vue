@@ -18,9 +18,23 @@
                 </div>
               </div>
               <div class="usage-sub">{{ usage.tokensIn.toLocaleString() }} in / {{ usage.tokensOut.toLocaleString() }} out · {{ usage.calls }} calls</div>
-              <div class="usage-tag">
-                <svg width="8" height="8" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="3"><polyline points="20 6 9 17 4 12"/></svg>
-                {{ priced ? 'priced · ' + tier : 'unpriced · ' + tier }}
+              <div class="usage-tags">
+                <div class="usage-tag">
+                  <svg width="8" height="8" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="3"><polyline points="20 6 9 17 4 12"/></svg>
+                  {{ priced ? 'priced · ' + tier : 'unpriced · ' + tier }}
+                </div>
+                <label class="usage-rate" title="Exchange rate used when converting between CNY and USD">
+                  <span>1 USD =</span>
+                  <input
+                    type="number"
+                    min="0.01"
+                    step="0.01"
+                    :value="usage.cnyPerUsd"
+                    @change="onRateChange($event)"
+                    @keydown.enter.prevent="($event.target as HTMLInputElement).blur()"
+                  />
+                  <span>CNY</span>
+                </label>
               </div>
             </div>
           </div>
@@ -46,11 +60,27 @@
             <span class="bill-dot" :style="row.tint ? 'background:' + row.tint : ''"></span>
             <span class="bill-model">{{ row.model }}</span>
             <span class="bill-tok">{{ fmtTokens(row.tokensIn) }} / {{ fmtTokens(row.tokensOut) }}</span>
-            <span class="bill-cost">{{ fmtMoney(row.cost) }}</span>
+            <span class="bill-cost">{{ fmtMoney(row.cost, row.currency) }}</span>
           </div>
 
           <div class="section-h">models · rates &amp; windows
-            <span class="sh-note" id="pxCur">{{ pricingData.default_currency.toUpperCase() }} · per 1M</span>
+            <HelpTip title="Rates & Context Windows">
+              <p>Configure per-model token rates (per 1M tokens), currency units (<code>CNY</code> / <code>USD</code>), and context window sizes (<code>ctx</code>).</p>
+              <ul>
+                <li><strong>Model ID:</strong> Click <code>+ model</code> and enter the exact model ID used in chat, then click <strong>Save</strong>.</li>
+                <li><strong>Currency unit (<code>CNY</code> / <code>USD</code>):</strong> Use the header toggle to set the default unit for new models, or click the <code>CNY</code> / <code>USD</code> pill on any model card to switch that model independently (e.g. CNY for DeepSeek, USD for Claude/GPT). The top <code>CNY | USD</code> switch only converts display totals using the editable <code>1 USD = … CNY</code> rate.</li>
+                <li><strong>Context window (<code>ctx</code>):</strong> Enter total token limit (e.g. <code>200000</code>) so the context ring and usage % stay accurate.</li>
+                <li><strong>Rates (optional):</strong> Fill <code>cache miss</code>, <code>cache hit</code>, and <code>output</code> per period only for pay-as-you-go APIs.</li>
+                <li><strong>Subscriptions (e.g. OpenCode Go):</strong> Leave all rates blank and fill <strong>only <code>ctx</code></strong> — cost stays unpriced while context tracking still works.</li>
+              </ul>
+            </HelpTip>
+            <div class="px-cur-wrap" id="pxCur">
+              <div class="px-seg px-cur-seg">
+                <button type="button" :class="{ on: defaultPricingCurrency === 'CNY' }" @click="setDefaultPricingCurrency('CNY')">CNY</button>
+                <button type="button" :class="{ on: defaultPricingCurrency === 'USD' }" @click="setDefaultPricingCurrency('USD')">USD</button>
+              </div>
+              <span class="px-per-m">· per 1M</span>
+            </div>
           </div>
 
           <div class="px-bar">
@@ -78,7 +108,14 @@
                   @change="renameModel(row.name, $event)"
                   @keydown.enter.prevent="onNameEnter($event)"
                 />
-                <span class="px-prov">{{ row.vendor }}</span>
+                <span class="px-prov" v-if="row.vendor">{{ row.vendor }}</span>
+                <button
+                  type="button"
+                  class="px-cur-pill"
+                  :class="row.currency.toLowerCase()"
+                  :title="'Pricing unit: ' + row.currency + ' (click to switch CNY / USD)'"
+                  @click="toggleModelCurrency(row.name)"
+                >{{ row.currency }}</button>
                 <label class="px-ctx">
                   <span>ctx</span>
                   <input
@@ -113,10 +150,11 @@
 
 <script setup lang="ts">
 import { computed, onMounted, ref } from 'vue'
-import { usage as usageState, llm, fmtTokens, fmtMoney, setDisplayCurrency } from '../data/panels'
+import { usage as usageState, llm, fmtTokens, fmtMoney, setDisplayCurrency, setExchangeRate } from '../data/panels'
 import { streamState } from '../data/stream'
-import { formatRate, getConfig, savePricing, refreshLlm } from '../data/wire'
+import { formatRate, getConfig, savePricing, saveExchangeRate, refreshLlm, refreshPanes } from '../data/wire'
 import { askConfirm } from '../data/confirm'
+import HelpTip from './HelpTip.vue'
 
 const usage = usageState
 
@@ -197,14 +235,22 @@ type PricingEntry = {
      table is the one place that lists models, but it is not a price: a row with
      only this field bills nothing and stays unpriced. */
   context_limit?: number
+  currency?: string
   provider?: string
   vendor?: string
 }
 
-const pricingData = ref<{ models: Record<string, PricingEntry>; default_currency: string }>({
+function normCur(val: unknown, fallback = 'CNY'): 'CNY' | 'USD' {
+  const s = String(val ?? '').trim().toUpperCase()
+  if (s === 'USD' || s === 'CNY') return s
+  return fallback.toUpperCase() === 'USD' ? 'USD' : 'CNY'
+}
+
+const pricingData = ref<{ models: Record<string, PricingEntry>; default_currency: 'CNY' | 'USD' }>({
   models: {},
-  default_currency: 'cny'
+  default_currency: 'CNY'
 })
+const defaultPricingCurrency = computed(() => normCur(pricingData.value.default_currency))
 const pricingPeriod = ref<'base' | 'peak' | 'off'>('base')
 const pricingSaving = ref(false)
 const pricingHint = ref('')
@@ -213,7 +259,7 @@ const pricingHint = ref('')
 const newModels = new Set<string>()
 /* What the gateway last handed over. Comparing against it is what makes "unsaved
    edits" truthful instead of a guess. */
-const pricingBaseline = ref(JSON.stringify({ models: {}, default_currency: 'cny' }))
+const pricingBaseline = ref(JSON.stringify({ models: {}, default_currency: 'CNY' }))
 const pricingDirty = computed(() => JSON.stringify(pricingData.value) !== pricingBaseline.value)
 const pricingNote = computed(() => {
   if (pricingSaving.value) return 'saving…'
@@ -234,6 +280,7 @@ const pricingRows = computed(() =>
     return {
       name,
       vendor: String(entry.provider || entry.vendor || ''),
+      currency: normCur(entry.currency, defaultPricingCurrency.value),
       tint: TINTS[i % TINTS.length],
       contextLimit: entry.context_limit ?? '',
       block: block
@@ -255,14 +302,18 @@ let pricingRetries = 0
 async function loadPricing(): Promise<void> {
   const raw = (await getConfig('pricing')) as
     | {
-        pricing?: { models?: Record<string, PricingEntry>; default_currency?: string }
+        pricing?: { models?: Record<string, PricingEntry>; default_currency?: string; cny_per_usd?: number }
         models?: Record<string, PricingEntry>
         default_currency?: string
+        cny_per_usd?: number
       }
     | null
   // `config.get` answers `{ pricing: {...}, period, cn_holidays }`, so the table
   // can arrive either at the root or under `pricing`.
   const payload = raw?.pricing ?? raw
+  if (typeof payload?.cny_per_usd === 'number' && payload.cny_per_usd > 0) {
+    setExchangeRate(payload.cny_per_usd)
+  }
   if (!payload?.models || !Object.keys(payload.models).length) {
     if (pricingRetries < 20) {
       pricingRetries += 1
@@ -286,7 +337,7 @@ async function loadPricing(): Promise<void> {
   }
   pricingData.value = {
     models: payload.models,
-    default_currency: String(payload.default_currency || 'cny')
+    default_currency: normCur(payload.default_currency)
   }
   pricingBaseline.value = JSON.stringify(pricingData.value)
   newModels.clear()
@@ -377,6 +428,32 @@ function renameModel(from: string, ev: Event): void {
   pricingHint.value = `renamed to ${next} · save to apply`
 }
 
+function setDefaultPricingCurrency(cur: 'CNY' | 'USD'): void {
+  pricingData.value.default_currency = cur
+  pricingHint.value = `default unit set to ${cur} · save to apply`
+}
+
+function toggleModelCurrency(name: string): void {
+  const entry = pricingData.value.models[name]
+  if (!entry) return
+  const current = normCur(entry.currency, defaultPricingCurrency.value)
+  entry.currency = current === 'CNY' ? 'USD' : 'CNY'
+  pricingHint.value = `${name} unit set to ${entry.currency} · save to apply`
+}
+
+async function onRateChange(ev: Event): Promise<void> {
+  const input = ev.target as HTMLInputElement
+  const val = Number(input.value)
+  if (!Number.isFinite(val) || val <= 0) {
+    input.value = String(usage.cnyPerUsd)
+    return
+  }
+  setExchangeRate(val)
+  input.value = String(usage.cnyPerUsd)
+  const ok = await saveExchangeRate(usage.cnyPerUsd)
+  if (ok) void refreshPanes()
+}
+
 function addModel(): void {
   let n = 1
   while (pricingData.value.models['new-model-' + n]) n++
@@ -384,9 +461,9 @@ function addModel(): void {
   /* No price block by default. A row may exist only to hold a window, and a
      zero rate would read as "priced at zero" instead of "unpriced"; the block
      appears the moment a rate is typed. */
-  pricingData.value.models[name] = {}
+  pricingData.value.models[name] = { currency: defaultPricingCurrency.value }
   newModels.add(name)
-  pricingHint.value = `added ${name} · set its rates or window, then save`
+  pricingHint.value = `added ${name} (${defaultPricingCurrency.value}) · set its rates or window, then save`
 }
 
 /** Removing a stored model edits the table that gets written on Save, so it asks
@@ -413,7 +490,8 @@ async function saveTable(): Promise<void> {
   pricingHint.value = 'saving…'
   const res = await savePricing(
     pricingData.value.models as unknown as Record<string, unknown>,
-    pricingData.value.default_currency
+    pricingData.value.default_currency,
+    usage.cnyPerUsd
   )
   pricingSaving.value = false
   if (!res.ok) {
@@ -430,6 +508,7 @@ async function saveTable(): Promise<void> {
      the previous table. The table itself is not re-read: the editor already holds
      exactly what the gateway accepted. */
   void refreshLlm()
+  void refreshPanes()
   window.setTimeout(() => {
     if (pricingHint.value === 'saved · applies to the next call') pricingHint.value = ''
   }, 3200)

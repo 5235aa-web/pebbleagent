@@ -7,6 +7,11 @@ which is what the in-app update sheet shows before installing. Add the section
 before running `npm run release`; the release stops if it is missing, because a
 feed with empty notes tells the user nothing.
 
+## 1.3.4
+
+- Inline help popovers (`HelpTip.vue`) in the right-dock Usage and LLM panels. Added clickable `?` badges beside `models · rates & windows` (explaining per-1M pricing, `CNY`/`USD` currency unit switching, configurable exchange rate, and leaving rates blank to set `ctx` only for subscription models like OpenCode Go) and beside `Providers` (step-by-step OpenCode Go subscription setup guide covering provider name, Base URL, API key, `x-opencode-session`, `effort_only`, and context window tracking).
+- Multi-currency pricing, authentic cost ledger, and configurable `CNY`/`USD` exchange rate. Added a default `CNY | USD` unit toggle in `models · rates & windows` plus per-model `CNY`/`USD` pills so domestic and overseas models can coexist without manual conversion, updated `UsageTracker` and `agent_chat_history` to store each API call's real currency and convert mixed-currency summaries at the configured rate instead of summing raw numbers as `CNY`, updated default `CNY_PER_USD` to `6.67` with an editable `1 USD = … CNY` control persisted via `pricing.set_rate` / `pricing.save`, and expanded sub-cent display precision to 4 decimals (`$0.0014`) to eliminate small-amount rounding drift.
+
 ## 1.3.3
 
 - Streamlined bundled MCP servers down to three core integrations (`github`, `codebase-memory`, `chrome-devtools`). Removed `time`, `think-tool`, `blender` and the `uv` prerequisite from `.mcp.json` and `mcp_install.json` so fresh installs ship only the active MCP toolset.

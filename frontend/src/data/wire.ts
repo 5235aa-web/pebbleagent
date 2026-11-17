@@ -171,7 +171,7 @@ watch(
 import { permissions, plan, sessions, sessionState, projects, setCatalog, catalog, bucketFor, selectSession, type Session, type SessionGroup } from './store'
 import { forwardState, exitForwardMode } from './forward'
 import { parseForwardedPayload } from './forwarded'
-import { usage, files, mcp, ledger, context, llm, notes, pairing, search, image, isOpenCodeProvider, isProviderReady, resolveModelThinking, type BillRow, type ClarifyQuestion, type ClarifyAnswer, type LlmProvider, type ModelThinkingConfig, type ThinkingLevel } from './panels'
+import { usage, files, mcp, ledger, context, llm, notes, pairing, search, image, setExchangeRate, isOpenCodeProvider, isProviderReady, resolveModelThinking, type BillRow, type ClarifyQuestion, type ClarifyAnswer, type LlmProvider, type ModelThinkingConfig, type ThinkingLevel } from './panels'
 import type { StreamItem } from './stream'
 import { renderUserBubble, nowClock, nowStamp, clockOf, escapeHtml, type AttachmentView, type ToolCallView, type ToolState } from './render'
 import { markPreviewChanged, mergePreviewComments, clearComments } from './preview'
@@ -1584,7 +1584,11 @@ function syncUsage(p: Record<string, unknown>): void {
      provider card and the resolved endpoint disagree. */
   const usedModel = String(p.model ?? '').trim()
   if (usedModel) streamState.model = usedModel
-  const cost = Number(p.session_cost_cny ?? p.session_cost ?? NaN)
+  if (typeof p.cny_per_usd === 'number' && p.cny_per_usd > 0) setExchangeRate(p.cny_per_usd)
+  if (typeof p.session_currency === 'string' && p.session_currency) {
+    usage.currency = p.session_currency.toLowerCase()
+  }
+  const cost = Number(p.session_cost ?? p.session_cost_cny ?? NaN)
   if (Number.isFinite(cost)) usage.sessionCost = cost
   const tin = Number(p.latest_input_tokens ?? NaN)
   const tout = Number(p.latest_output_tokens ?? NaN)
@@ -1644,6 +1648,7 @@ function syncUsage(p: Record<string, unknown>): void {
     tokensIn: Number(call.input_tokens ?? tin ?? 0),
     tokensOut: Number(call.output_tokens ?? tout ?? 0),
     cost: Number(call.total_cost ?? call.cost_cny ?? 0),
+    currency: typeof call.currency === 'string' && call.currency ? call.currency.toLowerCase() : usage.currency,
     tint: ''
   }
   usage.history = [row, ...usage.history].slice(0, 8)
@@ -2837,6 +2842,17 @@ export async function refreshPanes(): Promise<void> {
     ])
     const costOf = (r: PromiseSettledResult<Record<string, unknown>>): number | null =>
       r.status === 'fulfilled' && typeof r.value.total_cost === 'number' ? r.value.total_cost : null
+    for (const r of [sessionStats, todayStats, weekStats, monthStats]) {
+      if (r.status === 'fulfilled') {
+        if (typeof r.value.currency === 'string' && r.value.currency) {
+          usage.currency = r.value.currency.toLowerCase()
+        }
+        if (typeof r.value.cny_per_usd === 'number' && r.value.cny_per_usd > 0) {
+          setExchangeRate(r.value.cny_per_usd)
+        }
+        break
+      }
+    }
     /* The whole database's day / week / month are answered before the session is
        judged valid. A missing or unreadable session used to freeze these three on
        their last values, which read as "nothing spent" over a ledger that kept
@@ -2877,6 +2893,7 @@ export async function refreshPanes(): Promise<void> {
           tokensIn: Number(c.input_tokens ?? 0) + Number(c.cache_hit_tokens ?? 0),
           tokensOut: Number(c.output_tokens ?? 0),
           cost: Number(c.total_cost ?? 0),
+          currency: typeof c.currency === 'string' && c.currency ? c.currency.toLowerCase() : usage.currency,
           tint: ''
         }))
       /* Window occupancy has to be restored here too: `message.usage` only arrives
@@ -3661,18 +3678,39 @@ export function setConfig(key: string, value: unknown): Promise<boolean> {
     "saved" while the file on disk was untouched. */
 export async function savePricing(
   models: Record<string, unknown>,
-  currency = 'cny'
+  currency = 'cny',
+  cnyPerUsd?: number
 ): Promise<{ ok: boolean; error: string }> {
   if (!gateway.connected) return { ok: false, error: 'the gateway is offline' }
   try {
-    const res = await gateway.request<{ ok?: boolean; error?: string; count?: number }>('pricing.save', {
+    const payload: Record<string, unknown> = {
       models,
       default_currency: currency
-    })
+    }
+    if (typeof cnyPerUsd === 'number' && Number.isFinite(cnyPerUsd) && cnyPerUsd > 0) {
+      payload.cny_per_usd = cnyPerUsd
+    }
+    const res = await gateway.request<{ ok?: boolean; error?: string; count?: number }>('pricing.save', payload)
     if (res?.ok === false) return { ok: false, error: String(res.error ?? 'the table was refused') }
     return { ok: true, error: '' }
   } catch (e) {
     return { ok: false, error: e instanceof Error ? e.message : 'the table was refused' }
+  }
+}
+
+export async function saveExchangeRate(rate: number): Promise<boolean> {
+  if (!gateway.connected || !Number.isFinite(rate) || rate <= 0) return false
+  try {
+    const res = await gateway.request<{ ok?: boolean; cny_per_usd?: number }>('pricing.set_rate', {
+      cny_per_usd: rate
+    })
+    if (res?.ok === false) return false
+    if (typeof res?.cny_per_usd === 'number' && res.cny_per_usd > 0) {
+      setExchangeRate(res.cny_per_usd)
+    }
+    return true
+  } catch {
+    return false
   }
 }
 

@@ -28,7 +28,20 @@
     <!-- Provider cards -->
     <section class="lm-card-sec">
       <div class="lm-sec-head">
-        <span class="lm-sec-title">Providers</span>
+        <span class="lm-sec-title-wrap">
+          <span class="lm-sec-title">Providers</span>
+          <HelpTip title="OpenCode Go Setup Guide">
+            <p>To use an <strong>OpenCode Go</strong> subscription, create a provider card and fill these fields:</p>
+            <ul>
+              <li><strong>Name:</strong> Set to <code>opencode-go</code> (or <code>opencode</code> / <code>OpenCode Go</code>) to unlock the OpenCode Go settings below.</li>
+              <li><strong>Base URL:</strong> <code>https://opencode.ai/inference/go/openai/v1</code></li>
+              <li><strong>API Key:</strong> Paste your OpenCode Go API key.</li>
+              <li><strong>Models:</strong> Add your subscription model IDs (e.g. <code>glm-5.3</code>, <code>kimi-k3.1</code>, <code>minimax-m3.1</code>).</li>
+              <li><strong>OpenCode Go section:</strong> Set <strong>Session Header</strong> to <code>x-opencode-session</code>, choose <code>effort_only</code> (recommended) or <code>thinking</code> for Reasoning Mode, and click <strong>Save &amp; Activate</strong>.</li>
+              <li><strong>Context ring tip:</strong> In <strong>Usage → models · rates &amp; windows</strong>, add each model with only its <code>ctx</code> size and leave rates blank.</li>
+            </ul>
+          </HelpTip>
+        </span>
         <button class="lm-add-btn" type="button" @click="createProvider">+ New</button>
       </div>
       <div class="lm-prov" id="lmProv">
@@ -128,7 +141,7 @@
           </span>
         </div>
         <div class="lm-madd">
-          <input v-model="newModel" placeholder="Add model id (e.g. gpt-4o)…" spellcheck="false" @keydown.enter.prevent="addModel" @blur="addModel" />
+          <input v-model="newModel" placeholder="Add model id (e.g. Qwen4-Max)…" spellcheck="false" @keydown.enter.prevent="addModel" @blur="addModel" />
           <button type="button" @click="addModel">+</button>
         </div>
       </div>
@@ -261,6 +274,7 @@ import { computed, ref, watch } from 'vue'
 import { llm, isOpenCodeProvider, isProviderReady, resolveModelThinking, type LlmProvider } from '../data/panels'
 import { switchAgent, switchModel, setModelParams, setModelThinking, saveProvider, deleteProvider, addProvider, switchProvider } from '../data/wire'
 import { askConfirm } from '../data/confirm'
+import HelpTip from './HelpTip.vue'
 
 const EFFORTS = [
   { key: 'low', label: 'low', h: '34%' },

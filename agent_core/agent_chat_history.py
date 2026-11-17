@@ -967,99 +967,105 @@ def save_api_call_cost(
     return cost_id
 
 
-def get_conversation_cost_summary(conversation_id: int) -> dict:
+def get_conversation_cost_summary(
+    conversation_id: int,
+    target_currency: str = "CNY",
+    cny_per_usd: Optional[float] = None,
+) -> dict:
     """
-    获取对话累计费用汇总
-    
-    Returns:
-        {
-            "total_cost": float,           # 总费用
-            "total_input_tokens": int,     # 总输入 token
-            "total_cache_hit_tokens": int, # 总缓存 token
-            "total_output_tokens": int,    # 总输出 token
-            "api_calls": int,              # 总 API 调用次数
-            "currency": str,               # 货币
-            "by_model": {                  # 按模型分组
-                "deepseek-v4-flash": {
-                    "cost": 0.001,
-                    "calls": 1,
-                    "input_tokens": 16640,
-                    "output_tokens": 271
-                }
-            }
-        }
+    获取对话累计费用汇总（按币种分别累加后再统一折算到 target_currency，避免混币直接相加）
     """
+    from .chat.usage import DEFAULT_CNY_PER_USD, convert_currency, normalize_currency
+
+    base_cur = normalize_currency(target_currency, "CNY")
+    rate = float(cny_per_usd) if (cny_per_usd and cny_per_usd > 0) else DEFAULT_CNY_PER_USD
+
     conn = _connect()
     cursor = conn.cursor()
-    
-    # 汇总查询
+
     cursor.execute("""
         SELECT 
-            COALESCE(SUM(total_cost), 0.0) as total_cost,
             COALESCE(SUM(input_tokens + cache_hit_tokens), 0) as total_input_tokens,
             COALESCE(SUM(cache_hit_tokens), 0) as total_cache_hit_tokens,
             COALESCE(SUM(output_tokens), 0) as total_output_tokens,
-            COUNT(*) as api_calls,
-            COALESCE(MAX(currency), 'CNY') as currency
+            COUNT(*) as api_calls
         FROM agent_chat_costs
         WHERE conversation_id = ?
     """, (conversation_id,))
-    
     row = cursor.fetchone()
-    
+
+    cursor.execute("""
+        SELECT COALESCE(UPPER(currency), 'CNY') as cur, COALESCE(SUM(total_cost), 0.0)
+        FROM agent_chat_costs
+        WHERE conversation_id = ?
+        GROUP BY COALESCE(UPPER(currency), 'CNY')
+    """, (conversation_id,))
+    cost_by_currency: dict = {}
+    total_cost = 0.0
+    for cur_raw, amt in cursor.fetchall():
+        cur = normalize_currency(cur_raw, "CNY")
+        val = float(amt or 0.0)
+        cost_by_currency[cur] = round(cost_by_currency.get(cur, 0.0) + val, 6)
+        total_cost += convert_currency(val, cur, base_cur, rate)
+
     summary = {
-        "total_cost": round(row[0], 6) if row else 0.0,
-        "total_input_tokens": row[1] if row else 0,
-        "total_cache_hit_tokens": row[2] if row else 0,
-        "total_output_tokens": row[3] if row else 0,
-        "api_calls": row[4] if row else 0,
-        "currency": row[5] if row else "CNY",
+        "total_cost": round(total_cost, 6),
+        "total_input_tokens": row[0] if row else 0,
+        "total_cache_hit_tokens": row[1] if row else 0,
+        "total_output_tokens": row[2] if row else 0,
+        "api_calls": row[3] if row else 0,
+        "currency": base_cur,
+        "cost_by_currency": cost_by_currency,
         "by_model": {}
     }
-    
-    # 按模型分组查询
+
+    # 按模型 + 币种分组，折算到 target_currency
     cursor.execute("""
         SELECT 
             model_name,
+            COALESCE(UPPER(currency), 'CNY') as cur,
             COALESCE(SUM(total_cost), 0.0) as cost,
             COUNT(*) as calls,
             COALESCE(SUM(input_tokens), 0) as input_tokens,
             COALESCE(SUM(output_tokens), 0) as output_tokens
         FROM agent_chat_costs
         WHERE conversation_id = ?
-        GROUP BY model_name
+        GROUP BY model_name, COALESCE(UPPER(currency), 'CNY')
         ORDER BY cost DESC
     """, (conversation_id,))
-    
+
     for r in cursor.fetchall():
-        summary["by_model"][r[0]] = {
-            "cost": round(r[1], 6),
-            "calls": r[2],
-            "input_tokens": r[3],
-            "output_tokens": r[4]
-        }
-    
+        mname = r[0]
+        cur = normalize_currency(r[1], "CNY")
+        converted = convert_currency(float(r[2] or 0.0), cur, base_cur, rate)
+        bucket = summary["by_model"].setdefault(mname, {
+            "cost": 0.0,
+            "calls": 0,
+            "input_tokens": 0,
+            "output_tokens": 0,
+        })
+        bucket["cost"] = round(bucket["cost"] + converted, 6)
+        bucket["calls"] += int(r[3] or 0)
+        bucket["input_tokens"] += int(r[4] or 0)
+        bucket["output_tokens"] += int(r[5] or 0)
+
     conn.close()
     return summary
 
 
-def get_usage_stats(conversation_id: Optional[int] = None,
-                    since: Optional[str] = None,
-                    limit: int = 50) -> dict:
-    """Aggregate agent_chat_costs, optionally scoped to one conversation and a time window.
+def get_usage_stats(
+    conversation_id: Optional[int] = None,
+    since: Optional[str] = None,
+    limit: int = 50,
+    target_currency: str = "CNY",
+    cny_per_usd: Optional[float] = None,
+) -> dict:
+    """Aggregate agent_chat_costs, optionally scoped to one conversation and a time window."""
+    from .chat.usage import DEFAULT_CNY_PER_USD, convert_currency, normalize_currency
 
-    Args:
-        conversation_id: restrict to a single conversation, or None for all.
-        since: naive UTC timestamp string ("YYYY-MM-DD HH:MM:SS"). created_at is
-            written by SQLite's CURRENT_TIMESTAMP, which is UTC, so the bound
-            must be converted to UTC by the caller rather than compared against
-            local wall time.
-        limit: how many of the most recent calls to return in `calls`.
+    base_cur = normalize_currency(target_currency, "CNY")
+    rate = float(cny_per_usd) if (cny_per_usd and cny_per_usd > 0) else DEFAULT_CNY_PER_USD
 
-    Returns:
-        Summary totals, a per-model breakdown, and the newest `limit` call rows
-        in chronological order.
-    """
     where = []
     args: list = []
     if conversation_id is not None:
@@ -1074,50 +1080,72 @@ def get_usage_stats(conversation_id: Optional[int] = None,
     cursor = conn.cursor()
 
     cursor.execute(f"""
-        SELECT COALESCE(SUM(total_cost), 0),
-               COALESCE(SUM(input_tokens + cache_hit_tokens), 0),
+        SELECT COALESCE(SUM(input_tokens + cache_hit_tokens), 0),
                COALESCE(SUM(cache_hit_tokens), 0),
                COALESCE(SUM(output_tokens), 0),
                COUNT(*),
-               COALESCE(MAX(currency), 'CNY'),
                MIN(created_at),
                MAX(created_at)
         FROM agent_chat_costs{clause}
     """, tuple(args))
     row = cursor.fetchone()
 
+    cursor.execute(f"""
+        SELECT COALESCE(UPPER(currency), 'CNY'), COALESCE(SUM(total_cost), 0)
+        FROM agent_chat_costs{clause}
+        GROUP BY COALESCE(UPPER(currency), 'CNY')
+    """, tuple(args))
+    cost_by_currency: dict = {}
+    total_cost = 0.0
+    for cur_raw, amt in cursor.fetchall():
+        cur = normalize_currency(cur_raw, "CNY")
+        val = float(amt or 0.0)
+        cost_by_currency[cur] = round(cost_by_currency.get(cur, 0.0) + val, 6)
+        total_cost += convert_currency(val, cur, base_cur, rate)
+
     stats = {
-        "total_cost": round(row[0] or 0.0, 6),
-        "total_input_tokens": int(row[1] or 0),
-        "total_cache_hit_tokens": int(row[2] or 0),
-        "total_output_tokens": int(row[3] or 0),
-        "api_calls": int(row[4] or 0),
-        "currency": row[5] or "CNY",
-        "started_at": row[6],
-        "ended_at": row[7],
+        "total_cost": round(total_cost, 6),
+        "total_input_tokens": int(row[0] or 0) if row else 0,
+        "total_cache_hit_tokens": int(row[1] or 0) if row else 0,
+        "total_output_tokens": int(row[2] or 0) if row else 0,
+        "api_calls": int(row[3] or 0) if row else 0,
+        "currency": base_cur,
+        "cny_per_usd": rate,
+        "cost_by_currency": cost_by_currency,
+        "started_at": row[4] if row else None,
+        "ended_at": row[5] if row else None,
     }
 
     cursor.execute(f"""
-        SELECT model_name, COUNT(*),
+        SELECT model_name,
+               COALESCE(UPPER(currency), 'CNY'),
+               COUNT(*),
                COALESCE(SUM(total_cost), 0),
                COALESCE(SUM(input_tokens + cache_hit_tokens), 0),
                COALESCE(SUM(cache_hit_tokens), 0),
                COALESCE(SUM(output_tokens), 0)
         FROM agent_chat_costs{clause}
-        GROUP BY model_name
-        ORDER BY SUM(total_cost) DESC
+        GROUP BY model_name, COALESCE(UPPER(currency), 'CNY')
     """, tuple(args))
-    stats["models"] = [
-        {
-            "model_name": m[0],
-            "api_calls": int(m[1] or 0),
-            "total_cost": round(m[2] or 0.0, 6),
-            "total_input_tokens": int(m[3] or 0),
-            "total_cache_hit_tokens": int(m[4] or 0),
-            "total_output_tokens": int(m[5] or 0),
-        }
-        for m in cursor.fetchall()
-    ]
+    model_buckets: dict = {}
+    for m in cursor.fetchall():
+        mname = m[0]
+        cur = normalize_currency(m[1], "CNY")
+        converted = convert_currency(float(m[3] or 0.0), cur, base_cur, rate)
+        b = model_buckets.setdefault(mname, {
+            "model_name": mname,
+            "api_calls": 0,
+            "total_cost": 0.0,
+            "total_input_tokens": 0,
+            "total_cache_hit_tokens": 0,
+            "total_output_tokens": 0,
+        })
+        b["api_calls"] += int(m[2] or 0)
+        b["total_cost"] = round(b["total_cost"] + converted, 6)
+        b["total_input_tokens"] += int(m[4] or 0)
+        b["total_cache_hit_tokens"] += int(m[5] or 0)
+        b["total_output_tokens"] += int(m[6] or 0)
+    stats["models"] = sorted(model_buckets.values(), key=lambda x: x["total_cost"], reverse=True)
 
     cursor.execute(f"""
         SELECT model_name, api_call_index, input_tokens, cache_hit_tokens,
@@ -1134,7 +1162,7 @@ def get_usage_stats(conversation_id: Optional[int] = None,
             "cache_hit_tokens": int(c[3] or 0),
             "output_tokens": int(c[4] or 0),
             "total_cost": round(c[5] or 0.0, 6),
-            "currency": c[6] or "CNY",
+            "currency": normalize_currency(c[6], "CNY"),
             "created_at": c[7],
         }
         for c in cursor.fetchall()

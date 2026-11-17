@@ -6,11 +6,18 @@
 
 import { reactive } from 'vue'
 
-/** The price table is kept in one currency (CNY, see model_pricing.json). The
-    display switch never converts what is stored — it only changes how an amount
-    is read — so a wrong rate can never corrupt a bill. It lives here so a stale
-    figure has exactly one place to fix. */
-export const CNY_PER_USD = 7.2
+/** Fallback CNY-per-USD rate used before `usage.stats` or `config.get` delivers
+    the persisted rate from `model_pricing.json`. Users can adjust `usage.cnyPerUsd`
+    in the Usage pane without modifying stored bills. */
+export const CNY_PER_USD = 6.67
+
+function storedCnyPerUsd(): number {
+  try {
+    if (typeof window === 'undefined') return CNY_PER_USD
+    const raw = Number(window.localStorage.getItem('pebble.cnyPerUsd'))
+    return Number.isFinite(raw) && raw > 0 ? raw : CNY_PER_USD
+  } catch { return CNY_PER_USD }
+}
 
 /** True for the OpenCode family (`opencode`, `OpenCode Go`, `opencode-go`).
     The request-shaping block below the divider is specific to that gateway,
@@ -38,6 +45,7 @@ export interface BillRow {
   tokensIn: number
   tokensOut: number
   cost: number
+  currency?: string
   tint: string
 }
 
@@ -73,6 +81,7 @@ export const usage = reactive({
   currency: 'cny',
   /* What the reader wants to see, not what the gateway stores. */
   displayCurrency: storedDisplayCurrency(),
+  cnyPerUsd: storedCnyPerUsd(),
   tokensIn: 0,
   tokensOut: 0,
   cacheHit: 0,
@@ -448,23 +457,34 @@ export function fmtTokens(n: number): string {
 
 export function fmtCost(n: number, currency = 'cny'): string {
   const sign = currency.toLowerCase() === 'cny' ? '\u00a5' : '$'
-  return sign + n.toFixed(n < 0.01 ? 3 : 2)
+  const abs = Math.abs(n)
+  /* Per-call API amounts frequently sit between $0.0005 and $0.01; keeping 4
+     decimals below 0.01 avoids ~20-30% rounding jumps when toggling CNY/USD. */
+  const decimals = abs > 0 && abs < 0.01 ? 4 : 2
+  return sign + n.toFixed(decimals)
 }
 
-/** Money as the reader wants to read it. `bookCurrency` is what the gateway
-    recorded, which is CNY for every row today; the switch converts for display
-    only, so the stored table and the stored costs never move. */
+/** Money as the reader wants to read it. `bookCurrency` is the currency the
+    backend recorded for that amount; the switch converts for display only,
+    using `usage.cnyPerUsd`, so stored ledger rows never move. */
 export function fmtMoney(n: number, bookCurrency = usage.currency): string {
   const target = usage.displayCurrency
   const from = (bookCurrency || 'cny').toLowerCase()
   if (from === target) return fmtCost(n, target)
+  const rate = Number.isFinite(usage.cnyPerUsd) && usage.cnyPerUsd > 0 ? usage.cnyPerUsd : CNY_PER_USD
   const converted =
-    from === 'cny' && target === 'usd' ? n / CNY_PER_USD
-      : from === 'usd' && target === 'cny' ? n * CNY_PER_USD : n
+    from === 'cny' && target === 'usd' ? n / rate
+      : from === 'usd' && target === 'cny' ? n * rate : n
   return fmtCost(converted, target)
 }
 
 export function setDisplayCurrency(next: 'cny' | 'usd'): void {
   usage.displayCurrency = next
   try { window.localStorage.setItem('pebble.displayCurrency', next) } catch { /* private mode */ }
+}
+
+export function setExchangeRate(next: number): void {
+  if (!Number.isFinite(next) || next <= 0) return
+  usage.cnyPerUsd = Number(next.toFixed(4))
+  try { window.localStorage.setItem('pebble.cnyPerUsd', String(usage.cnyPerUsd)) } catch { /* private mode */ }
 }

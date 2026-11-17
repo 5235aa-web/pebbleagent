@@ -55,7 +55,7 @@ from .tool_executor_impl import AgentToolExecutorImpl
 # MCP 管理器（延迟导入，避免循环依赖）
 _mcp_manager = None
 
-from .chat.usage import UsageTracker, cached_prompt_tokens
+from .chat.usage import UsageTracker, cached_prompt_tokens, convert_currency, normalize_currency, resolve_cny_per_usd
 from .chat.stream_client import StreamConsumer, open_stream
 from .chat.tool_cycle import ToolCycle
 from .chat.turn_executor import TurnState, prepare_turn
@@ -1366,10 +1366,17 @@ class AgentChatServiceV2:
                         except Exception as e:
                             logger.debug(f"[Cost] Calibration skipped: {e}")
 
+                        tracker = self._ensure_usage()
+                        rate = resolve_cny_per_usd(tracker.pricing)
+                        sess_cur = normalize_currency(session_usage.get("currency"), "CNY")
+                        sess_cost = float(session_usage.get("total_cost", 0.0) or 0.0)
                         yield {
                             "type": "usage",
                             "model": use_model,
-                            "session_cost_cny": round(session_usage["total_cost"], 4),
+                            "session_cost": round(sess_cost, 6),
+                            "session_currency": sess_cur,
+                            "session_cost_cny": round(convert_currency(sess_cost, sess_cur, "CNY", rate), 6),
+                            "cny_per_usd": rate,
                             "latest_input_tokens": latest_input,
                             "latest_output_tokens": cost_info.get("output_tokens", 0),
                             "model_context_limit": get_model_context_limit(use_model),

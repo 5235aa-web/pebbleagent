@@ -7,6 +7,47 @@ from typing import Any, Callable, Dict, Optional
 
 logger = logging.getLogger(__name__)
 
+DEFAULT_CNY_PER_USD = 6.67
+
+
+def normalize_currency(value: Any, fallback: str = "CNY") -> str:
+    """Normalize a currency code to 'CNY' or 'USD'."""
+    raw = str(value or "").strip().upper()
+    if raw in ("CNY", "USD"):
+        return raw
+    fb = str(fallback or "").strip().upper()
+    return fb if fb in ("CNY", "USD") else "CNY"
+
+
+def resolve_cny_per_usd(pricing_cfg: Optional[dict] = None) -> float:
+    """Read the CNY-per-USD rate from pricing config, falling back to DEFAULT_CNY_PER_USD."""
+    if isinstance(pricing_cfg, dict):
+        try:
+            rate = float(pricing_cfg.get("cny_per_usd"))
+            if rate > 0:
+                return rate
+        except (TypeError, ValueError):
+            pass
+    return DEFAULT_CNY_PER_USD
+
+
+def convert_currency(
+    amount: float,
+    from_currency: str,
+    to_currency: str,
+    cny_per_usd: float = DEFAULT_CNY_PER_USD,
+) -> float:
+    """Convert an amount between CNY and USD."""
+    src = normalize_currency(from_currency)
+    dst = normalize_currency(to_currency)
+    if src == dst or not cny_per_usd or cny_per_usd <= 0:
+        return float(amount)
+    if src == "USD" and dst == "CNY":
+        return float(amount) * cny_per_usd
+    if src == "CNY" and dst == "USD":
+        return float(amount) / cny_per_usd
+    return float(amount)
+
 
 def cached_prompt_tokens(usage: Any) -> int:
     """Cached prompt tokens, reading both field conventions.
@@ -110,6 +151,8 @@ class UsageTracker:
         input_cost = (cache_miss / 1_000_000) * pricing.get("input_per_million", 0)
         cache_cost = (cache_hit / 1_000_000) * pricing.get("cache_hit_per_million", 0)
         output_cost = (completion / 1_000_000) * pricing.get("output_per_million", 0)
+        default_cur = normalize_currency(self.pricing.get("default_currency"), "CNY")
+        currency = normalize_currency(pricing_data.get("currency"), default_cur)
 
         return {
             "input_tokens": cache_miss,
@@ -119,6 +162,7 @@ class UsageTracker:
             "cache_hit_cost": round(cache_cost, 6),
             "output_cost": round(output_cost, 6),
             "total_cost": round(input_cost + cache_cost + output_cost, 6),
+            "currency": currency,
             "period": period,
             "pricing_used": dict(pricing) if pricing else None,
         }
@@ -126,6 +170,11 @@ class UsageTracker:
     def accumulate(self, conversation_uuid: str, cost_info: dict,
                    model_name: str = None) -> dict:
         """Add one call to the session total and persist the call record."""
+        self.ensure_fresh()
+        base_cur = normalize_currency(self.pricing.get("default_currency"), "CNY")
+        rate = resolve_cny_per_usd(self.pricing)
+        call_cur = normalize_currency(cost_info.get("currency"), base_cur)
+
         if conversation_uuid not in self.sessions:
             existing = self.load_session_cost(conversation_uuid)
             self.sessions[conversation_uuid] = existing or {
@@ -134,11 +183,15 @@ class UsageTracker:
                 "total_cache_hit_tokens": 0,
                 "total_output_tokens": 0,
                 "api_calls": 0,
-                "currency": "CNY",
+                "currency": base_cur,
             }
 
         session = self.sessions[conversation_uuid]
-        session["total_cost"] += cost_info["total_cost"]
+        prev_cur = normalize_currency(session.get("currency"), base_cur)
+        if prev_cur != base_cur:
+            session["total_cost"] = convert_currency(session["total_cost"], prev_cur, base_cur, rate)
+            session["currency"] = base_cur
+        session["total_cost"] += convert_currency(cost_info["total_cost"], call_cur, base_cur, rate)
         session["total_input_tokens"] += cost_info["input_tokens"] + cost_info["cache_hit_tokens"]
         session["total_cache_hit_tokens"] += cost_info["cache_hit_tokens"]
         session["total_output_tokens"] += cost_info["output_tokens"]
@@ -159,19 +212,25 @@ class UsageTracker:
                     cache_hit_cost=cost_info["cache_hit_cost"],
                     output_cost=cost_info["output_cost"],
                     total_cost=cost_info["total_cost"],
-                    currency="CNY",
+                    currency=call_cur,
                 )
         except Exception as e:
             logger.warning(f"[Cost] Failed to persist cost: {e}")
 
-        return {**session, "this_call": cost_info}
+        return {**session, "this_call": {**cost_info, "currency": call_cur}}
 
     def load_session_cost(self, conversation_uuid: str) -> Optional[dict]:
         try:
             from .. import agent_chat_history as history
             conv = history.get_agent_conversation_by_uuid(conversation_uuid)
             if conv:
-                summary = history.get_conversation_cost_summary(conv["id"])
+                base_cur = normalize_currency(self.pricing.get("default_currency"), "CNY")
+                rate = resolve_cny_per_usd(self.pricing)
+                summary = history.get_conversation_cost_summary(
+                    conv["id"],
+                    target_currency=base_cur,
+                    cny_per_usd=rate,
+                )
                 if summary and summary.get("api_calls", 0) > 0:
                     return {
                         "total_cost": summary["total_cost"],
@@ -179,7 +238,7 @@ class UsageTracker:
                         "total_cache_hit_tokens": summary["total_cache_hit_tokens"],
                         "total_output_tokens": summary["total_output_tokens"],
                         "api_calls": summary["api_calls"],
-                        "currency": summary.get("currency", "CNY"),
+                        "currency": summary.get("currency", base_cur),
                     }
         except Exception as e:
             logger.debug(f"[Cost] Failed to load session cost: {e}")
