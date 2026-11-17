@@ -1,6 +1,5 @@
 """Environment, process and repository state tools."""
 
-import json
 import logging
 import os
 import shutil
