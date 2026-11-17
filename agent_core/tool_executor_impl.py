@@ -29,7 +29,7 @@ from .tool_impl.registry import TOOL_HANDLERS
 logger = logging.getLogger(__name__)
 
 # 写操作工具：执行后回填写入结果 SHA，供回退冲突检测使用
-WRITE_TOOLS = frozenset({"write_file", "edit_file", "delete_file", "copy_file", "move_file"})
+WRITE_TOOLS = frozenset({"write_file", "edit_file", "delete_file", "move_file"})
 
 
 class AgentToolExecutorImpl(
@@ -131,7 +131,7 @@ class AgentToolExecutorImpl(
             return f"Error: {reason}"
         
         # ==================== 快照（写操作前备份文件） ====================
-        if tool_name in ('write_file', 'edit_file', 'delete_file', 'move_file', 'copy_file'):
+        if tool_name in ('write_file', 'edit_file', 'delete_file', 'move_file'):
             if (context and context.snapshot_session_uuid and 
                 context.snapshot_message_id is not None):
                 try:

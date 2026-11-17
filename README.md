@@ -24,7 +24,7 @@
 - **Cross-session experience ledger.** Corrections, constraints, and preferences you express during work become evidence-backed entries in a local SQLite ledger. Later turns recall the relevant ones by full-text relevance plus tool and path context, and superseded entries are retired automatically. Capture and recall run on rules, not extra model calls.
 - **Snapshot & rollback.** Every write is snapshotted before it happens; diffs are tracked per file, and you can roll back a single file or an entire change set — with an undo for the rollback itself.
 - **Permission & audit system.** Three permission modes (manual, auto, read-only), rule sets with `tool:pattern` matching, a path whitelist, fail-closed checks, and a tamper-evident audit log (chained checksums) for every sensitive operation.
-- **Skills and MCP servers.** 50 bundled skills load on demand; MCP servers over stdio, SSE, HTTP, or WebSocket are installed with sha256 verification and approved per project. Both are extensible from the installed app with no source build required, and you do not have to touch a file yourself: ask the agent to add a skill or an MCP server and it writes the `SKILL.md` under `~/.pebble/skills/<name>/` or the `mcpServers` entry in `~/.pebble/.mcp.json` for you. A user skill with the same name overrides the bundled one, and a new MCP entry waits in the MCP panel until you approve it before anything is launched.
+- **Skills and MCP servers.** Two bundled skills (`ckb` and `frontend-design`) load on demand; MCP servers over stdio, SSE, HTTP, or WebSocket are installed with sha256 verification and approved per project. Both are extensible from the installed app with no source build required, and you do not have to touch a file yourself: ask the agent to add a skill or an MCP server and it writes the `SKILL.md` under `~/.pebble/skills/<name>/` or the `mcpServers` entry in `~/.pebble/.mcp.json` for you. A user skill with the same name overrides the bundled one, and a new MCP entry waits in the MCP panel until you approve it before anything is launched.
 - **Real-time cost tracking.** Per-model pricing with peak/off-peak tiers (including Chinese statutory holidays) and cache-hit accounting, updated live per conversation.
 - **HTML preview with feedback bridge.** Generated HTML pages render in a sandboxed preview; click any element to leave a comment, and the agent iterates on the page from your annotations.
 - **Streaming agent chat with full execution visibility.** Reasoning, tool calls, file changes, and results unfold as a step-by-step timeline instead of a black box.
@@ -81,7 +81,7 @@ cd ..
 
 `requirements.txt` is the core set, enough to start the backend and chat. The
 optional set adds `pypdf` for reading PDF attachments, `psutil` for CPU/memory
-details and `playwright` for the verification script one skill ships; install
+details and `playwright` for optional browser automation; install
 it with `pip install -r requirements-optional.txt`.
 
 Then launch both services with the provided script:
@@ -106,7 +106,7 @@ npm run dev
 
 Then open http://localhost:5180. The dev server injects the gateway token into the
 page, so nothing else has to be configured. The `powershell` tool is not offered on
-macOS; `execute_shell` covers the same ground. The desktop shell cannot be built
+macOS; `execute_code` (`language="bash"`) covers shell execution. The desktop shell cannot be built
 there yet, so web mode is how it runs.
 
 To run the desktop shell in development instead, start the backend first and then:
@@ -160,9 +160,8 @@ All runtime data lives in `%USERPROFILE%\.pebble\` (override with the `PEBBLE_HO
 
 ```
 gateway/          Python WebSocket gateway (JSON-RPC, sessions, permissions)
-agent_core/       Agent core (chat service, tool orchestration, experience ledger, snapshots)
-tools/            Built-in tools
-skills/           Bundled skills
+agent_core/       Agent core (chat service, built-in tools, orchestration, experience ledger, snapshots)
+skills/           Bundled skills (ckb, frontend-design)
 knowledgesource/  Code knowledge base (chaptered)
 frontend/         Orbit frontend (Vue 3) + Tauri 2 desktop shell
 tests/            Standalone verification tests (python tests/run_all.py)
@@ -181,13 +180,8 @@ Three billing/holiday regression scripts (`peb_check_*.py`) sit at the repo root
 
 ## Credits
 
-PebbleAgent bundles 50 skills. Third-party skills and materials
-(10 Apache-2.0 skills, 1 MIT skill, 1 reference set) are listed in
-[THIRD_PARTY_NOTICES.md](THIRD_PARTY_NOTICES.md).
-
-Video rendering (the `brag` skill) is powered by
-[HyperFrames](https://github.com/heygen-com/hyperframes), Copyright 2026
-HeyGen, Inc., licensed under Apache-2.0.
+PebbleAgent bundles 2 core skills (`ckb` and `frontend-design`). Third-party
+attributions are listed in [THIRD_PARTY_NOTICES.md](THIRD_PARTY_NOTICES.md).
 
 ## License
 

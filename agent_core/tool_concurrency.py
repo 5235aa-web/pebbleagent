@@ -55,13 +55,9 @@ READ_ONLY_TOOLS: Set[str] = {
     "get_file_info",
     
     # 目录列表
-    "list_directory",
     "ls",
     
     # 搜索工具
-    "search_in_file",
-    "search_files",
-    "find_files",
     "grep",
     "glob",
     
@@ -73,24 +69,11 @@ READ_ONLY_TOOLS: Set[str] = {
     # 网络获取（纯 httpx，只读并行）
     "fetch_url",
     
-    # 系统信息
-    "get_env_var",
-    "get_system_info",
-    "list_processes",
-    
     # 技能查询
     "list_skills",
     
-    # LSP 代码智能（全部只读）
-    "lsp_go_to_definition",
-    "lsp_find_references",
-    "lsp_hover",
-    "lsp_document_symbol",
-    "lsp_workspace_symbol",
-    "lsp_go_to_implementation",
-    "lsp_prepare_call_hierarchy",
-    "lsp_incoming_calls",
-    "lsp_outgoing_calls",
+    # LSP 代码智能（只读）
+    "lsp",
     
     # Todo 读取
     "todo_read",
@@ -102,27 +85,11 @@ WRITE_TOOLS: Set[str] = {
     "write_file",
     "edit_file",
     "delete_file",
-    "copy_file",
     "move_file",
-    
-    # 目录操作
-    "create_directory",
     
     # 代码执行
     "execute_code",
-    "execute_shell",
     "powershell",
-    
-    # 环境变量设置
-    "set_env_var",
-    
-    # 进程管理
-    "kill_process",
-    
-    # Git 写操作（如果有）
-    "git_commit",
-    "git_push",
-    "git_checkout",
     
     # 技能加载
     "load_skill",
@@ -130,12 +97,8 @@ WRITE_TOOLS: Set[str] = {
     # Todo 写入
     "todo_write",
     
-    # Plan 模式（进入/退出为会话状态变更，归 SIDE_EFFECT_TOOLS）
-    "create_plan",
-    
     # 网络搜索（外部 API 礼貌串行）
     "web_search",
-    "browser_navigate",
     "browser_download",
 }
 
@@ -230,7 +193,6 @@ def check_read_file_safety(args: Dict[str, Any]) -> bool:
 
 # 特殊工具的安全检查映射
 TOOL_SAFETY_CHECKS: Dict[str, callable] = {
-    "execute_shell": check_bash_safety,
     "execute_code": lambda args: False,  # 代码执行总是不安全
     "powershell": check_powershell_safety,
     "grep": check_grep_safety,

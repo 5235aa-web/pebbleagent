@@ -26,7 +26,6 @@ export type Block =
 export type ProcessBlock = Extract<Block, { kind: 'thinking' | 'tool' }>
 
 export interface ProcessSummary {
-  hasProcess: boolean
   isLive: boolean
   label: string
   detail: string
@@ -35,29 +34,40 @@ export interface ProcessSummary {
   failedCount: number
 }
 
-export type ProcessEntry =
-  | { kind: 'block'; id: string; block: ProcessBlock }
-  | { kind: 'anchor'; id: string; preview: string }
+export type MessageSegment =
+  | {
+      kind: 'process'
+      id: string
+      blocks: ProcessBlock[]
+      summary: ProcessSummary
+    }
+  | {
+      kind: 'prose'
+      id: string
+      block: Block
+      isLastProse: boolean
+    }
 
 export function isProcessBlock(block: Block): block is ProcessBlock {
   return block.kind === 'thinking' || block.kind === 'tool'
 }
 
-export function proseOnlyBlocks(blocks: Block[]): Block[] {
-  return blocks.filter(b => !isProcessBlock(b))
+function isEmptyProseBlock(block: Block): boolean {
+  if (block.kind === 'raw') return !block.paras.some(p => p.trim() !== '')
+  if (block.kind === 'text') return !block.html.trim()
+  return false
 }
 
-/** Summarizes thinking and tool activity for the single collapsible action bar. */
-export function summarizeAgentProcess(blocks: Block[], streaming: boolean): ProcessSummary {
+function summarizeProcessGroup(group: ProcessBlock[], isLiveGroup: boolean): ProcessSummary {
   let thinkingCount = 0
   let toolCount = 0
   let failedCount = 0
   let activeTool: Extract<Block, { kind: 'tool' }> | null = null
 
-  for (const b of blocks) {
+  for (const b of group) {
     if (b.kind === 'thinking') {
       thinkingCount += 1
-    } else if (b.kind === 'tool') {
+    } else {
       toolCount += 1
       const st = b.call.status
       if (st === 'failed' || st === 'cancelled') failedCount += 1
@@ -65,24 +75,9 @@ export function summarizeAgentProcess(blocks: Block[], streaming: boolean): Proc
     }
   }
 
-  const hasProcess = thinkingCount > 0 || toolCount > 0
-  if (!hasProcess) {
-    return {
-      hasProcess: false,
-      isLive: false,
-      label: '',
-      detail: '',
-      thinkingCount: 0,
-      toolCount: 0,
-      failedCount: 0
-    }
-  }
-
-  if (streaming) {
-    const last = blocks[blocks.length - 1]
+  if (isLiveGroup) {
     if (activeTool) {
       return {
-        hasProcess: true,
         isLive: true,
         label: `Calling ${activeTool.call.name}…`,
         detail: activeTool.call.arg || '',
@@ -91,25 +86,10 @@ export function summarizeAgentProcess(blocks: Block[], streaming: boolean): Proc
         failedCount
       }
     }
-    if (last && last.kind === 'thinking') {
-      return {
-        hasProcess: true,
-        isLive: true,
-        label: 'Thinking…',
-        detail: toolCount > 0 ? `${toolCount} ${toolCount === 1 ? 'tool' : 'tools'}` : '',
-        thinkingCount,
-        toolCount,
-        failedCount
-      }
-    }
-    const parts: string[] = []
-    if (thinkingCount > 0) parts.push('Thought')
-    if (toolCount > 0) parts.push(`${toolCount} ${toolCount === 1 ? 'tool' : 'tools'}`)
     return {
-      hasProcess: true,
       isLive: true,
-      label: 'Responding…',
-      detail: parts.join(' · '),
+      label: 'Thinking…',
+      detail: toolCount > 0 ? `${toolCount} ${toolCount === 1 ? 'tool' : 'tools'}` : '',
       thinkingCount,
       toolCount,
       failedCount
@@ -125,7 +105,6 @@ export function summarizeAgentProcess(blocks: Block[], streaming: boolean): Proc
   }
 
   return {
-    hasProcess: true,
     isLive: false,
     label: settledParts.join(' · '),
     detail: failedCount > 0 ? `${failedCount} failed` : '',
@@ -135,64 +114,77 @@ export function summarizeAgentProcess(blocks: Block[], streaming: boolean): Proc
   }
 }
 
-function prosePreviewOf(block: Block): string {
-  if (block.kind === 'raw') {
-    return block.paras.join(' ').replace(/\s+/g, ' ').trim()
-  }
-  if (block.kind === 'text') {
-    return block.html
-      .replace(/<[^>]+>/g, ' ')
-      .replace(/&amp;/g, '&')
-      .replace(/&lt;/g, '<')
-      .replace(/&gt;/g, '>')
-      .replace(/&quot;/g, '"')
-      .replace(/&#39;/g, "'")
-      .replace(/\s+/g, ' ')
-      .trim()
-  }
-  if (block.kind === 'code') return `${block.lang || 'code'} block`
-  if (block.kind === 'mermaid') return 'mermaid diagram'
-  if (block.kind === 'svg') return 'svg graphic'
-  return ''
-}
+/** Groups contiguous thinking/tool runs into in-place collapsible process bars
+    interleaved with prose blocks in exact arrival order. Only the trailing
+    active process segment animates while streaming; earlier segments stay quiet. */
+export function groupMessageSegments(blocks: Block[], streaming: boolean): MessageSegment[] {
+  type RawSegment =
+    | { kind: 'process'; id: string; blocks: ProcessBlock[] }
+    | { kind: 'prose'; id: string; block: Block }
 
-/** Builds the expanded process timeline, inserting lightweight reply anchors
-    where prose appeared before subsequent thinking or tool calls. */
-export function buildProcessTimeline(blocks: Block[]): ProcessEntry[] {
-  let lastProcessIndex = -1
-  for (let i = blocks.length - 1; i >= 0; i--) {
-    if (isProcessBlock(blocks[i])) {
-      lastProcessIndex = i
+  const rawSegments: RawSegment[] = []
+  let pendingProcess: ProcessBlock[] = []
+
+  const flushProcess = () => {
+    if (!pendingProcess.length) return
+    rawSegments.push({
+      kind: 'process',
+      id: `proc-${pendingProcess[0].id}`,
+      blocks: pendingProcess
+    })
+    pendingProcess = []
+  }
+
+  for (let i = 0; i < blocks.length; i++) {
+    const b = blocks[i]
+    if (isProcessBlock(b)) {
+      pendingProcess.push(b)
+      continue
+    }
+    if (isEmptyProseBlock(b)) {
+      const keepLeadingCaret =
+        streaming &&
+        pendingProcess.length === 0 &&
+        rawSegments.length === 0 &&
+        i === blocks.length - 1 &&
+        b.kind === 'raw'
+      if (!keepLeadingCaret) continue
+    }
+    flushProcess()
+    rawSegments.push({
+      kind: 'prose',
+      id: `prose-${i}-${b.id}`,
+      block: b
+    })
+  }
+  flushProcess()
+
+  let lastProseIdx = -1
+  for (let i = rawSegments.length - 1; i >= 0; i--) {
+    if (rawSegments[i].kind === 'prose') {
+      lastProseIdx = i
       break
     }
   }
-  if (lastProcessIndex < 0) return []
 
-  const entries: ProcessEntry[] = []
-  let pendingProse: string[] = []
-  let anchorSeq = 0
-
-  const flushProseAnchor = () => {
-    if (!pendingProse.length) return
-    const combined = pendingProse.join(' ').replace(/\s+/g, ' ').trim()
-    pendingProse = []
-    if (!combined) return
-    const clipped = combined.length > 56 ? combined.slice(0, 56).trimEnd() + '…' : combined
-    entries.push({ kind: 'anchor', id: `pa-${anchorSeq++}`, preview: clipped })
-  }
-
-  for (let i = 0; i <= lastProcessIndex; i++) {
-    const b = blocks[i]
-    if (isProcessBlock(b)) {
-      flushProseAnchor()
-      entries.push({ kind: 'block', id: b.id, block: b })
-    } else {
-      const text = prosePreviewOf(b)
-      if (text) pendingProse.push(text)
+  const lastIdx = rawSegments.length - 1
+  return rawSegments.map((seg, idx) => {
+    if (seg.kind === 'process') {
+      const isLiveGroup = streaming && idx === lastIdx
+      return {
+        kind: 'process',
+        id: seg.id,
+        blocks: seg.blocks,
+        summary: summarizeProcessGroup(seg.blocks, isLiveGroup)
+      }
     }
-  }
-
-  return entries
+    return {
+      kind: 'prose',
+      id: seg.id,
+      block: seg.block,
+      isLastProse: idx === lastProseIdx
+    }
+  })
 }
 
 /** Splits settled text into markdown runs and fenced code blocks. */

@@ -35,7 +35,7 @@ def main() -> int:
 
     # chat_agent.yaml 的白名单契约：内置读类 + 网络只读 + MCP 只读
     expected_internal = {
-        "read_file", "search_files", "search_in_file", "grep", "glob",
+        "read_file", "grep", "glob",
         "web_search", "fetch_url",
     }
     expected_mcp = {
@@ -88,7 +88,7 @@ def main() -> int:
         {"type": "function", "function": {"name": "mcp__blender__look"}},
         {"type": "function", "function": {"name": "execute_code"}},
         {"type": "function", "function": {"name": "write_file"}},
-        {"type": "function", "function": {"name": "search_files"}},
+        {"type": "function", "function": {"name": "grep"}},
         {"type": "function", "function": {"name": "edit_file"}},
         {"type": "function", "function": {"name": "clarify"}},
     ]
@@ -96,7 +96,7 @@ def main() -> int:
     names = sorted(t["function"]["name"] for t in filtered)
     check(
         "filtered == allowlist intersection",
-        names == ["read_file", "search_files", "web_search"],
+        names == ["grep", "read_file", "web_search"],
         f"got {names}",
     )
 
@@ -111,7 +111,7 @@ def main() -> int:
     clear_agent_cache()
     for t in sorted(expected_internal):
         check(f"chat_agent + {t} -> allowed", check_agent_tool_policy("chat_agent", t) is None)
-    for t in ["write_file", "edit_file", "delete_file", "execute_code", "execute_shell", "browser_download", "clarify"]:
+    for t in ["write_file", "edit_file", "delete_file", "execute_code", "powershell", "browser_download", "clarify"]:
         check(f"chat_agent + {t} -> denied", check_agent_tool_policy("chat_agent", t) is not None)
     r2 = check_agent_tool_policy("chat_agent", "mcp__blender__look")
     check("chat_agent + MCP tool -> denied", r2 is not None, f"got {r2}")
@@ -139,7 +139,7 @@ def main() -> int:
     )
     missing = expected_internal - set(all_names)
     check("internal allowlist tools exist in full list", not missing, f"missing {missing}")
-    for probe in ["execute_code", "execute_shell", "browser_download", "clarify"]:
+    for probe in ["execute_code", "powershell", "browser_download", "clarify"]:
         check(f"full list contains {probe} (will be filtered out)", probe in all_names)
 
     print(f"\nRESULT: {passed} passed, {failed} failed")

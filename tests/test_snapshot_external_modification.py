@@ -114,17 +114,17 @@ def main() -> int:
         check("S5: legacy file flagged as no-write-result", not has_wr_g,
               f"has_wr={has_wr_g}")
 
-        # ---- Scenario 6: copy_file is snapshotted now (issue 7e) --------------
-        dest = os.path.join(tmpdir, "copied.txt")
+        # ---- Scenario 6: move_file is snapshotted ---------------------------
+        dest = os.path.join(tmpdir, "moved.txt")
         src = os.path.join(tmpdir, "src.txt")
         write(src, "SRC")
         asyncio.run(manager.create_snapshot(
-            "copy_file", {"source": src, "destination": dest}, message_id=13, tool_call_id="tc4"))
-        write(dest, "SRC")  # simulated copy
+            "move_file", {"source": src, "destination": dest}, message_id=13, tool_call_id="tc4"))
+        os.replace(src, dest)
         asyncio.run(manager.record_write_result(
-            "copy_file", {"source": src, "destination": dest}, message_id=13, tool_call_id="tc4"))
+            "move_file", {"source": src, "destination": dest}, message_id=13, tool_call_id="tc4"))
         report = manager.detect_conflicts(13)
-        check("S6: copy_file creates a snapshot record (no external conflict for its own write)",
+        check("S6: move_file creates a snapshot record (no external conflict for its own write)",
               "external_modification" not in external_types(report),
               f"types={external_types(report)}")
 
@@ -141,8 +141,8 @@ def main() -> int:
         exec_src = read("agent_core/tool_executor_impl.py")
         check("static: write-result hook wired into write tools",
               "_snapshot_record_write_result" in exec_src)
-        check("static: copy_file included in snapshot conditions",
-              "'move_file', 'copy_file'" in exec_src)
+        check("static: move_file included in snapshot conditions",
+              "'delete_file', 'move_file'" in exec_src)
 
     finally:
         try:

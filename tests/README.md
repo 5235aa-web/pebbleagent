@@ -16,7 +16,7 @@ node tests/run_all.mjs
 python tests/test_agent_tool_policy.py
 
 # Static analysis gate (rules F + E9, configured in ruff.toml)
-ruff check agent_core gateway tools tests
+ruff check agent_core gateway tests
 ```
 
 The repository also has three billing/holiday regression scripts at the project root
@@ -28,7 +28,7 @@ The repository also has three billing/holiday regression scripts at the project 
 | Test | Covers |
 | --- | --- |
 | `test_render_html.mjs` | `escapeHtml`, `highlight`, `renderCodeBlock`, `renderMarkdown`, `renderPlain`, `renderAttachments`, `renderUserBubble` markup; HTML escaping; caret handling; `dateOf` / `clockOf` epoch and timestamp parsing |
-| `test_blocks_split.mjs` | `splitBlocks` fence routing (code / mermaid / svg / still-streaming), `LiveBuilder` paragraph commits, fence held until it closes, in-place tail mutation, reset |
+| `test_blocks_split.mjs` | `splitBlocks` fence routing (code / mermaid / svg / still-streaming), `LiveBuilder` paragraph commits, `groupMessageSegments` contiguous process folding, reset |
 | `test_stream_state.mjs` | `appendStream` / `replaceStream` / `clearStream` keep the array identity, and every rebuild settles `streaming` |
 | `test_provider_ui.mjs` | `isOpenCodeProvider` / `isProviderReady`: the request-shaping block shows only for OpenCode and readiness requires a base URL plus a model |
 
@@ -86,8 +86,8 @@ needs the same flags: `node --experimental-transform-types --import ./tests/ts-r
 | `test_permission_e2e.py` | rule parsing, allow/deny/ask, manual/auto/readonly, readonly deny precedence + sensitive-read block, persisted mode |
 | `test_mcp_registry.py` | MCP tool naming, name parsing, lookup, state shape, executor factory resolution |
 | `test_lsp_framing.py` | LSP Content-Length framing, invalid length/JSON, closed stream |
-| `test_grep_tool_async.py` | GrepTool async subprocess path (asyncio import, real search) |
-| `test_tool_registry_autoregister.py` | module scan registration (BaseTool subclasses, SimpleTool excluded) |
+| `test_grep_and_tool_fixes.py` | Upgraded `grep` (smart-case, literal fallback, hidden/no-ignore, multi-glob, truncation, Python fallback), `edit_file` `search_block` forwarding, conditional `lsp` schema, `powershell` process-kill confirmation |
+| `test_tool_registry.py` | Tool schema/dispatch parity (25 built-in tools, async handlers, `WRITE_TOOLS` tracking) |
 | `test_revert_batch.py` | `restore_batch` conflict policy (abort / skip_conflicts) |
 | `test_revert_single.py` | single-file revert: exact path matching, failure rollback, remaining count |
 

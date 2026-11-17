@@ -93,21 +93,18 @@ class PermissionManager:
     # 只读工具（readonly 模式下放行）
     # 网络只读取回放行；browser_download 会落盘，仍按写操作拒绝
     READONLY_TOOLS = {
-        "read_file", "list_directory", "get_file_info", "ls",
-        "grep", "glob", "search_in_file", "search_files", "find_files",
-        "git_status", "git_log", "git_diff", "get_env_var", "get_system_info",
-        "list_processes", "list_skills", "load_skill", "todo_read",
+        "read_file", "get_file_info", "ls",
+        "grep", "glob",
+        "git_status", "git_log", "git_diff",
+        "list_skills", "load_skill", "todo_read",
         "web_search", "fetch_url", "browser_navigate",
-        "lsp_go_to_definition", "lsp_find_references", "lsp_hover",
-        "lsp_document_symbol", "lsp_workspace_symbol", "lsp_go_to_implementation",
-        "lsp_prepare_call_hierarchy", "lsp_incoming_calls", "lsp_outgoing_calls",
+        "lsp",
     }
 
     # 需要拦截敏感目标的读类工具（参数里带具体文件或目录路径）
     READ_TARGET_TOOLS = {
-        "read_file", "search_in_file",
-        "list_directory", "get_file_info", "ls",
-        "search_files", "find_files", "grep", "glob",
+        "read_file", "get_file_info", "ls",
+        "grep", "glob", "lsp",
     }
 
     # 工具面已被 YAML 白名单锁死的 agent：权限模式对其不生效，按 auto 处理
@@ -118,28 +115,28 @@ class PermissionManager:
 
     # 默认放行的工具
     DEFAULT_ALLOW = [
-        "read_file", "list_directory", "get_file_info", "ls",
-        "grep", "glob", "search_in_file", "search_files", "find_files",
+        "read_file", "get_file_info", "ls",
+        "grep", "glob", "lsp",
         "git_status", "git_log", "git_diff",
         "todo_read", "todo_write",
         "list_skills", "load_skill",
         "clarify",
-        "get_env_var", "get_system_info", "list_processes",
-        "execute_shell:git *", "execute_shell:ls", "execute_shell:dir",
-        "execute_shell:python --version", "execute_shell:node --version",
-        "execute_shell:npm --version",
+        "powershell:git *", "powershell:ls", "powershell:dir",
+        "powershell:python --version", "powershell:node --version",
+        "powershell:npm --version",
     ]
 
-    # 默认需要确认的工具与模式
+    # 默认需要确认的工具与模式（含原 kill_process 保留的进程终止风险确认）
     DEFAULT_ASK = [
-        "execute_shell:rm *", "execute_shell:del *", "execute_shell:rmdir *",
-        "execute_shell:sudo *", "execute_shell:chmod *", "execute_shell:chown *",
-        "execute_shell:mkfs *", "execute_shell:dd *",
-        "execute_shell:shutdown *", "execute_shell:reboot *",
-        "execute_shell:taskkill *",
+        "powershell:rm *", "powershell:del *", "powershell:rmdir *", "powershell:rd *",
+        "powershell:Remove-Item *", "powershell:Stop-Process *", "powershell:Stop-Service *",
+        "powershell:taskkill *", "powershell:kill *",
+        "powershell:shutdown *", "powershell:Stop-Computer *", "powershell:Restart-Computer *",
+        "powershell:format *", "powershell:Format-Volume *", "powershell:Clear-Disk *",
+        "powershell:diskpart *",
         "write_file:.env", "write_file:*.pem", "write_file:*.key",
         "write_file:.git/*", "write_file:*.secret", "write_file:credentials*",
-        "delete_file", "kill_process", "set_env_var",
+        "delete_file",
     ]
 
     def __init__(self, config_path: str = "permission_rules.json"):
@@ -270,6 +267,16 @@ class PermissionManager:
             return True
         return False
 
+    def _is_process_kill_command(self, tool_name: str, content: Optional[str]) -> bool:
+        """Detect process termination commands so manual mode always confirms them."""
+        if not content or tool_name not in ("powershell", "execute_code"):
+            return False
+        return bool(re.search(
+            r"\b(taskkill|Stop-Process|kill|pkill|killall)\b",
+            content,
+            re.IGNORECASE,
+        ))
+
     def _effective_mode(self, agent_name: Optional[str]) -> PermissionMode:
         """agent 级模式覆盖：工具面已由 YAML 白名单锁死的 agent 不受用户权限模式影响"""
         override = self.AGENT_MODE_OVERRIDES.get(agent_name or "")
@@ -328,6 +335,15 @@ class PermissionManager:
         sensitive_reason = self._sensitive_read_reason(tool_name, content)
         if sensitive_reason:
             detail = f"sensitive file: {sensitive_reason}"
+            return await self._request_user_permission(
+                tool_name=tool_name,
+                content=content,
+                target=target or content or "",
+                reason=f"{reason} ({detail})" if reason else detail,
+            )
+
+        if self._is_process_kill_command(tool_name, content):
+            detail = "process termination command"
             return await self._request_user_permission(
                 tool_name=tool_name,
                 content=content,
@@ -401,6 +417,9 @@ class PermissionManager:
         if sensitive_reason:
             return False, f"requires user confirmation (sensitive file: {sensitive_reason})"
 
+        if self._is_process_kill_command(tool_name, content):
+            return False, "requires user confirmation (process termination)"
+
         for rule in self.context.ask_rules:
             if self._match_rule(rule, tool_name, content):
                 return False, "requires user confirmation"
@@ -430,24 +449,17 @@ class PermissionManager:
 
         mapping = {
             "read_file": PermissionType.FILE_READ,
-            "list_directory": PermissionType.FILE_READ,
             "get_file_info": PermissionType.FILE_READ,
             "ls": PermissionType.FILE_READ,
             "grep": PermissionType.FILE_READ,
             "glob": PermissionType.FILE_READ,
-            "search_in_file": PermissionType.FILE_READ,
-            "search_files": PermissionType.FILE_READ,
-            "find_files": PermissionType.FILE_READ,
+            "lsp": PermissionType.FILE_READ,
             "write_file": PermissionType.FILE_WRITE,
             "edit_file": PermissionType.FILE_WRITE,
             "delete_file": PermissionType.FILE_DELETE,
-            "copy_file": PermissionType.FILE_WRITE,
             "move_file": PermissionType.FILE_WRITE,
             "execute_code": PermissionType.EXEC_COMMAND,
-            "execute_shell": PermissionType.EXEC_COMMAND,
             "powershell": PermissionType.EXEC_COMMAND,
-            "kill_process": PermissionType.EXEC_COMMAND,
-            "set_env_var": PermissionType.EXEC_COMMAND,
             "browser_navigate": PermissionType.NETWORK_FETCH,
             "browser_download": PermissionType.NETWORK_FETCH,
             "fetch_url": PermissionType.NETWORK_FETCH,

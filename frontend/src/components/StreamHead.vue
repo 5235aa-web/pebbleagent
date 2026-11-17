@@ -8,8 +8,6 @@
               {{ agentName }}
             </span>
             <span class="dotsep"></span>
-            <span>{{ modelName }}</span>
-            <span class="dotsep"></span>
             <span>{{ messageCount }} messages</span>
           </div>
         </div>
@@ -36,7 +34,6 @@
 <script setup lang="ts">
 import { computed } from 'vue'
 import { activeSession, sessionState } from '../data/store'
-import { streamState } from '../data/stream'
 import { context, llm } from '../data/panels'
 
 /* The header names the session that is actually open, not the prototype's
@@ -47,7 +44,6 @@ const title = computed(() => activeSession()?.title?.trim() || 'Untitled session
    agents renames the chip without a reload. `context.agentName` stays as the
    fallback for the seeded surface before the first list arrives. */
 const agentName = computed(() => llm.agents.find(a => a.current)?.name || context.agentName || 'agent')
-const modelName = computed(() => streamState.model || 'model')
 /* Every row the gateway holds for the session, not just the ones that render as
    a bubble: the header is a session counter, not a transcript row count. */
 const messageCount = computed(() => sessionState.messageCount)

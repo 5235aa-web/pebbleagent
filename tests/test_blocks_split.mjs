@@ -14,9 +14,7 @@ import assert from 'node:assert/strict'
 import {
   splitBlocks,
   LiveBuilder,
-  proseOnlyBlocks,
-  summarizeAgentProcess,
-  buildProcessTimeline
+  groupMessageSegments
 } from '../frontend/src/data/blocks.ts'
 
 let passed = 0
@@ -216,62 +214,91 @@ check('LiveBuilder restarts its block counter after reset', () => {
   assert.equal(lb.blocks[0].id, 'r-m0-t0')
 })
 
-/* ---- process summarization & interleaved prose timeline ---- */
+/* ---- contiguous process segments ---- */
 
-check('summarizeAgentProcess reports no process for pure-prose blocks', () => {
+check('groupMessageSegments keeps pure-prose blocks with no process segments', () => {
   const blocks = [{ kind: 'text', id: 't0', html: '<p>Hello</p>' }]
-  const s = summarizeAgentProcess(blocks, false)
-  assert.equal(s.hasProcess, false)
-  assert.equal(proseOnlyBlocks(blocks).length, 1)
+  const segs = groupMessageSegments(blocks, false)
+  assert.equal(segs.length, 1)
+  assert.equal(segs[0].kind, 'prose')
+  assert.equal(segs[0].isLastProse, true)
 })
 
-check('summarizeAgentProcess reports live thinking and running tool actions', () => {
+check('groupMessageSegments animates only the trailing active process segment', () => {
   const thinkingLive = [{ kind: 'thinking', id: 'th0', text: 'pondering', live: true }]
-  assert.equal(summarizeAgentProcess(thinkingLive, true).label, 'Thinking…')
+  const segsThink = groupMessageSegments(thinkingLive, true)
+  assert.equal(segsThink.length, 1)
+  assert.equal(segsThink[0].kind, 'process')
+  assert.equal(segsThink[0].summary.isLive, true)
+  assert.equal(segsThink[0].summary.label, 'Thinking…')
 
   const toolLive = [
     { kind: 'thinking', id: 'th0', text: 'pondering', live: false },
     { kind: 'tool', id: 'tl0', call: { name: 'read_file', arg: 'wire.ts', status: 'running' } }
   ]
-  const sTool = summarizeAgentProcess(toolLive, true)
-  assert.equal(sTool.isLive, true)
-  assert.equal(sTool.label, 'Calling read_file…')
-  assert.equal(sTool.detail, 'wire.ts')
+  const segsTool = groupMessageSegments(toolLive, true)
+  assert.equal(segsTool.length, 1)
+  assert.equal(segsTool[0].summary.isLive, true)
+  assert.equal(segsTool[0].summary.label, 'Calling read_file…')
+  assert.equal(segsTool[0].summary.detail, 'wire.ts')
 
   const proseLive = [
     { kind: 'thinking', id: 'th0', text: 'pondering', live: false },
     { kind: 'tool', id: 'tl0', call: { name: 'read_file', arg: 'wire.ts', status: 'completed', durationS: 0.4 } },
     { kind: 'raw', id: 'r0', paras: ['Done!'], caret: true }
   ]
-  const sResp = summarizeAgentProcess(proseLive, true)
-  assert.equal(sResp.label, 'Responding…')
-  assert.equal(sResp.detail, 'Thought · 1 tool')
+  const segsAfterProse = groupMessageSegments(proseLive, true)
+  assert.deepEqual(segsAfterProse.map(s => s.kind), ['process', 'prose'])
+  assert.equal(segsAfterProse[0].summary.isLive, false)
+  assert.equal(segsAfterProse[0].summary.label, 'Thought · 1 tool')
+  assert.equal(segsAfterProse[1].isLastProse, true)
 })
 
-check('summarizeAgentProcess reports settled counts and failures', () => {
-  const settled = [
-    { kind: 'thinking', id: 'th0', text: 'a', live: false },
-    { kind: 'tool', id: 'tl0', call: { name: 'read_file', status: 'completed', durationS: 0.5 } },
-    { kind: 'tool', id: 'tl1', call: { name: 'execute_shell', status: 'failed', durationS: 1.25 } }
-  ]
-  const s = summarizeAgentProcess(settled, false)
-  assert.equal(s.hasProcess, true)
-  assert.equal(s.isLive, false)
-  assert.equal(s.label, 'Thought · 2 tools')
-  assert.equal(s.detail, '1 failed')
-})
-
-check('buildProcessTimeline inserts reply anchors only for interleaved prose', () => {
+check('groupMessageSegments splits interleaved process/prose runs and keeps earlier bars quiet', () => {
   const blocks = [
     { kind: 'thinking', id: 'th0', text: 'step 1', live: false },
-    { kind: 'text', id: 'p0', html: '<p>Let me check <code>wire.ts</code> first.</p>' },
     { kind: 'tool', id: 'tl0', call: { name: 'read_file', status: 'completed' } },
-    { kind: 'text', id: 'p1', html: '<p>Final answer here.</p>' }
+    { kind: 'text', id: 'p0', html: '<p>Let me check <code>wire.ts</code> first.</p>' },
+    { kind: 'thinking', id: 'th1', text: 'step 2', live: false },
+    { kind: 'tool', id: 'tl1', call: { name: 'edit_file', arg: 'app.css', status: 'running' } }
   ]
-  assert.deepEqual(proseOnlyBlocks(blocks).map(b => b.id), ['p0', 'p1'])
-  const timeline = buildProcessTimeline(blocks)
-  assert.deepEqual(timeline.map(e => e.kind), ['block', 'anchor', 'block'])
-  assert.equal(timeline[1].kind === 'anchor' ? timeline[1].preview : '', 'Let me check wire.ts first.')
+  const segs = groupMessageSegments(blocks, true)
+  assert.deepEqual(segs.map(s => s.kind), ['process', 'prose', 'process'])
+  assert.equal(segs[0].summary.isLive, false)
+  assert.equal(segs[0].summary.label, 'Thought · 1 tool')
+  assert.equal(segs[2].summary.isLive, true)
+  assert.equal(segs[2].summary.label, 'Calling edit_file…')
+  assert.equal(segs[2].summary.detail, 'app.css')
+})
+
+check('groupMessageSegments ignores whitespace-only prose blocks between process items', () => {
+  const blocks = [
+    { kind: 'thinking', id: 'th0', text: 'step 1', live: false },
+    { kind: 'raw', id: 'r-empty', paras: ['   '], caret: true },
+    { kind: 'tool', id: 'tl0', call: { name: 'read_file', status: 'completed' } },
+    { kind: 'text', id: 't-empty', html: '  ' },
+    { kind: 'tool', id: 'tl1', call: { name: 'execute_shell', status: 'failed' } }
+  ]
+  const segs = groupMessageSegments(blocks, false)
+  assert.equal(segs.length, 1)
+  assert.equal(segs[0].kind, 'process')
+  assert.equal(segs[0].blocks.length, 3)
+  assert.equal(segs[0].summary.isLive, false)
+  assert.equal(segs[0].summary.label, 'Thought · 2 tools')
+  assert.equal(segs[0].summary.detail, '1 failed')
+})
+
+check('groupMessageSegments gives unique ids and marks only final prose as isLastProse', () => {
+  const blocks = [
+    { kind: 'raw', id: 'live-1-raw', paras: ['First'], caret: true },
+    { kind: 'tool', id: 'tl0', call: { name: 'read_file', status: 'completed' } },
+    { kind: 'raw', id: 'live-1-raw', paras: ['Second'], caret: true }
+  ]
+  const segs = groupMessageSegments(blocks, true)
+  assert.deepEqual(segs.map(s => s.kind), ['prose', 'process', 'prose'])
+  assert.notEqual(segs[0].id, segs[2].id)
+  assert.equal(segs[0].isLastProse, false)
+  assert.equal(segs[2].isLastProse, true)
 })
 
 console.log(`\nRESULT: PASS=${passed} FAIL=${failures.length}`)

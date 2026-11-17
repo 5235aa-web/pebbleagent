@@ -1,42 +1,128 @@
 <svg viewBox="0 0 1024 1024" xmlns="http://www.w3.org/2000/svg" role="img" aria-label="Pebble Orbit">
   <defs>
-    <linearGradient id="plate" x1="0.12" y1="0" x2="0.78" y2="1">
-      <stop offset="0" stop-color="#FCF8F1"/>
-      <stop offset="0.52" stop-color="#F2EEE6"/>
-      <stop offset="1" stop-color="#E4DCCD"/>
+    <!-- Warm editorial paper plate -->
+    <linearGradient id="paper-bg" x1="0.1" y1="0" x2="0.85" y2="1">
+      <stop offset="0" stop-color="#FFFDF8"/>
+      <stop offset="0.52" stop-color="#F5EFE4"/>
+      <stop offset="1" stop-color="#E7DCC7"/>
     </linearGradient>
-    <linearGradient id="stone" x1="0.18" y1="0.02" x2="0.86" y2="1">
-      <stop offset="0" stop-color="#3B9276"/>
-      <stop offset="0.45" stop-color="#1E6B54"/>
-      <stop offset="1" stop-color="#0D4033"/>
-    </linearGradient>
-    <radialGradient id="gloss" cx="0.5" cy="0.5" r="0.5">
-      <stop offset="0" stop-color="#E8F7EF" stop-opacity="0.30"/>
-      <stop offset="0.62" stop-color="#E8F7EF" stop-opacity="0.07"/>
-      <stop offset="1" stop-color="#FFFFFF" stop-opacity="0"/>
+
+    <!-- Soft warm ambient wash -->
+    <radialGradient id="warm-wash" cx="0.54" cy="0.44" r="0.54">
+      <stop offset="0" stop-color="#FCE7DA" stop-opacity="0.72"/>
+      <stop offset="0.6" stop-color="#F5EFE4" stop-opacity="0.12"/>
+      <stop offset="1" stop-color="#E7DCC7" stop-opacity="0"/>
     </radialGradient>
-    <radialGradient id="cast" cx="0.5" cy="0.5" r="0.5">
-      <stop offset="0" stop-color="#17130F" stop-opacity="0.18"/>
+
+    <!-- Soft ground shadow -->
+    <radialGradient id="ground-shadow" cx="0.5" cy="0.5" r="0.5">
+      <stop offset="0" stop-color="#2A2018" stop-opacity="0.22"/>
+      <stop offset="0.65" stop-color="#2A2018" stop-opacity="0.06"/>
+      <stop offset="1" stop-color="#2A2018" stop-opacity="0"/>
+    </radialGradient>
+
+    <!-- Deep warm espresso ink for the sculpted stem -->
+    <linearGradient id="ink-grad" x1="0.2" y1="0" x2="0.8" y2="1">
+      <stop offset="0" stop-color="#2F251D"/>
+      <stop offset="0.52" stop-color="#1B1511"/>
+      <stop offset="1" stop-color="#100C09"/>
+    </linearGradient>
+
+    <!-- Terracotta-vermilion artistic ribbon gradient for the P bowl -->
+    <linearGradient id="terra-grad" x1="0.15" y1="0.05" x2="0.85" y2="0.95">
+      <stop offset="0" stop-color="#EE7A4F"/>
+      <stop offset="0.48" stop-color="#D64E2A"/>
+      <stop offset="1" stop-color="#AC3215"/>
+    </linearGradient>
+
+    <!-- Jade-teal organic pebble accent -->
+    <linearGradient id="jade-grad" x1="0.2" y1="0.1" x2="0.85" y2="0.9">
+      <stop offset="0" stop-color="#48A88E"/>
+      <stop offset="0.52" stop-color="#1F7A6E"/>
+      <stop offset="1" stop-color="#124F46"/>
+    </linearGradient>
+
+    <!-- Delicate paper-edge rim -->
+    <linearGradient id="paper-rim" x1="0" y1="0" x2="1" y2="1">
+      <stop offset="0" stop-color="#FFFFFF" stop-opacity="0.92"/>
+      <stop offset="0.5" stop-color="#D4C7B2" stop-opacity="0.28"/>
+      <stop offset="1" stop-color="#17130F" stop-opacity="0.12"/>
+    </linearGradient>
+
+    <!-- Soft feathered cast shadow from stem onto bowl -->
+    <linearGradient id="stem-cast" x1="0" y1="0" x2="1" y2="0">
+      <stop offset="0" stop-color="#17130F" stop-opacity="0.24"/>
       <stop offset="1" stop-color="#17130F" stop-opacity="0"/>
-    </radialGradient>
+    </linearGradient>
+
+    <clipPath id="squircle-clip">
+      <rect x="20" y="20" width="984" height="984" rx="220"/>
+    </clipPath>
   </defs>
 
-  <rect width="1024" height="1024" rx="228" fill="url(#plate)"/>
-  <rect x="14" y="14" width="996" height="996" rx="214" fill="none" stroke="#17130F" stroke-opacity="0.09" stroke-width="3"/>
+  <!-- Base rounded square -->
+  <rect x="20" y="20" width="984" height="984" rx="220" fill="url(#paper-bg)"/>
 
-  <ellipse cx="524" cy="744" rx="240" ry="58" fill="url(#cast)"/>
+  <g clip-path="url(#squircle-clip)">
+    <rect x="20" y="20" width="984" height="984" fill="url(#warm-wash)"/>
 
-  <g transform="translate(512 512) rotate(-22)">
-    <ellipse rx="400" ry="190" fill="none" stroke="#17130F" stroke-opacity="0.16" stroke-width="18"/>
+    <!-- Subtle decorative fine-art circle rule -->
+    <circle cx="512" cy="512" r="356" fill="none" stroke="#17130F" stroke-opacity="0.065" stroke-width="2.5"/>
+
+    <!-- Soft tactile shadows beneath the monogram -->
+    <ellipse cx="386" cy="824" rx="176" ry="26" fill="url(#ground-shadow)"/>
+    <ellipse cx="590" cy="602" rx="164" ry="38" fill="url(#ground-shadow)" opacity="0.55"/>
+
+    <!-- Organic jade pebble floating gracefully in the counter space -->
+    <g transform="rotate(-14 552 396)">
+      <path d="M 538 312 C 598 306 648 348 650 398 C 652 450 604 490 546 486 C 490 482 454 440 458 392 C 462 344 496 316 538 312 Z" fill="url(#jade-grad)"/>
+      <ellipse cx="526" cy="360" rx="44" ry="24" fill="#E8F7F1" fill-opacity="0.22" transform="rotate(-20 526 360)"/>
+    </g>
+
+    <!-- Expressive sculptural terracotta bowl of the "P" ending in a smooth calligraphic terminal -->
+    <path d="
+      M 404 206
+      L 548 206
+      C 700 206 784 282 784 394
+      C 784 506 696 582 544 582
+      C 482 582 444 562 444 534
+      C 444 510 468 498 494 508
+      C 514 516 530 534 558 534
+      C 638 534 680 480 680 394
+      C 680 308 634 254 538 254
+      L 404 254
+      Z
+    " fill="url(#terra-grad)"/>
+
+    <!-- Subtle inner highlight along the top sweep of the bowl -->
+    <path d="M 424 218 L 548 218 C 678 218 758 282 768 370" fill="none" stroke="#FFF2EA" stroke-opacity="0.46" stroke-width="4.5" stroke-linecap="round"/>
+
+    <!-- Soft feathered shadow cast by the ink stem onto the terracotta join -->
+    <rect x="424" y="206" width="22" height="48" fill="url(#stem-cast)"/>
+
+    <!-- Sculpted editorial ink stem of the "P" with refined Didone serif terminals -->
+    <path d="
+      M 268 220
+      C 268 210 276 206 288 206
+      L 424 206
+      L 424 764
+      C 424 788 442 796 478 798
+      C 490 799 498 806 498 815
+      C 498 824 490 830 476 830
+      L 276 830
+      C 262 830 254 824 254 815
+      C 254 806 262 799 274 798
+      C 310 796 326 788 326 764
+      L 326 264
+      C 326 242 312 236 282 234
+      C 273 233 268 228 268 220
+      Z
+    " fill="url(#ink-grad)"/>
+
+    <!-- Fine warm-ivory highlight line on the stem's left bevel -->
+    <path d="M 340 254 L 340 772" fill="none" stroke="#FFF8F0" stroke-opacity="0.14" stroke-width="4" stroke-linecap="round"/>
   </g>
 
-  <g transform="rotate(-6 512 512)">
-    <path d="M500 268C616 258 738 350 748 484C758 620 664 754 524 766C384 778 262 668 258 528C254 390 372 278 500 268Z" fill="url(#stone)"/>
-    <ellipse cx="446" cy="392" rx="172" ry="122" fill="url(#gloss)" transform="rotate(-26 446 392)"/>
-  </g>
-
-  <g transform="translate(512 512) rotate(-22)">
-    <path d="M-400 0A400 190 0 0 0 400 0" fill="none" stroke="#17130F" stroke-opacity="0.82" stroke-width="34" stroke-linecap="round"/>
-    <circle cx="306" cy="122" r="32" fill="#17130F"/>
-  </g>
+  <!-- Crisp frame outline -->
+  <rect x="21.5" y="21.5" width="981" height="981" rx="218.5" fill="none" stroke="url(#paper-rim)" stroke-width="3"/>
 </svg>

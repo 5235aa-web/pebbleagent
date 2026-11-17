@@ -199,78 +199,6 @@ class ExecutionToolsMixin:
                     pass
 
 
-    async def _tool_execute_shell(
-        self,
-        command: str,
-        timeout: int = 60,
-        context: ToolExecutionContext = None
-    ) -> str:
-        """执行Shell命令（BashValidator 全量检查）"""
-        if not command:
-            return "Error: No command provided"
-        
-        # 使用 BashValidator 全量验证
-        from ..bash_validator import BashValidator
-        validator = BashValidator(self._current_project_path)
-        validator.set_path_whitelist(getattr(self, '_path_whitelist', []))
-        report = validator.validate(command)
-        
-        # 阻止级：拒绝执行
-        if report.blocked:
-            logger.warning(f"[ToolExecutor] BLOCKED command: {command} - {report.block_reason}")
-            return f"Error: blocked by the permission system - {report.block_reason}"
-        
-        # 警告级：记录但允许
-        if report.is_destructive:
-            audit_logger = self._enforcer._get_audit_logger()
-            if audit_logger:
-                from gateway.permission_audit import AuditEvent, AuditEventType
-                audit_logger.log_event(
-                    AuditEvent(
-                        event_type=AuditEventType.PERMISSION_CHECK.value,
-                        tool_name='execute_shell',
-                        target=command,
-                        content=command,
-                        allowed=True,
-                        decision_source='dangerous_command_warning',
-                        reason='; '.join(report.warnings[:3])
-                    )
-                )
-            logger.warning(f"[ToolExecutor] Dangerous command executed: {command} - {report.warnings[:2]}")
-        
-        try:
-            if os.name == 'nt':
-                # A single command line, not an argv list. list2cmdline escaped the
-                # inner quotes of `python -c "..."`, so the interpreter received the
-                # code as a string literal (empty output) and a semicolon inside it
-                # died as a truncated-source SyntaxError. shell=True hands the string
-                # to cmd.exe unchanged, which is what the caller wrote.
-                exec_command = command
-                use_shell = True
-            else:
-                exec_command = ['bash', '-c', command]
-                use_shell = False
-
-            returncode, stdout, stderr = await self._run_subprocess_exec(
-                command=exec_command,
-                timeout=timeout,
-                context=context,
-                cwd=self._current_project_path,
-                shell=use_shell
-            )
-
-            if returncode == 0:
-                return stdout or "Success (no output)"
-            return f"Error: {stderr}"
-
-        except asyncio.CancelledError:
-            raise
-        except asyncio.TimeoutError:
-            return "Error: Command timed out"
-        except Exception as e:
-            return f"Error: {str(e)}"
-
-
     async def _tool_powershell(
         self,
         command: str,
@@ -281,7 +209,7 @@ class ExecutionToolsMixin:
         # The schema drops this tool off Windows. This guard covers the paths that
         # bypass the schema: a replayed history row or a direct RPC call.
         if os.name != "nt":
-            return "Error: the powershell tool is Windows-only. Use execute_shell on this platform."
+            return "Error: the powershell tool is Windows-only. Use execute_code(language=\"bash\") on this platform."
         if not command:
             return "Error: No command provided"
 

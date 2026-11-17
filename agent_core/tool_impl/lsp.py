@@ -127,6 +127,36 @@ class LspToolsMixin:
         return os.path.abspath(resolved)
 
 
+    async def _tool_lsp(
+        self,
+        action: str,
+        file_path: str = "",
+        line: int = 0,
+        character: int = 0,
+        query: str = "",
+    ) -> str:
+        """Unified LSP code intelligence dispatcher."""
+        act = (action or "").strip()
+        if not act:
+            return "Error: action is required"
+
+        dispatch = {
+            "go_to_definition": lambda: self._tool_lsp_go_to_definition(file_path, line, character),
+            "find_references": lambda: self._tool_lsp_find_references(file_path, line, character),
+            "hover": lambda: self._tool_lsp_hover(file_path, line, character),
+            "document_symbol": lambda: self._tool_lsp_document_symbol(file_path),
+            "workspace_symbol": lambda: self._tool_lsp_workspace_symbol(query),
+            "go_to_implementation": lambda: self._tool_lsp_go_to_implementation(file_path, line, character),
+            "prepare_call_hierarchy": lambda: self._tool_lsp_prepare_call_hierarchy(file_path, line, character),
+            "incoming_calls": lambda: self._tool_lsp_incoming_calls(file_path, line, character),
+            "outgoing_calls": lambda: self._tool_lsp_outgoing_calls(file_path, line, character),
+        }
+        fn = dispatch.get(act)
+        if fn is None:
+            valid = ", ".join(sorted(dispatch))
+            return f"Error: unknown lsp action '{act}'. Valid actions: {valid}"
+        return await fn()
+
     async def _tool_lsp_go_to_definition(
         self, file_path: str, line: int, character: int
     ) -> str:

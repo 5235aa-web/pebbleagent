@@ -54,10 +54,9 @@ def main() -> int:
 
     # 写类与执行类工具必须被过滤掉
     forbidden = {
-        "write_file", "edit_file", "delete_file", "copy_file", "move_file",
-        "create_directory",
-        "execute_code", "execute_shell", "powershell",
-        "browser_download", "kill_process", "set_env_var",
+        "write_file", "edit_file", "delete_file", "move_file",
+        "execute_code", "powershell",
+        "browser_download",
     }
     leaked = sorted(forbidden & names)
     check("chat_agent schema excludes write and exec tools", not leaked, f"leaked {leaked}")

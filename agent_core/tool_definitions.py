@@ -15,10 +15,23 @@ logger = logging.getLogger(__name__)
 # other platform, so the model never sees a tool it has no way to call.
 _PLATFORM_ONLY = {"powershell": "win32"}
 
+# Tools whose schema is injected only when their runtime dependency is present.
+_CONDITIONAL_TOOLS = {"lsp"}
+
+
+def _is_lsp_schema_enabled() -> bool:
+    try:
+        from .lsp_client import is_lsp_available
+        return is_lsp_available()
+    except Exception:
+        return False
+
 
 def _drop_platform_only(tools: List[Dict[str, Any]]) -> List[Dict[str, Any]]:
-    """Remove the tools that cannot run on the current platform."""
+    """Remove the tools that cannot run on the current platform or lack runtime support."""
     blocked = {name for name, plat in _PLATFORM_ONLY.items() if plat != sys.platform}
+    if not _is_lsp_schema_enabled():
+        blocked.add("lsp")
     if not blocked:
         return tools
     return [t for t in tools if t.get("function", {}).get("name") not in blocked]
@@ -53,28 +66,6 @@ def get_tools_definition() -> List[Dict[str, Any]]:
                         }
                     },
                     "required": ["code"]
-                }
-            }
-        },
-        {
-            "type": "function",
-            "function": {
-                "name": "execute_shell",
-                "description": "Run a shell command and return its output. The whole output is read back into the context, so redirect anything over a few KB to a file and read it back with read_file or grep (command > log 2>&1). Avoid the more pager, type and findstr /C:. Keep timeout at 60 seconds or less; for long jobs write a log file and poll it.",
-                "parameters": {
-                    "type": "object",
-                    "properties": {
-                        "command": {
-                            "type": "string",
-                            "description": "Shell command to run"
-                        },
-                        "timeout": {
-                            "type": "integer",
-                            "description": "Timeout in seconds",
-                            "default": 60
-                        }
-                    },
-                    "required": ["command"]
                 }
             }
         },
@@ -211,27 +202,6 @@ def get_tools_definition() -> List[Dict[str, Any]]:
         {
             "type": "function",
             "function": {
-                "name": "copy_file",
-                "description": "复制文件或目录。",
-                "parameters": {
-                    "type": "object",
-                    "properties": {
-                        "source": {
-                            "type": "string",
-                            "description": "源路径"
-                        },
-                        "destination": {
-                            "type": "string",
-                            "description": "目标路径"
-                        }
-                    },
-                    "required": ["source", "destination"]
-                }
-            }
-        },
-        {
-            "type": "function",
-            "function": {
                 "name": "move_file",
                 "description": "移动/重命名文件或目录。",
                 "parameters": {
@@ -254,50 +224,6 @@ def get_tools_definition() -> List[Dict[str, Any]]:
         {
             "type": "function",
             "function": {
-                "name": "list_directory",
-                "description": "列出目录内容。",
-                "parameters": {
-                    "type": "object",
-                    "properties": {
-                        "path": {
-                            "type": "string",
-                            "description": "目录路径"
-                        },
-                        "show_hidden": {
-                            "type": "boolean",
-                            "description": "是否显示隐藏文件",
-                            "default": False
-                        },
-                        "recursive": {
-                            "type": "boolean",
-                            "description": "是否递归列出子目录",
-                            "default": False
-                        }
-                    },
-                    "required": ["path"]
-                }
-            }
-        },
-        {
-            "type": "function",
-            "function": {
-                "name": "create_directory",
-                "description": "创建目录（支持多级创建）。",
-                "parameters": {
-                    "type": "object",
-                    "properties": {
-                        "path": {
-                            "type": "string",
-                            "description": "目录路径"
-                        }
-                    },
-                    "required": ["path"]
-                }
-            }
-        },
-        {
-            "type": "function",
-            "function": {
                 "name": "get_file_info",
                 "description": "获取文件或目录的详细信息。",
                 "parameters": {
@@ -317,21 +243,28 @@ def get_tools_definition() -> List[Dict[str, Any]]:
             "type": "function",
             "function": {
                 "name": "grep",
-                "description": "使用 ripgrep 进行文件内容搜索。只读操作，可以并发执行。",
+                "description": (
+                    "搜索文件内容（基于 ripgrep，不可用时自动回退到 Python 搜索）。只读操作，可并发执行。\n"
+                    "关键行为：\n"
+                    "- 默认启用 smart-case（全小写模式自动忽略大小写，含大写字母则区分大小写）；传 -i=true 可强制忽略大小写。\n"
+                    "- 搜索包含 () [] . $ \\ 等字符的代码片段时传 fixed_strings=true（等价 rg -F），避免被解析为正则。\n"
+                    "- 默认遵循 .gitignore 并跳过隐藏目录；需搜索 .github/.pebble 等隐藏文件或被忽略目录时传 include_hidden=true / no_ignore=true（显式指向具体文件或隐藏目录时也会自动包含）。\n"
+                    "- glob 支持 *.py、*.{ts,vue} 及逗号分隔 *.ts,*.vue。"
+                ),
                 "parameters": {
                     "type": "object",
                     "properties": {
                         "pattern": {
                             "type": "string",
-                            "description": "搜索模式（正则表达式）"
+                            "description": "搜索模式（默认正则表达式；按字面字符串搜索代码片段时请设 fixed_strings=true）"
                         },
                         "path": {
                             "type": "string",
-                            "description": "搜索路径"
+                            "description": "搜索文件或目录路径（省略则搜索当前项目根目录）"
                         },
                         "glob": {
                             "type": "string",
-                            "description": "文件过滤模式"
+                            "description": "文件过滤模式（如 *.py、src/**/*.ts、*.{ts,vue} 或逗号分隔 *.ts,*.vue）"
                         },
                         "output_mode": {
                             "type": "string",
@@ -339,9 +272,14 @@ def get_tools_definition() -> List[Dict[str, Any]]:
                             "enum": ["files_with_matches", "content", "count"],
                             "default": "files_with_matches"
                         },
+                        "fixed_strings": {
+                            "type": "boolean",
+                            "description": "按字面字符串精确匹配而非正则表达式（包含 () [] . $ \\ 等符号时建议 true）",
+                            "default": False
+                        },
                         "-i": {
                             "type": "boolean",
-                            "description": "忽略大小写",
+                            "description": "强制忽略大小写（默认 false 时仍启用 smart-case：全小写搜索自动忽略大小写）",
                             "default": False
                         },
                         "-n": {
@@ -363,11 +301,26 @@ def get_tools_definition() -> List[Dict[str, Any]]:
                         },
                         "type": {
                             "type": "string",
-                            "description": "文件类型"
+                            "description": "文件类型（如 py、ts、js、vue、rust、md 等）"
+                        },
+                        "include_hidden": {
+                            "type": "boolean",
+                            "description": "是否搜索隐藏文件与目录（如 .github、.env）",
+                            "default": False
+                        },
+                        "no_ignore": {
+                            "type": "boolean",
+                            "description": "是否忽略 .gitignore/.ignore 规则",
+                            "default": False
+                        },
+                        "multiline": {
+                            "type": "boolean",
+                            "description": "启用跨行正则匹配",
+                            "default": False
                         },
                         "head_limit": {
                             "type": "integer",
-                            "description": "结果数量限制",
+                            "description": "结果数量限制（0 表示不限制）",
                             "default": 250
                         }
                     },
@@ -511,53 +464,6 @@ def get_tools_definition() -> List[Dict[str, Any]]:
                 }
             }
         },
-        # ==================== 系统信息 ====================
-        {
-            "type": "function",
-            "function": {
-                "name": "get_env_var",
-                "description": "获取环境变量。只读操作，可以并发执行。",
-                "parameters": {
-                    "type": "object",
-                    "properties": {
-                        "name": {
-                            "type": "string",
-                            "description": "变量名"
-                        }
-                    },
-                    "required": ["name"]
-                }
-            }
-        },
-        {
-            "type": "function",
-            "function": {
-                "name": "get_system_info",
-                "description": "获取系统信息。只读操作，可以并发执行。",
-                "parameters": {
-                    "type": "object",
-                    "properties": {},
-                    "required": []
-                }
-            }
-        },
-        {
-            "type": "function",
-            "function": {
-                "name": "list_processes",
-                "description": "列出进程。只读操作，可以并发执行。",
-                "parameters": {
-                    "type": "object",
-                    "properties": {
-                        "filter": {
-                            "type": "string",
-                            "description": "进程名过滤"
-                        }
-                    },
-                    "required": []
-                }
-            }
-        },
         # ==================== Todo 管理 ====================
         {
             "type": "function",
@@ -668,89 +574,6 @@ def get_tools_definition() -> List[Dict[str, Any]]:
                 }
             }
         },
-        # ==================== 文件搜索 ====================
-        {
-            "type": "function",
-            "function": {
-                "name": "search_in_file",
-                "description": "在文件中搜索文本内容，支持正则表达式。只读操作，可以并发执行。",
-                "parameters": {
-                    "type": "object",
-                    "properties": {
-                        "file_path": {
-                            "type": "string",
-                            "description": "文件路径"
-                        },
-                        "pattern": {
-                            "type": "string",
-                            "description": "搜索模式（支持正则表达式）"
-                        },
-                        "ignore_case": {
-                            "type": "boolean",
-                            "description": "是否忽略大小写",
-                            "default": True
-                        }
-                    },
-                    "required": ["file_path", "pattern"]
-                }
-            }
-        },
-        {
-            "type": "function",
-            "function": {
-                "name": "search_files",
-                "description": "在目录中搜索文件名或内容。只读操作，可以并发执行。",
-                "parameters": {
-                    "type": "object",
-                    "properties": {
-                        "directory": {
-                            "type": "string",
-                            "description": "搜索目录"
-                        },
-                        "pattern": {
-                            "type": "string",
-                            "description": "搜索模式（文件名或内容）"
-                        },
-                        "search_type": {
-                            "type": "string",
-                            "description": "搜索类型",
-                            "enum": ["name", "content", "both"],
-                            "default": "name"
-                        },
-                        "file_pattern": {
-                            "type": "string",
-                            "description": "文件过滤模式（如*.py）"
-                        }
-                    },
-                    "required": ["directory", "pattern"]
-                }
-            }
-        },
-        {
-            "type": "function",
-            "function": {
-                "name": "find_files",
-                "description": "查找匹配模式的文件。只读操作，可以并发执行。",
-                "parameters": {
-                    "type": "object",
-                    "properties": {
-                        "directory": {
-                            "type": "string",
-                            "description": "搜索目录"
-                        },
-                        "pattern": {
-                            "type": "string",
-                            "description": "文件名模式（支持通配符*和?）"
-                        },
-                        "max_depth": {
-                            "type": "integer",
-                            "description": "最大搜索深度"
-                        }
-                    },
-                    "required": ["directory", "pattern"]
-                }
-            }
-        },
         # ==================== 网络访问 ====================
         {
             "type": "function",
@@ -790,51 +613,6 @@ def get_tools_definition() -> List[Dict[str, Any]]:
                 }
             }
         },
-        # ==================== 进程管理 ====================
-        {
-            "type": "function",
-            "function": {
-                "name": "kill_process",
-                "description": "终止进程。写操作，需要串行执行。",
-                "parameters": {
-                    "type": "object",
-                    "properties": {
-                        "pid": {
-                            "type": "integer",
-                            "description": "进程ID"
-                        },
-                        "force": {
-                            "type": "boolean",
-                            "description": "强制终止",
-                            "default": False
-                        }
-                    },
-                    "required": ["pid"]
-                }
-            }
-        },
-        # ==================== 环境变量 ====================
-        {
-            "type": "function",
-            "function": {
-                "name": "set_env_var",
-                "description": "设置环境变量。写操作，需要串行执行。",
-                "parameters": {
-                    "type": "object",
-                    "properties": {
-                        "name": {
-                            "type": "string",
-                            "description": "环境变量名"
-                        },
-                        "value": {
-                            "type": "string",
-                            "description": "环境变量值"
-                        }
-                    },
-                    "required": ["name", "value"]
-                }
-            }
-        },
         # ==================== 技能管理 ====================
         {
             "type": "function",
@@ -865,214 +643,52 @@ def get_tools_definition() -> List[Dict[str, Any]]:
                 }
             }
         },
-        # ==================== LSP 代码智能（9 种操作） ====================
+        # ==================== LSP 代码智能 ====================
         {
             "type": "function",
             "function": {
-                "name": "lsp_go_to_definition",
-                "description": "LSP: 跳转到符号的定义位置。需要指定文件路径和光标位置（行列号均从1开始）。只读操作，可以并发执行。",
+                "name": "lsp",
+                "description": (
+                    "LSP 代码智能查询（支持定义跳转、引用查找、悬停类型、文档/工作区符号、接口实现、调用层次）。"
+                    "只读操作，可以并发执行。"
+                ),
                 "parameters": {
                     "type": "object",
                     "properties": {
+                        "action": {
+                            "type": "string",
+                            "description": "LSP 操作类型",
+                            "enum": [
+                                "go_to_definition",
+                                "find_references",
+                                "hover",
+                                "document_symbol",
+                                "workspace_symbol",
+                                "go_to_implementation",
+                                "prepare_call_hierarchy",
+                                "incoming_calls",
+                                "outgoing_calls"
+                            ]
+                        },
                         "file_path": {
                             "type": "string",
-                            "description": "文件路径（绝对路径或相对于项目目录的路径）"
+                            "description": "文件路径（除 workspace_symbol 外均必需）"
                         },
                         "line": {
                             "type": "integer",
-                            "description": "行号（从1开始，如编辑器中显示的行号）"
+                            "description": "行号（从1开始；位置类操作必需）"
                         },
                         "character": {
                             "type": "integer",
-                            "description": "列号/字符位置（从1开始，如编辑器中的列号）"
-                        }
-                    },
-                    "required": ["file_path", "line", "character"]
-                }
-            }
-        },
-        {
-            "type": "function",
-            "function": {
-                "name": "lsp_find_references",
-                "description": "LSP: 查找符号的所有引用位置。返回按文件分组的引用列表。需要指定文件路径和光标位置。只读操作，可以并发执行。",
-                "parameters": {
-                    "type": "object",
-                    "properties": {
-                        "file_path": {
-                            "type": "string",
-                            "description": "文件路径（绝对路径或相对于项目目录的路径）"
+                            "description": "列号/字符位置（从1开始；位置类操作必需）"
                         },
-                        "line": {
-                            "type": "integer",
-                            "description": "行号（从1开始）"
-                        },
-                        "character": {
-                            "type": "integer",
-                            "description": "列号/字符位置（从1开始）"
-                        }
-                    },
-                    "required": ["file_path", "line", "character"]
-                }
-            }
-        },
-        {
-            "type": "function",
-            "function": {
-                "name": "lsp_hover",
-                "description": "LSP: 获取光标处符号的类型信息、文档注释和函数签名。需要指定文件路径和光标位置。只读操作，可以并发执行。",
-                "parameters": {
-                    "type": "object",
-                    "properties": {
-                        "file_path": {
-                            "type": "string",
-                            "description": "文件路径"
-                        },
-                        "line": {
-                            "type": "integer",
-                            "description": "行号（从1开始）"
-                        },
-                        "character": {
-                            "type": "integer",
-                            "description": "列号/字符位置（从1开始）"
-                        }
-                    },
-                    "required": ["file_path", "line", "character"]
-                }
-            }
-        },
-        {
-            "type": "function",
-            "function": {
-                "name": "lsp_document_symbol",
-                "description": "LSP: 获取文件的符号大纲（层次结构），包括类、方法、函数、变量等及其嵌套关系。只需指定文件路径。只读操作，可以并发执行。",
-                "parameters": {
-                    "type": "object",
-                    "properties": {
-                        "file_path": {
-                            "type": "string",
-                            "description": "文件路径"
-                        }
-                    },
-                    "required": ["file_path"]
-                }
-            }
-        },
-        {
-            "type": "function",
-            "function": {
-                "name": "lsp_workspace_symbol",
-                "description": "LSP: 在整个项目中搜索符号（跨文件）。支持模糊匹配符号名称。query为空时返回所有符号。只读操作，可以并发执行。",
-                "parameters": {
-                    "type": "object",
-                    "properties": {
                         "query": {
                             "type": "string",
-                            "description": "搜索查询（符号名称，支持模糊匹配）。留空返回所有项目符号。",
+                            "description": "工作区符号搜索关键词（仅 workspace_symbol 使用，留空返回所有项目符号）",
                             "default": ""
                         }
                     },
-                    "required": []
-                }
-            }
-        },
-        {
-            "type": "function",
-            "function": {
-                "name": "lsp_go_to_implementation",
-                "description": "LSP: 跳转到接口/抽象方法的实际实现位置。对于类方法，查找所有实现了该方法的子类位置。需要指定文件路径和光标位置。只读操作，可以并发执行。",
-                "parameters": {
-                    "type": "object",
-                    "properties": {
-                        "file_path": {
-                            "type": "string",
-                            "description": "文件路径"
-                        },
-                        "line": {
-                            "type": "integer",
-                            "description": "行号（从1开始）"
-                        },
-                        "character": {
-                            "type": "integer",
-                            "description": "列号/字符位置（从1开始）"
-                        }
-                    },
-                    "required": ["file_path", "line", "character"]
-                }
-            }
-        },
-        {
-            "type": "function",
-            "function": {
-                "name": "lsp_prepare_call_hierarchy",
-                "description": "LSP: 准备调用层次分析。返回指定位置函数/方法的调用层次入口项。用于后续的lsp_incoming_calls和lsp_outgoing_calls分析。需要指定文件路径和光标位置。只读操作，可以并发执行。",
-                "parameters": {
-                    "type": "object",
-                    "properties": {
-                        "file_path": {
-                            "type": "string",
-                            "description": "文件路径"
-                        },
-                        "line": {
-                            "type": "integer",
-                            "description": "行号（从1开始）"
-                        },
-                        "character": {
-                            "type": "integer",
-                            "description": "列号/字符位置（从1开始）"
-                        }
-                    },
-                    "required": ["file_path", "line", "character"]
-                }
-            }
-        },
-        {
-            "type": "function",
-            "function": {
-                "name": "lsp_incoming_calls",
-                "description": "LSP: 获取传入调用——哪些函数/方法调用了指定位置的函数。显示每个调用者的位置和具体的调用点。需要指定文件路径和光标位置。只读操作，可以并发执行。",
-                "parameters": {
-                    "type": "object",
-                    "properties": {
-                        "file_path": {
-                            "type": "string",
-                            "description": "文件路径"
-                        },
-                        "line": {
-                            "type": "integer",
-                            "description": "行号（从1开始）"
-                        },
-                        "character": {
-                            "type": "integer",
-                            "description": "列号/字符位置（从1开始）"
-                        }
-                    },
-                    "required": ["file_path", "line", "character"]
-                }
-            }
-        },
-        {
-            "type": "function",
-            "function": {
-                "name": "lsp_outgoing_calls",
-                "description": "LSP: 获取传出调用——指定位置的函数/方法调用了哪些其他函数。显示每个被调用者的位置和具体的调用点。需要指定文件路径和光标位置。只读操作，可以并发执行。",
-                "parameters": {
-                    "type": "object",
-                    "properties": {
-                        "file_path": {
-                            "type": "string",
-                            "description": "文件路径"
-                        },
-                        "line": {
-                            "type": "integer",
-                            "description": "行号（从1开始）"
-                        },
-                        "character": {
-                            "type": "integer",
-                            "description": "列号/字符位置（从1开始）"
-                        }
-                    },
-                    "required": ["file_path", "line", "character"]
+                    "required": ["action"]
                 }
             }
         },

@@ -354,8 +354,6 @@ def _get_permission_type_enum():
 TOOL_PERMISSION_MAPPING: Dict[str, Tuple[str, Callable[[Dict[str, Any]], str], bool]] = {
     # ==================== 代码执行 ====================
     "execute_code": ("EXEC_COMMAND", lambda a: a.get("code", ""), False),
-    "execute_shell": ("EXEC_COMMAND", lambda a: a.get("command", ""), False),
-    "execute_javascript": ("EXEC_COMMAND", lambda a: a.get("code", ""), False),
     "powershell": ("EXEC_COMMAND", lambda a: a.get("command", ""), False),
     
     # ==================== 文件操作（需要路径边界检查） ====================
@@ -363,21 +361,15 @@ TOOL_PERMISSION_MAPPING: Dict[str, Tuple[str, Callable[[Dict[str, Any]], str], b
     "write_file": ("FILE_WRITE", lambda a: a.get("file_path", "") or a.get("path", ""), True),
     "edit_file": ("FILE_WRITE", lambda a: a.get("file_path", "") or a.get("path", ""), True),
     "delete_file": ("FILE_DELETE", lambda a: a.get("path", ""), True),
-    "copy_file": ("FILE_WRITE", lambda a: f"{a.get('source', '')} → {a.get('destination', '')}", True),
     "move_file": ("FILE_WRITE", lambda a: f"{a.get('source', '')} → {a.get('destination', '')}", True),
     
     # ==================== 目录操作（需要路径边界检查） ====================
-    "list_directory": ("FILE_READ", lambda a: a.get("path", ""), True),
-    "create_directory": ("FILE_WRITE", lambda a: a.get("path", ""), True),
     "get_file_info": ("FILE_READ", lambda a: a.get("path", ""), True),
     "ls": ("FILE_READ", lambda a: a.get("path", ""), True),
     
     # ==================== 搜索（需要路径边界检查） ====================
     "grep": ("FILE_READ", lambda a: a.get("path", ""), True),
     "glob": ("FILE_READ", lambda a: a.get("path", ""), True),
-    "search_in_file": ("FILE_READ", lambda a: a.get("file_path", ""), True),
-    "search_files": ("FILE_READ", lambda a: a.get("directory", ""), True),
-    "find_files": ("FILE_READ", lambda a: a.get("directory", ""), True),
     
     # ==================== Git ====================
     "git_status": ("FILE_READ", lambda a: a.get("repo_path", "."), True),
@@ -385,21 +377,9 @@ TOOL_PERMISSION_MAPPING: Dict[str, Tuple[str, Callable[[Dict[str, Any]], str], b
     "git_diff": ("FILE_READ", lambda a: a.get("repo_path", "."), True),
     
     # ==================== 网络 ====================
-    "search_web": ("NETWORK_FETCH", lambda a: a.get("query", ""), False),
     "web_search": ("NETWORK_FETCH", lambda a: a.get("query", ""), False),
     "browser_download": ("NETWORK_FETCH", lambda a: a.get("url", ""), False),
     "fetch_url": ("NETWORK_FETCH", lambda a: a.get("url", ""), False),
-    
-    # ==================== 进程管理 ====================
-    "list_processes": ("EXEC_COMMAND", lambda a: "", False),
-    "kill_process": ("EXEC_COMMAND", lambda a: f"PID: {a.get('pid', '')}", False),
-    
-    # ==================== 环境变量 ====================
-    "get_env_var": ("FILE_READ", lambda a: a.get("name", ""), False),
-    "set_env_var": ("EXEC_COMMAND", lambda a: a.get("name", ""), False),
-    "get_system_info": ("FILE_READ", lambda a: "", False),
-    
-    # ==================== Notebook ====================
     
     # ==================== 技能管理（无需权限检查） ====================
     "list_skills": ("", lambda a: "", False),
@@ -411,27 +391,19 @@ TOOL_PERMISSION_MAPPING: Dict[str, Tuple[str, Callable[[Dict[str, Any]], str], b
     # ==================== Todo管理（无需权限检查） ====================
     "todo_write": ("", lambda a: "", False),
     "todo_read": ("", lambda a: "", False),
+
+    # ==================== 经验账本（无需权限检查） ====================
+    "experience_write": ("", lambda a: "", False),
+    "experience_update": ("", lambda a: "", False),
     
     # ==================== LSP 代码智能（只读文件访问，需要路径边界检查） ====================
-    "lsp_go_to_definition": ("FILE_READ", lambda a: a.get("file_path", ""), True),
-    "lsp_find_references": ("FILE_READ", lambda a: a.get("file_path", ""), True),
-    "lsp_hover": ("FILE_READ", lambda a: a.get("file_path", ""), True),
-    "lsp_document_symbol": ("FILE_READ", lambda a: a.get("file_path", ""), True),
-    "lsp_workspace_symbol": ("FILE_READ", lambda a: "", False),
-    "lsp_go_to_implementation": ("FILE_READ", lambda a: a.get("file_path", ""), True),
-    "lsp_prepare_call_hierarchy": ("FILE_READ", lambda a: a.get("file_path", ""), True),
-    "lsp_incoming_calls": ("FILE_READ", lambda a: a.get("file_path", ""), True),
-    "lsp_outgoing_calls": ("FILE_READ", lambda a: a.get("file_path", ""), True),
+    "lsp": ("FILE_READ", lambda a: a.get("file_path", ""), True),
 }
 
 # 工具别名映射（兼容不同命名）
 TOOL_ALIASES = {
-    "ls": "list_directory",
     "cat": "read_file",
     "rm": "delete_file",
-    "mkdir": "create_directory",
-    "bash": "execute_shell",
-    "shell": "execute_shell",
 }
 
 
@@ -612,7 +584,7 @@ def get_path_from_tool_args(tool_name: str, args: Dict[str, Any]) -> List[str]:
             paths.append(args[key])
     
     # 特殊工具处理
-    if actual_tool_name == "copy_file" or actual_tool_name == "move_file":
+    if actual_tool_name == "move_file":
         if "source" in args:
             paths.append(args["source"])
         if "destination" in args:

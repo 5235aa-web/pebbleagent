@@ -90,7 +90,7 @@ class PowerShellValidator:
         (r'\brd\b|\brmdir\b', "目录删除 (rd/rmdir)"),
         (r'\b(Set-ExecutionPolicy|Set-ItemProperty|New-ItemProperty|Remove-ItemProperty)\b',
          "执行策略/注册表修改"),
-        (r'\b(Stop-Process|Stop-Service)\b', "停止进程/服务"),
+        (r'\b(Stop-Process|Stop-Service|taskkill)\b', "停止进程/服务"),
         (r'\b(icacls|takeown|Set-Acl)\b', "权限修改 (icacls/takeown/Set-Acl)"),
         (r'\b(Invoke-Expression|iex)\b', "动态代码执行 (Invoke-Expression/IEX)"),
         (r'\b(Invoke-WebRequest|iwr|Invoke-RestMethod|irm)\b', "网络请求 (Invoke-WebRequest)"),

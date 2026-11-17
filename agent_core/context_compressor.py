@@ -1549,6 +1549,7 @@ _READ_TOOLS = {
     'read_file', 'ls', 'list_directory', 'glob', 'grep', 'search_files',
     'search_in_file', 'find_files', 'get_file_info', 'todo_read',
     'get_env_var', 'get_system_info', 'list_processes',
+    'lsp',
     'lsp_document_symbol', 'lsp_hover', 'lsp_workspace_symbol',
     'lsp_go_to_definition', 'lsp_find_references', 'lsp_go_to_implementation',
     'lsp_incoming_calls', 'lsp_outgoing_calls', 'lsp_prepare_call_hierarchy',

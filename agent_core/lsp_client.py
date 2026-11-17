@@ -15,6 +15,7 @@ LSP Client — JSON-RPC 2.0 over stdio 的完整 Language Server Protocol 客户
 from __future__ import annotations
 
 import asyncio
+import importlib.util
 import json
 import logging
 import os
@@ -422,6 +423,31 @@ class LspMessageReader:
 # ============================================================================
 # LSP 服务器发现
 # ============================================================================
+
+def is_lsp_available() -> bool:
+    """Fast check whether any supported LSP server binary or Python module is installed.
+
+    Used when assembling tool schemas so environments without a local LSP server
+    never expose an uncallable `lsp` tool to the model. Does not spawn processes
+    and does not treat bare `npx` as an installed LSP server.
+    """
+    for candidate in LSP_SERVER_CANDIDATES:
+        command_name = candidate["command"]
+        server_type = candidate["type"]
+        if server_type == "node":
+            if shutil.which(command_name):
+                return True
+        elif server_type == "python":
+            if shutil.which(command_name):
+                return True
+            module_name = candidate["name"].replace("-", "_")
+            try:
+                if importlib.util.find_spec(module_name) is not None:
+                    return True
+            except Exception:
+                pass
+    return False
+
 
 def find_available_lsp_server() -> Optional[Dict[str, Any]]:
     """

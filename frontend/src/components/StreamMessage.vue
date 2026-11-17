@@ -12,67 +12,68 @@
     >
       <svg v-if="selected" width="10" height="10" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="3"><polyline points="20 6 9 17 4 12"/></svg>
     </span>
-    <div class="avatar" :style="streaming ? 'border-color: var(--accent);' : ''">
-      <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.6"><rect x="3" y="3" width="18" height="14" rx="2"/><line x1="8" y1="21" x2="16" y2="21"/><line x1="12" y1="17" x2="12" y2="21"/></svg>
-    </div>
     <div class="agent-body">
-      <div class="agent-who"><b>Pebble</b><span class="aw-model">{{ model }}</span><span>·</span><span>{{ time }}</span><span v-if="streaming" style="color: var(--accent);">streaming</span></div>
-
-      <div v-if="process.hasProcess" class="proc-wrap">
+      <div class="agent-who">
+        <b>Pebble</b><span class="aw-model">{{ model }}</span><span>·</span><span>{{ time }}</span>
         <button
-          class="proc-bar"
-          :class="{ open: processOpen, 'is-live': process.isLive, 'is-failed': process.failedCount > 0 }"
+          v-if="processSegments.length > 1"
+          class="proc-all-btn"
           type="button"
-          :aria-expanded="processOpen ? 'true' : 'false'"
-          @click="toggleProcess"
-        >
-          <span class="proc-dot" :class="{ live: process.isLive, err: !process.isLive && process.failedCount > 0 }"><i></i></span>
-          <span class="proc-label">{{ process.label }}</span>
-          <span
-            v-if="process.detail"
-            class="proc-detail"
-            :class="{ err: !process.isLive && process.failedCount > 0 }"
-            :title="process.detail"
-          >{{ process.detail }}</span>
-          <svg class="proc-caret" width="10" height="10" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2"><polyline points="9 6 15 12 9 18"/></svg>
-        </button>
-
-        <div v-if="processOpen" class="proc-panel">
-          <template v-for="entry in processEntries" :key="entry.id">
-            <div v-if="entry.kind === 'anchor'" class="proc-anchor" aria-hidden="true">
-              <span class="pa-rule"></span>
-              <span class="pa-tag">reply</span>
-              <span class="pa-text" :title="entry.preview">{{ entry.preview }}</span>
-              <span class="pa-rule"></span>
-            </div>
-            <div
-              v-else-if="entry.block.kind === 'thinking'"
-              class="thinking"
-              :class="{ open: isOpen(entry.block.id), 'th-static': !entry.block.live }"
-            >
-              <span class="th-rail"><i></i></span>
-              <span class="th-label">thinking</span>
-              <span class="th-text">{{ entry.block.text }}</span>
-              <button
-                v-if="entry.block.text.length > TOGGLE_AT"
-                class="th-toggle"
-                type="button"
-                @click="toggle(entry.block.id)"
-              >{{ isOpen(entry.block.id) ? 'less' : 'more' }}</button>
-            </div>
-            <StreamToolCard v-else-if="entry.block.kind === 'tool'" :call="entry.block.call" />
-          </template>
-        </div>
+          @click="toggleAllProcesses"
+        >{{ allProcessesOpen ? 'Collapse all' : `Expand all (${processSegments.length})` }}</button>
       </div>
 
-      <template v-for="b in proseBlocks" :key="b.id">
-        <div v-if="b.kind === 'raw'" class="md">
-          <p v-for="(line, i) in b.paras" :key="i">{{ line }}<span v-if="b.caret && i === b.paras.length - 1" class="caret"></span></p>
+      <template v-for="seg in segments" :key="seg.id">
+        <div v-if="seg.kind === 'process'" class="proc-wrap">
+          <button
+            class="proc-bar"
+            :class="{ open: isProcessOpen(seg.id), 'is-live': seg.summary.isLive, 'is-failed': seg.summary.failedCount > 0 }"
+            type="button"
+            :aria-expanded="isProcessOpen(seg.id) ? 'true' : 'false'"
+            @click="toggleProcess(seg.id)"
+          >
+            <span class="proc-dot" :class="{ live: seg.summary.isLive, err: !seg.summary.isLive && seg.summary.failedCount > 0 }"><i></i></span>
+            <span class="proc-label">{{ seg.summary.label }}</span>
+            <span
+              v-if="seg.summary.detail"
+              class="proc-detail"
+              :class="{ err: !seg.summary.isLive && seg.summary.failedCount > 0 }"
+              :title="seg.summary.detail"
+            >{{ seg.summary.detail }}</span>
+            <svg class="proc-caret" width="10" height="10" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2"><polyline points="9 6 15 12 9 18"/></svg>
+          </button>
+
+          <div v-if="isProcessOpen(seg.id)" class="proc-panel">
+            <template v-for="pb in seg.blocks" :key="pb.id">
+              <div
+                v-if="pb.kind === 'thinking'"
+                class="thinking"
+                :class="{ open: isOpen(pb.id), 'th-static': !pb.live }"
+              >
+                <span class="th-rail"><i></i></span>
+                <span class="th-label">thinking</span>
+                <span class="th-text">{{ pb.text }}</span>
+                <button
+                  v-if="pb.text.length > TOGGLE_AT"
+                  class="th-toggle"
+                  type="button"
+                  @click="toggle(pb.id)"
+                >{{ isOpen(pb.id) ? 'less' : 'more' }}</button>
+              </div>
+              <StreamToolCard v-else-if="pb.kind === 'tool'" :call="pb.call" />
+            </template>
+          </div>
         </div>
-        <div v-else-if="b.kind === 'text'" class="md" v-html="b.html"></div>
-        <StreamCodeBlock v-else-if="b.kind === 'code'" :lang="b.lang" :code="b.code" />
-        <MermaidCard v-else-if="b.kind === 'mermaid'" :code="b.code" :id="b.id" :streaming="b.streaming" />
-        <SvgCard v-else-if="b.kind === 'svg'" :code="b.code" :streaming="b.streaming" />
+
+        <template v-else>
+          <div v-if="seg.block.kind === 'raw'" class="md">
+            <p v-for="(line, i) in seg.block.paras" :key="i">{{ line }}<span v-if="seg.block.caret && streaming && seg.isLastProse && i === seg.block.paras.length - 1" class="caret"></span></p>
+          </div>
+          <div v-else-if="seg.block.kind === 'text'" class="md" v-html="seg.block.html"></div>
+          <StreamCodeBlock v-else-if="seg.block.kind === 'code'" :lang="seg.block.lang" :code="seg.block.code" />
+          <MermaidCard v-else-if="seg.block.kind === 'mermaid'" :code="seg.block.code" :id="seg.block.id" :streaming="seg.block.streaming" />
+          <SvgCard v-else-if="seg.block.kind === 'svg'" :code="seg.block.code" :streaming="seg.block.streaming" />
+        </template>
       </template>
 
       <!-- A stopped turn says so where it stops: a dashed rule trailing off and
@@ -98,9 +99,9 @@
 </template>
 
 <script setup lang="ts">
-import { computed, reactive, ref } from 'vue'
+import { computed, reactive } from 'vue'
 import type { StreamItem } from '../data/stream'
-import { buildProcessTimeline, proseOnlyBlocks, summarizeAgentProcess } from '../data/blocks'
+import { groupMessageSegments, type MessageSegment } from '../data/blocks'
 import { copyMessage, deleteMessage } from '../data/wire'
 import { forwardState, isSelectableItem, isMessageSelected, toggleSelectMessage } from '../data/forward'
 import StreamCodeBlock from './StreamCodeBlock.vue'
@@ -115,13 +116,26 @@ const TOGGLE_AT = 64
 
 const blocks = computed(() => props.item.blocks || [])
 const streaming = computed(() => !!props.item.streaming)
-const processOpen = ref(false)
-const process = computed(() => summarizeAgentProcess(blocks.value, streaming.value))
-const processEntries = computed(() => (processOpen.value ? buildProcessTimeline(blocks.value) : []))
-const proseBlocks = computed(() => proseOnlyBlocks(blocks.value))
+const segments = computed(() => groupMessageSegments(blocks.value, streaming.value))
+const processSegments = computed(() =>
+  segments.value.filter((s): s is Extract<MessageSegment, { kind: 'process' }> => s.kind === 'process')
+)
 
-function toggleProcess() {
-  processOpen.value = !processOpen.value
+const processOpen = reactive<Record<string, boolean>>({})
+function isProcessOpen(id: string): boolean {
+  return !!processOpen[id]
+}
+function toggleProcess(id: string) {
+  processOpen[id] = !processOpen[id]
+}
+const allProcessesOpen = computed(
+  () => processSegments.value.length > 0 && processSegments.value.every(s => !!processOpen[s.id])
+)
+function toggleAllProcesses() {
+  const next = !allProcessesOpen.value
+  for (const s of processSegments.value) {
+    processOpen[s.id] = next
+  }
 }
 const selectable = computed(() => forwardState.active && isSelectableItem(props.item))
 const selected = computed(() => selectable.value && isMessageSelected(props.item.id))

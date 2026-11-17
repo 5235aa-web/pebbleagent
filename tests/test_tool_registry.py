@@ -34,17 +34,13 @@ def check(label, cond, detail=""):
 
 
 EXPECTED = {
-    "execute_code", "execute_shell", "powershell", "read_file", "write_file",
-    "edit_file", "delete_file", "copy_file", "move_file", "list_directory",
-    "create_directory", "get_file_info", "grep", "glob", "ls",
-    "search_in_file", "search_files", "find_files", "git_status", "git_log",
-    "git_diff", "web_search", "fetch_url", "browser_download",
-    "get_env_var", "set_env_var", "get_system_info", "list_processes",
-    "kill_process", "todo_write", "todo_read", "clarify",
+    "execute_code", "powershell", "read_file", "write_file",
+    "edit_file", "delete_file", "move_file", "get_file_info",
+    "grep", "glob", "ls", "git_status", "git_log", "git_diff",
+    "web_search", "fetch_url", "browser_download",
+    "todo_write", "todo_read", "clarify",
     "experience_write", "experience_update", "list_skills", "load_skill",
-    "lsp_go_to_definition", "lsp_find_references", "lsp_hover",
-    "lsp_document_symbol", "lsp_workspace_symbol", "lsp_go_to_implementation",
-    "lsp_prepare_call_hierarchy", "lsp_incoming_calls", "lsp_outgoing_calls",
+    "lsp",
 }
 
 missing = EXPECTED - set(TOOL_HANDLERS)
@@ -74,7 +70,7 @@ check("all handlers callable and async", not bad_attr, f"issues={bad_attr[:5]}")
 check("handlers are callables", not not_callable, f"issues={not_callable}")
 
 check("write tools tracked", WRITE_TOOLS == {
-    "write_file", "edit_file", "delete_file", "copy_file", "move_file"})
+    "write_file", "edit_file", "delete_file", "move_file"})
 
 # Domain mixins must stay separate modules (no handler back in the facade).
 facade_src = open(os.path.join(ROOT, "agent_core", "tool_executor_impl.py"),

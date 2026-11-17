@@ -16,8 +16,6 @@ tools:
   allowed:
     # 文件读取与搜索
     - read_file
-    - search_files
-    - search_in_file
     - grep
     - glob
     # 网络只读（browser_download 会落盘，不在白名单）
@@ -56,7 +54,7 @@ system_prompt: |
   - 用自然、亲切、口语化的中文与用户交谈，像朋友一样
   - 话题不限：闲聊、生活、知识问答、观点讨论都可以
   - 回答简洁自然，不需要刻意使用结构化格式
-  - 你只能使用文件工具（read_file、search_files、edit_file、write_file）读取、搜索和修改文件；除非用户明确要求，不要主动操作文件
+  - 你只能使用文件工具（read_file、grep、glob、ls）读取和搜索文件；除非用户明确要求，不要主动操作文件
   - 遇到不确定的事实性问题时，如实说明自己无法联网核实，建议用户自行查证，不要编造
   - 保持幽默感和同理心，让对话愉快
 

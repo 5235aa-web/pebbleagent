@@ -69,41 +69,8 @@ def _glob_match(rel_path: str, pattern: str) -> bool:
 
 
 
-def _stream_search(filepath: str, regex, pattern: str, deadline: float) -> tuple:
-    """
-    search_files 流式分块搜索：恒定内存（~块大小），支持任意大小文件。
-
-    返回 (matched, is_binary, timed_out)：
-    - 二进制检测：任意块含 NUL 字节即终止（与 ripgrep 语义对齐）
-    - 跨块匹配：保留尾部 overlap（pattern 长度-1）与下一块拼接后搜索
-    - 编码：增量 UTF-8 解码器，正确处理跨块切分的多字节字符
-    - 时间：每块检查 deadline，超时返回 (False, False, True)
-    """
-    import codecs
-    decoder = codecs.getincrementaldecoder("utf-8")(errors="ignore")
-    overlap = max(0, len(pattern) - 1)
-    tail = ""
-    try:
-        with open(filepath, "rb") as f:
-            while True:
-                if time.monotonic() > deadline:
-                    return False, False, True
-                raw = f.read(_SEARCH_CHUNK_BYTES)
-                if not raw:
-                    break
-                if 0 in raw:  # NUL 字节检测：判定为二进制文件
-                    return False, True, False
-                window = tail + decoder.decode(raw)
-                if regex.search(window):
-                    return True, False, False
-                if overlap:
-                    tail = window[-overlap:]
-    except OSError:
-        return False, False, False
-    return False, False, False
-
-
 _SEARCH_SKIP_DIRS = {
+    ".git", ".svn", ".hg",
     "node_modules", "__pycache__", "venv", ".venv",
     "dist", "build", "target", ".next", ".nuxt", ".output", ".cache",
     ".pytest_cache", ".mypy_cache", ".ruff_cache", "coverage", "htmlcov",
@@ -128,16 +95,128 @@ _SEARCH_SKIP_EXTS = {
 }
 
 
-_SEARCH_CHUNK_BYTES = 1024 * 1024    # 流式读取块大小（1MB）
+_GREP_TYPE_EXTS = {
+    "py": (".py", ".pyi"),
+    "python": (".py", ".pyi"),
+    "ts": (".cts", ".mts", ".ts", ".tsx"),
+    "typescript": (".cts", ".mts", ".ts", ".tsx"),
+    "js": (".cjs", ".js", ".jsx", ".mjs", ".vue"),
+    "javascript": (".cjs", ".js", ".jsx", ".mjs", ".vue"),
+    "vue": (".vue",),
+    "md": (".markdown", ".md", ".mdown", ".mdwn", ".mdx", ".mkd", ".mkdn"),
+    "markdown": (".markdown", ".md", ".mdown", ".mdwn", ".mdx", ".mkd", ".mkdn"),
+    "json": (".json",),
+    "yaml": (".yaml", ".yml"),
+    "yml": (".yaml", ".yml"),
+    "css": (".css",),
+    "html": (".html", ".htm"),
+    "rust": (".rs",),
+    "rs": (".rs",),
+    "go": (".go",),
+}
 
 
-_SEARCH_MAX_RESULTS = 200            # 结果上限（达到即早退）
+_REGEX_META_RE = re.compile(r"[()\[\]{}+?$^.*\\|]")
 
 
-_SEARCH_TIME_BUDGET = 30.0           # 内部时间预算（秒，每块检查）
+_SEARCH_TIME_BUDGET = 30.0           # 内部时间预算（秒）
 
 
 _SEARCH_OUTER_TIMEOUT = 35.0         # 外部兜底超时（秒，防单次 IO 卡死）
+
+
+def _split_glob_patterns(glob_pattern: str) -> List[str]:
+    """Normalize Windows slashes and split comma-separated globs outside braces."""
+    if not glob_pattern:
+        return []
+    norm = glob_pattern.replace("\\", "/").strip()
+    if not norm:
+        return []
+    if "," in norm and "{" not in norm and "}" not in norm:
+        return [part.strip() for part in norm.split(",") if part.strip()]
+    return [norm]
+
+
+def _has_dot_segment(raw_path: str, resolved_path: str, project_path: str) -> bool:
+    """True when an explicit search path points inside a dot-prefixed file/dir."""
+    parts = [p for p in raw_path.replace("\\", "/").split("/") if p and p not in (".", "..")]
+    if any(p.startswith(".") for p in parts):
+        return True
+    try:
+        rel = os.path.relpath(resolved_path, project_path)
+        rel_parts = [p for p in rel.replace("\\", "/").split("/") if p and p not in (".", "..")]
+        return any(p.startswith(".") for p in rel_parts)
+    except ValueError:
+        return False
+
+
+def _looks_like_unintended_regex(pattern: str) -> bool:
+    """True when pattern contains regex metacharacters likely meant literally."""
+    return bool(_REGEX_META_RE.search(pattern))
+
+
+def _read_text_for_grep(filepath: str) -> str | None:
+    """Read a non-binary text file with UTF-8 / UTF-16 / GBK fallback."""
+    try:
+        with open(filepath, "rb") as f:
+            raw = f.read()
+    except OSError:
+        return None
+    if b"\x00" in raw:
+        return None
+    for enc in ("utf-8-sig", "utf-8", "gbk", "utf-16"):
+        try:
+            return raw.decode(enc)
+        except UnicodeDecodeError:
+            continue
+    return raw.decode("utf-8", errors="replace")
+
+
+def _format_grep_json(output_mode: str, lines: List[str], head_limit: int, note: str = "") -> str:
+    """Format grep output consistently for both ripgrep and Python fallback."""
+    if output_mode == "files_with_matches":
+        all_files = [line for line in lines if line.strip()]
+        total = len(all_files)
+        sliced = all_files[:head_limit] if head_limit and head_limit > 0 else all_files
+        payload = {
+            "mode": output_mode,
+            "numFiles": len(sliced),
+            "totalFiles": total,
+            "truncated": bool(head_limit and head_limit > 0 and total > head_limit),
+            "filenames": sliced,
+        }
+    elif output_mode == "count":
+        counts = []
+        for line in lines:
+            if ":" in line:
+                filepath, count_str = line.rsplit(":", 1)
+                try:
+                    counts.append({"file": filepath, "count": int(count_str.strip())})
+                except ValueError:
+                    continue
+        total = len(counts)
+        sliced = counts[:head_limit] if head_limit and head_limit > 0 else counts
+        payload = {
+            "mode": output_mode,
+            "numFiles": len(sliced),
+            "totalFiles": total,
+            "truncated": bool(head_limit and head_limit > 0 and total > head_limit),
+            "counts": sliced,
+        }
+    else:
+        total = len(lines)
+        sliced = lines[:head_limit] if head_limit and head_limit > 0 else lines
+        content_text, byte_truncated = truncate_output("\n".join(sliced))
+        payload = {
+            "mode": output_mode,
+            "numLines": len(sliced),
+            "totalLines": total,
+            "truncated": bool((head_limit and head_limit > 0 and total > head_limit) or byte_truncated),
+            "content": content_text,
+        }
+    if note:
+        payload["note"] = note
+    return json.dumps(payload, ensure_ascii=False, indent=2)
 
 
 class FileToolsMixin:
@@ -750,28 +829,6 @@ class FileToolsMixin:
             return f"Error: {str(e)}"
 
 
-    async def _tool_copy_file(self, source: str, destination: str) -> str:
-        """复制文件或目录"""
-        if not source or not destination:
-            return "Error: Source and destination paths required"
-        
-        
-        resolved_source = self._resolve_path(source)
-        resolved_destination = self._resolve_path(destination)
-        
-        try:
-            if os.path.isfile(resolved_source):
-                shutil.copy2(resolved_source, resolved_destination)
-                return f"Success: File copied from {resolved_source} to {resolved_destination}"
-            elif os.path.isdir(resolved_source):
-                shutil.copytree(resolved_source, resolved_destination)
-                return f"Success: Directory copied from {resolved_source} to {resolved_destination}"
-            else:
-                return f"Error: Source not found: {resolved_source}"
-        except Exception as e:
-            return f"Error: {str(e)}"
-
-
     async def _tool_move_file(self, source: str, destination: str) -> str:
         """移动/重命名文件或目录"""
         if not source or not destination:
@@ -786,60 +843,6 @@ class FileToolsMixin:
             return f"Success: Moved from {resolved_source} to {resolved_destination}"
         except FileNotFoundError:
             return f"Error: Source not found: {resolved_source}"
-        except Exception as e:
-            return f"Error: {str(e)}"
-
-
-    async def _tool_list_directory(self, path: str, show_hidden: bool = False, recursive: bool = False) -> str:
-        """列出目录内容"""
-        if not path:
-            return "Error: No path provided"
-        
-        resolved_path = self._resolve_path(path)
-        
-        try:
-            if recursive:
-                result = []
-                for root, dirs, files in os.walk(resolved_path):
-                    for d in dirs:
-                        if not show_hidden and d.startswith('.'):
-                            continue
-                        result.append(f"[DIR]  {os.path.join(root, d)}")
-                    for f in files:
-                        if not show_hidden and f.startswith('.'):
-                            continue
-                        full_path = os.path.join(root, f)
-                        size = os.path.getsize(full_path)
-                        result.append(f"[FILE] {full_path} ({size} bytes)")
-            else:
-                entries = os.listdir(resolved_path)
-                result = []
-                for entry in entries:
-                    if not show_hidden and entry.startswith('.'):
-                        continue
-                    full_path = os.path.join(resolved_path, entry)
-                    if os.path.isdir(full_path):
-                        result.append(f"[DIR]  {entry}")
-                    else:
-                        size = os.path.getsize(full_path)
-                        result.append(f"[FILE] {entry} ({size} bytes)")
-            return "\n".join(result)
-        except FileNotFoundError:
-            return f"Error: Directory not found: {resolved_path}"
-        except Exception as e:
-            return f"Error: {str(e)}"
-
-
-    async def _tool_create_directory(self, path: str) -> str:
-        """创建目录"""
-        if not path:
-            return "Error: No path provided"
-        
-        resolved_path = self._resolve_path(path)
-        
-        try:
-            os.makedirs(resolved_path, exist_ok=True)
-            return f"Success: Directory created: {resolved_path}"
         except Exception as e:
             return f"Error: {str(e)}"
 
@@ -866,106 +869,323 @@ class FileToolsMixin:
             return f"Error: {str(e)}"
 
 
-    async def _tool_grep(self, pattern: str, path: str = None, glob_pattern: str = None,
-                          output_mode: str = "files_with_matches", case_insensitive: bool = False,
-                          show_line_numbers: bool = True, after_context: int = None,
-                          before_context: int = None, context: int = None, file_type: str = None,
-                          head_limit: int = 250) -> str:
-        """使用 ripgrep 进行文件内容搜索"""
+    async def _tool_grep(
+        self,
+        pattern: str,
+        path: str = None,
+        glob_pattern: str = None,
+        output_mode: str = "files_with_matches",
+        case_insensitive: bool = False,
+        show_line_numbers: bool = True,
+        after_context: int = None,
+        before_context: int = None,
+        context: int = None,
+        file_type: str = None,
+        head_limit: int = 250,
+        fixed_strings: bool = False,
+        include_hidden: bool = False,
+        no_ignore: bool = False,
+        multiline: bool = False,
+    ) -> str:
+        """使用 ripgrep 进行文件内容搜索，不可用时自动回退到 Python 搜索。"""
         if not pattern:
             return "Error: No pattern provided"
-        
+
         search_path = self._resolve_path(path) if path else self._current_project_path
-        
+        if not os.path.exists(search_path):
+            return f"Error: Path not found: {search_path}"
+
+        is_single_file = os.path.isfile(search_path)
+        effective_hidden = include_hidden or is_single_file or (
+            bool(path and path.strip())
+            and _has_dot_segment(path, search_path, self._current_project_path)
+        )
+        effective_no_ignore = no_ignore or is_single_file
+
         rg = _resolve_rg()
         if not rg:
-            return "Error: ripgrep (rg) not found"
-        
-        cmd = [rg]
-        
-        if output_mode == "content":
-            if show_line_numbers:
-                cmd.append("-n")
-            if after_context:
-                cmd.extend(["-A", str(after_context)])
-            if before_context:
-                cmd.extend(["-B", str(before_context)])
-            if context:
-                cmd.extend(["-C", str(context)])
-        elif output_mode == "count":
-            cmd.append("-c")
-        else:
-            cmd.append("-l")
-        
-        if case_insensitive:
-            cmd.append("-i")
-        
-        for vcs_dir in ['.git', '.svn', '.hg']:
-            cmd.extend(["--glob", f"!{vcs_dir}"])
-        
-        if glob_pattern:
-            cmd.extend(["--glob", glob_pattern])
-        
-        if file_type:
-            cmd.extend(["--type", file_type])
-        
-        cmd.append("--")
-        cmd.append(pattern)
-        cmd.append(search_path)
-        
-        try:
+            try:
+                return await asyncio.wait_for(
+                    asyncio.to_thread(
+                        self._grep_python_sync,
+                        pattern,
+                        search_path,
+                        glob_pattern,
+                        output_mode,
+                        case_insensitive,
+                        show_line_numbers,
+                        after_context,
+                        before_context,
+                        context,
+                        file_type,
+                        head_limit,
+                        fixed_strings,
+                        effective_hidden,
+                        effective_no_ignore,
+                        multiline,
+                    ),
+                    timeout=_SEARCH_OUTER_TIMEOUT,
+                )
+            except asyncio.TimeoutError:
+                return f"Error: Search timed out after {_SEARCH_OUTER_TIMEOUT:.0f}s"
+            except Exception as e:
+                return f"Error: {str(e)}"
+
+        def build_rg_cmd(use_fixed: bool) -> List[str]:
+            cmd = [rg]
+            if output_mode == "content":
+                if show_line_numbers:
+                    cmd.append("-n")
+                if after_context:
+                    cmd.extend(["-A", str(after_context)])
+                if before_context:
+                    cmd.extend(["-B", str(before_context)])
+                if context:
+                    cmd.extend(["-C", str(context)])
+            elif output_mode == "count":
+                cmd.extend(["-c", "-H"])
+            else:
+                cmd.append("-l")
+
+            if case_insensitive:
+                cmd.append("-i")
+            else:
+                cmd.append("-S")
+
+            if use_fixed:
+                cmd.append("-F")
+            if multiline:
+                cmd.append("-U")
+
+            cmd.extend(["--encoding", "auto"])
+
+            if effective_hidden:
+                cmd.append("--hidden")
+            if effective_no_ignore:
+                cmd.append("--no-ignore")
+
+            for vcs_dir in [".git", ".svn", ".hg"]:
+                cmd.extend(["--glob", f"!{vcs_dir}"])
+
+            for gp in _split_glob_patterns(glob_pattern):
+                cmd.extend(["--glob", gp])
+
+            if file_type:
+                cmd.extend(["--type", file_type])
+
+            cmd.append("--")
+            cmd.append(pattern)
+            cmd.append(search_path)
+            return cmd
+
+        def run_rg(cmd: List[str]) -> subprocess.CompletedProcess:
             # rg 输出恒为 UTF-8；显式 encoding 防止中文 Windows 上 GBK 解码失败导致
             # stdout=None 被静默丢弃（表现为"文件明明有却返回 No matches found"）
-            result = subprocess.run(cmd, capture_output=True, text=True, timeout=30,
-                                    encoding='utf-8', errors='replace',
-                                    stdin=subprocess.DEVNULL)
-            
-            if result.returncode not in [0, 1]:
+            return subprocess.run(
+                cmd,
+                capture_output=True,
+                text=True,
+                timeout=30,
+                encoding="utf-8",
+                errors="replace",
+                stdin=subprocess.DEVNULL,
+            )
+
+        try:
+            note = ""
+            result = await asyncio.to_thread(run_rg, build_rg_cmd(fixed_strings))
+
+            if result.returncode == 2 and not fixed_strings and "regex parse error" in (result.stderr or "").lower():
+                result = await asyncio.to_thread(run_rg, build_rg_cmd(True))
+                note = "Matched as literal fixed string (-F) after regex parse error"
+            elif result.returncode == 1 and not fixed_strings and _looks_like_unintended_regex(pattern):
+                lit_result = await asyncio.to_thread(run_rg, build_rg_cmd(True))
+                if lit_result.returncode == 0 and (lit_result.stdout or "").strip():
+                    result = lit_result
+                    note = "Matched as literal fixed string (-F) because regex matched nothing"
+
+            if result.returncode not in (0, 1):
                 return f"Error: {result.stderr}" if result.stderr else "Search failed"
-            
-            output = (result.stdout or '').strip()
-            
+
+            output = (result.stdout or "").strip()
             if not output:
                 return "No matches found"
-            
-            if output_mode == "files_with_matches":
-                lines = output.split('\n')
-                all_files = [line for line in lines if line.strip()]
-                sliced_files = all_files[:head_limit] if head_limit > 0 else all_files
-                return json.dumps({
-                    "mode": output_mode,
-                    "numFiles": len(sliced_files),
-                    "filenames": sliced_files
-                }, ensure_ascii=False, indent=2)
-            
-            elif output_mode == "count":
-                lines = output.split('\n')
-                counts = []
-                for line in lines:
-                    if ':' in line:
-                        filepath, count = line.rsplit(':', 1)
-                        counts.append({"file": filepath, "count": int(count.strip())})
-                return json.dumps({
-                    "mode": output_mode,
-                    "numFiles": len(counts),
-                    "counts": counts[:head_limit] if head_limit > 0 else counts
-                }, ensure_ascii=False, indent=2)
-            
-            else:
-                lines = output.split('\n')
-                sliced_lines = lines[:head_limit] if head_limit > 0 else lines
-                return json.dumps({
-                    "mode": output_mode,
-                    "numLines": len(sliced_lines),
-                    "content": '\n'.join(sliced_lines)
-                }, ensure_ascii=False, indent=2)
-        
+
+            lines = output.splitlines()
+            return _format_grep_json(output_mode, lines, head_limit, note=note)
+
         except subprocess.TimeoutExpired:
             return "Error: Search timed out"
         except FileNotFoundError:
-            return "Error: ripgrep (rg) not found"
+            # 极端竞争下 rg 二进制不可执行时仍回退到 Python 搜索
+            return await asyncio.to_thread(
+                self._grep_python_sync,
+                pattern,
+                search_path,
+                glob_pattern,
+                output_mode,
+                case_insensitive,
+                show_line_numbers,
+                after_context,
+                before_context,
+                context,
+                file_type,
+                head_limit,
+                fixed_strings,
+                effective_hidden,
+                effective_no_ignore,
+                multiline,
+            )
         except Exception as e:
             return f"Error: {str(e)}"
+
+    def _grep_python_sync(
+        self,
+        pattern: str,
+        search_path: str,
+        glob_pattern: str,
+        output_mode: str,
+        case_insensitive: bool,
+        show_line_numbers: bool,
+        after_context: int,
+        before_context: int,
+        context: int,
+        file_type: str,
+        head_limit: int,
+        fixed_strings: bool,
+        include_hidden: bool,
+        no_ignore: bool,
+        multiline: bool,
+    ) -> str:
+        """Pure-Python fallback for grep when ripgrep is unavailable."""
+        deadline = time.monotonic() + _SEARCH_TIME_BUDGET
+        smart_ignore = case_insensitive or not any(ch.isupper() for ch in pattern)
+        flags = re.IGNORECASE if smart_ignore else 0
+        if multiline:
+            flags |= re.MULTILINE
+
+        note = ""
+        use_fixed = fixed_strings
+        try:
+            regex = re.compile(re.escape(pattern) if use_fixed else pattern, flags)
+        except re.error:
+            regex = re.compile(re.escape(pattern), flags)
+            use_fixed = True
+            note = "Matched as literal fixed string after regex parse error"
+
+        globs = _split_glob_patterns(glob_pattern)
+        type_exts = _GREP_TYPE_EXTS.get((file_type or "").lower()) if file_type else None
+        if file_type and type_exts is None:
+            return f"Error: unrecognized file type: {file_type}"
+
+        def matches_filters(rel_path: str, filename: str) -> bool:
+            if type_exts and os.path.splitext(filename)[1].lower() not in type_exts:
+                return False
+            if globs:
+                matched_any = False
+                for g in globs:
+                    if "/" in g.strip("/"):
+                        if _glob_match(rel_path, g):
+                            matched_any = True
+                            break
+                    elif fnmatch.fnmatch(filename, g.replace("**/", "")):
+                        matched_any = True
+                        break
+                if not matched_any:
+                    return False
+            return True
+
+        candidate_files: List[str] = []
+        if os.path.isfile(search_path):
+            candidate_files.append(search_path)
+        else:
+            for root, dirs, files in os.walk(search_path):
+                if time.monotonic() > deadline:
+                    return "Error: Search timed out"
+                dirs[:] = [
+                    d for d in dirs
+                    if d not in (".git", ".svn", ".hg")
+                    and (include_hidden or not d.startswith("."))
+                    and (no_ignore or d.lower() not in _SEARCH_SKIP_DIRS)
+                ]
+                for filename in sorted(files):
+                    if not include_hidden and filename.startswith("."):
+                        continue
+                    ext = os.path.splitext(filename)[1].lower()
+                    if ext in _SEARCH_SKIP_EXTS:
+                        continue
+                    full = os.path.join(root, filename)
+                    rel = os.path.relpath(full, search_path)
+                    if matches_filters(rel, filename):
+                        candidate_files.append(full)
+
+        def run_scan(active_regex: re.Pattern) -> tuple[List[str], bool]:
+            out_lines: List[str] = []
+            for fpath in candidate_files:
+                if time.monotonic() > deadline:
+                    return out_lines, True
+                text = _read_text_for_grep(fpath)
+                if text is None:
+                    continue
+                if multiline:
+                    matches = list(active_regex.finditer(text))
+                    if not matches:
+                        continue
+                    if output_mode == "files_with_matches":
+                        out_lines.append(fpath)
+                    elif output_mode == "count":
+                        out_lines.append(f"{fpath}:{len(matches)}")
+                    else:
+                        file_lines = text.splitlines()
+                        hit_line_nums = sorted({text[:m.start()].count("\n") + 1 for m in matches})
+                        for ln in hit_line_nums:
+                            content_line = file_lines[ln - 1] if ln - 1 < len(file_lines) else ""
+                            prefix = f"{fpath}:{ln}:" if show_line_numbers else f"{fpath}:"
+                            out_lines.append(f"{prefix}{content_line}")
+                    continue
+
+                file_lines = text.splitlines()
+                matched_indices = [idx for idx, line in enumerate(file_lines) if active_regex.search(line)]
+                if not matched_indices:
+                    continue
+                if output_mode == "files_with_matches":
+                    out_lines.append(fpath)
+                elif output_mode == "count":
+                    out_lines.append(f"{fpath}:{len(matched_indices)}")
+                else:
+                    ctx_b = context if context is not None else (before_context or 0)
+                    ctx_a = context if context is not None else (after_context or 0)
+                    matched_set = set(matched_indices)
+                    emitted: set[int] = set()
+                    for idx in matched_indices:
+                        lo = max(0, idx - ctx_b)
+                        hi = min(len(file_lines) - 1, idx + ctx_a)
+                        for j in range(lo, hi + 1):
+                            if j in emitted:
+                                continue
+                            emitted.add(j)
+                            sep = ":" if j in matched_set else "-"
+                            if show_line_numbers:
+                                out_lines.append(f"{fpath}:{j + 1}{sep}{file_lines[j]}")
+                            else:
+                                out_lines.append(f"{fpath}{sep}{file_lines[j]}")
+            return out_lines, False
+
+        out_lines, timed_out = run_scan(regex)
+        if timed_out and not out_lines:
+            return "Error: Search timed out"
+        if not out_lines and not use_fixed and _looks_like_unintended_regex(pattern):
+            lit_regex = re.compile(re.escape(pattern), flags)
+            lit_lines, lit_timed_out = run_scan(lit_regex)
+            if lit_lines:
+                out_lines = lit_lines
+                note = "Matched as literal fixed string because regex matched nothing"
+            elif lit_timed_out:
+                return "Error: Search timed out"
+
+        if not out_lines:
+            return "No matches found"
+        return _format_grep_json(output_mode, out_lines, head_limit, note=note)
 
 
     async def _tool_glob(self, pattern: str, path: str = None) -> str:
@@ -1064,194 +1284,5 @@ class FileToolsMixin:
         
         except PermissionError:
             return "Error: Permission denied"
-        except Exception as e:
-            return f"Error: {str(e)}"
-
-
-    async def _tool_search_in_file(self, file_path: str, pattern: str, ignore_case: bool = True) -> str:
-        """在文件中搜索内容"""
-        if not file_path or not pattern:
-            return "Error: file_path and pattern required"
-        
-        
-        resolved_path = self._resolve_path(file_path)
-        
-        try:
-            flags = re.IGNORECASE if ignore_case else 0
-            regex = re.compile(pattern, flags)
-            
-            with open(resolved_path, 'r', encoding='utf-8') as f:
-                lines = f.readlines()
-            
-            results = []
-            for i, line in enumerate(lines, 1):
-                if regex.search(line):
-                    results.append(f"Line {i}: {line.rstrip()}")
-            
-            if results:
-                return f"Found {len(results)} matches:\n" + "\n".join(results[:50])
-            else:
-                return "No matches found"
-        
-        except FileNotFoundError:
-            return f"Error: File not found: {resolved_path}"
-        except Exception as e:
-            return f"Error: {str(e)}"
-
-
-    async def _tool_search_files(self, directory: str, pattern: str, search_type: str = "name",
-                                  file_pattern: str = None,
-                                  _max_seconds: float = _SEARCH_TIME_BUDGET,
-                                  _max_results: int = _SEARCH_MAX_RESULTS) -> str:
-        """
-        在目录中搜索文件名或内容（加固版）。
-
-        加固点：
-        - asyncio.to_thread 执行，不阻塞事件循环（外部 wait_for 兜底防单次 IO 卡死）
-        - 目录剪枝（隐藏目录 + 依赖/构建/缓存目录），显式指定起点目录不受剪枝影响
-        - content/both 模式：流式分块搜索（内存恒定），扩展名黑名单 + NUL 内容检测过滤二进制
-        - 时间预算（每块检查）与结果上限（达到即早退）
-        """
-        if not directory or not pattern:
-            return "Error: directory and pattern required"
-
-        resolved_dir = self._resolve_path(directory)
-
-        if not os.path.isdir(resolved_dir):
-            return f"Error: Directory not found: {resolved_dir}"
-
-        try:
-            return await asyncio.wait_for(
-                asyncio.to_thread(
-                    self._search_files_sync,
-                    resolved_dir, pattern, search_type, file_pattern,
-                    _max_seconds, _max_results,
-                ),
-                timeout=_SEARCH_OUTER_TIMEOUT,
-            )
-        except asyncio.TimeoutError:
-            return (f"Error: search timed out after {_SEARCH_OUTER_TIMEOUT:.0f}s "
-                    f"(directory: {resolved_dir}). Try a narrower directory or use grep.")
-        except Exception as e:
-            return f"Error: {str(e)}"
-
-
-    def _search_files_sync(self, resolved_dir: str, pattern: str, search_type: str,
-                           file_pattern: str, max_seconds: float, max_results: int) -> str:
-        """search_files 同步实现（在线程池中运行，不阻塞事件循环）"""
-        import fnmatch
-
-        start_time = time.monotonic()
-        deadline = start_time + max_seconds
-        results: List[str] = []
-        skipped_binary = 0
-        limit_reached = False
-        timed_out = False
-
-        regex = None
-        if search_type in ("content", "both"):
-            regex = re.compile(re.escape(pattern), re.IGNORECASE)
-
-        try:
-            for root, dirs, files in os.walk(resolved_dir):
-                # 目录剪枝：隐藏目录 + 依赖/构建/缓存目录（仅剪子目录，起点目录不受影响）
-                dirs[:] = [
-                    d for d in dirs
-                    if not d.startswith(".") and d.lower() not in _SEARCH_SKIP_DIRS
-                ]
-
-                for filename in files:
-                    # 时间预算检查（每文件检查点）
-                    if time.monotonic() > deadline:
-                        timed_out = True
-                        break
-
-                    # 文件过滤
-                    if file_pattern and not fnmatch.fnmatch(filename, file_pattern):
-                        continue
-
-                    filepath = os.path.join(root, filename)
-                    match = False
-
-                    if search_type in ("name", "both"):
-                        if pattern.lower() in filename.lower():
-                            match = True
-
-                    if search_type in ("content", "both") and not match:
-                        ext = os.path.splitext(filename)[1].lower()
-                        if ext in _SEARCH_SKIP_EXTS:
-                            skipped_binary += 1
-                        else:
-                            is_match, is_binary, f_timeout = _stream_search(
-                                filepath, regex, pattern, deadline
-                            )
-                            if f_timeout:
-                                timed_out = True
-                                break
-                            if is_binary:
-                                skipped_binary += 1
-                            elif is_match:
-                                match = True
-
-                    if match:
-                        results.append(filepath)
-                        if len(results) >= max_results:
-                            limit_reached = True
-                            break
-
-                if timed_out or limit_reached:
-                    break
-
-        except Exception as e:
-            return f"Error: {str(e)}"
-
-        notes = []
-        if timed_out:
-            notes.append(f"timed out after {max_seconds:.0f}s, partial results")
-        if limit_reached:
-            notes.append(f"result limit reached ({max_results}), search stopped early")
-        if skipped_binary:
-            notes.append(f"{skipped_binary} binary file(s) skipped")
-
-        if results:
-            output = f"Found {len(results)} files:\n" + "\n".join(results)
-        else:
-            output = "No files found"
-        if notes:
-            output += "\nNote: " + "; ".join(notes)
-        return output
-
-
-    async def _tool_find_files(self, directory: str, pattern: str, max_depth: int = None) -> str:
-        """查找文件"""
-        if not directory or not pattern:
-            return "Error: directory and pattern required"
-        
-        import fnmatch
-        
-        resolved_dir = self._resolve_path(directory)
-        
-        try:
-            results = []
-            base_depth = resolved_dir.count(os.sep)
-            
-            for root, dirs, files in os.walk(resolved_dir):
-                # 深度检查
-                if max_depth is not None:
-                    current_depth = root.count(os.sep) - base_depth
-                    if current_depth > max_depth:
-                        continue
-                
-                for filename in files:
-                    if fnmatch.fnmatch(filename, pattern):
-                        results.append(os.path.join(root, filename))
-            
-            if results:
-                return f"Found {len(results)} files:\n" + "\n".join(results[:50])
-            else:
-                return "No files found"
-        
-        except FileNotFoundError:
-            return f"Error: Directory not found: {resolved_dir}"
         except Exception as e:
             return f"Error: {str(e)}"

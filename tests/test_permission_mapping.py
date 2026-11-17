@@ -46,11 +46,11 @@ def main() -> int:
         "write_file": PermissionType.FILE_WRITE,
         "edit_file": PermissionType.FILE_WRITE,
         "delete_file": PermissionType.FILE_DELETE,
-        "execute_shell": PermissionType.EXEC_COMMAND,
         "execute_code": PermissionType.EXEC_COMMAND,
         "powershell": PermissionType.EXEC_COMMAND,
         "grep": PermissionType.FILE_READ,
         "glob": PermissionType.FILE_READ,
+        "lsp": PermissionType.FILE_READ,
         "web_search": PermissionType.NETWORK_FETCH,
         "browser_download": PermissionType.NETWORK_FETCH,
         "fetch_url": PermissionType.NETWORK_FETCH,
@@ -64,7 +64,7 @@ def main() -> int:
 
     # ---- Trust-key isolation (the escalation scenario) -----------------------
     mcp_key = mgr._get_permission_type("mcp__github__search_repositories")
-    shell_key = mgr._get_permission_type("execute_shell")
+    shell_key = mgr._get_permission_type("powershell")
     check("trust keys isolated: MCP tool != exec:command",
           mcp_key != PermissionType.EXEC_COMMAND, f"got {mcp_key.name}")
     check("trust keys isolated: MCP and shell differ",

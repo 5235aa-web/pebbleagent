@@ -271,7 +271,6 @@
               </div>
             </div>
             <span class="tools-spacer"></span>
-            <span class="token-est">~ 48 tok · ⏎ send · ⇧⏎ newline</span>
           </div>
         </div>
       </div>

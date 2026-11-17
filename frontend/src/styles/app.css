@@ -139,8 +139,33 @@
 
 /* ---- collapsible agent process drawer (thinking + tools) ---- */
 
+.proc-all-btn {
+  margin-left: auto;
+  font-family: var(--font-mono);
+  font-size: 9px;
+  font-weight: 500;
+  letter-spacing: .06em;
+  text-transform: uppercase;
+  color: var(--faint);
+  transition: color .18s var(--ease);
+}
+
+.proc-all-btn:hover {
+  color: var(--accent);
+}
+
 .proc-wrap {
-  margin: 2px 0 10px;
+  margin: 10px 0;
+}
+
+.agent-who + .proc-wrap {
+  margin-top: 2px;
+}
+
+.proc-wrap + .md,
+.proc-wrap + .code-block,
+.proc-wrap + .mmd {
+  margin-top: 2px;
 }
 
 .proc-bar {
@@ -300,49 +325,6 @@
 
 .proc-panel .thinking {
   margin-bottom: 8px;
-}
-
-.proc-anchor {
-  display: flex;
-  align-items: center;
-  gap: 7px;
-  margin: 4px 0 8px;
-  min-width: 0;
-}
-
-.pa-rule {
-  height: 1px;
-  width: 14px;
-  flex: 0 0 auto;
-  background: var(--line);
-}
-
-.pa-rule:last-child {
-  flex: 1 1 auto;
-  width: auto;
-  background: linear-gradient(to right, var(--line), transparent);
-}
-
-.pa-tag {
-  flex: 0 0 auto;
-  font-family: var(--font-mono);
-  font-size: 8px;
-  font-weight: 700;
-  letter-spacing: .12em;
-  text-transform: uppercase;
-  color: var(--faint);
-}
-
-.pa-text {
-  flex: 0 1 auto;
-  min-width: 0;
-  max-width: 420px;
-  font-size: 11px;
-  font-style: italic;
-  color: var(--muted);
-  overflow: hidden;
-  text-overflow: ellipsis;
-  white-space: nowrap;
 }
 
 @media (prefers-reduced-motion: reduce) {
@@ -1222,19 +1204,81 @@ input.attach-input[type="file"] {
 .btn-danger:hover { filter: brightness(1.06); }
 
 
-/* ---- message links ----
+/* ---- user message bubble & links ----
 
-   orbit.css is frozen, so the user-bubble link rule lives here. The bubble is
-   inverted (ink background, bg text) and the themed link colour drops below
-   readable contrast on it, so the address keeps the bubble colour and is
-   marked with an underline instead. Assistant rows use the prototype .md a. */
+   orbit.css is frozen, so the refined user-bubble surface, alignment,
+   attachment chips and link rules live here. Replaces the heavy inverted ink
+   block and pointed tail with a calm, minimal card surface across both light
+   and dark themes, and stacks .msg-actions neatly underneath the bubble. */
+
+.msg.user {
+  flex-direction: column;
+  align-items: flex-end;
+}
+
+.msg.user .bubble {
+  max-width: min(640px, 100%);
+  padding: 10px 15px;
+  border-radius: 14px;
+  background: var(--surface);
+  color: var(--ink);
+  border: 1px solid var(--line);
+  box-shadow: 0 1px 2px rgba(23, 19, 15, .04), 0 6px 18px -12px rgba(23, 19, 15, .14);
+  transition: background .25s var(--ease), border-color .25s var(--ease), box-shadow .25s var(--ease);
+}
+
+[data-theme="dark"] .msg.user .bubble {
+  background: var(--surface-2);
+  box-shadow: 0 1px 2px rgba(0, 0, 0, .32), 0 8px 22px -14px rgba(0, 0, 0, .55);
+}
+
+.msg.user .bubble:hover {
+  border-color: var(--line-strong);
+}
+
+.msg.user .bubble::after {
+  display: none;
+}
+
+.msg.user .bubble-text {
+  font-size: 13px;
+  line-height: 1.65;
+  color: var(--ink);
+}
+
+.msg.user .bubble-foot {
+  gap: 6px;
+  margin-top: 6px;
+  font-size: 9px;
+  color: var(--faint);
+  opacity: 1;
+}
+
+.msg.user .attach-chip,
+[data-theme="dark"] .msg.user .attach-chip {
+  background: var(--surface-3);
+  border: 1px solid var(--line);
+  color: var(--ink);
+}
+
+[data-theme="light"] .msg.user .attach-chip {
+  background: var(--surface-2);
+}
+
+.msg.user .attach-chip .ac-size,
+[data-theme="dark"] .msg.user .attach-chip .ac-size {
+  background: transparent;
+  border: none;
+  color: var(--muted);
+  opacity: 1;
+}
 
 .msg.user .bubble-text a {
-  text-decoration: underline;
-  text-underline-offset: 2px;
+  color: var(--teal);
+  border-bottom: 1px solid var(--teal-soft);
   cursor: pointer;
 }
-.msg.user .bubble-text a:hover { text-decoration-thickness: 2px; }
+.msg.user .bubble-text a:hover { border-bottom-color: var(--teal); }
 
 /* ---- dock tab strip overflow ----
 
