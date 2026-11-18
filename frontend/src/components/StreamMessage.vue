@@ -13,10 +13,8 @@
       <svg v-if="selected" width="10" height="10" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="3"><polyline points="20 6 9 17 4 12"/></svg>
     </span>
     <div class="agent-body">
-      <div class="agent-who">
-        <b>Pebble</b><span class="aw-model">{{ model }}</span><span>·</span><span>{{ time }}</span>
+      <div v-if="processSegments.length > 1" class="agent-who">
         <button
-          v-if="processSegments.length > 1"
           class="proc-all-btn"
           type="button"
           @click="toggleAllProcesses"
@@ -146,8 +144,6 @@ function onCaptureClick(ev: MouseEvent) {
   ev.stopPropagation()
   toggleSelectMessage(props.item.id)
 }
-const model = computed(() => props.item.model || '')
-const time = computed(() => props.item.time || '')
 
 const open = reactive<Record<string, boolean>>({})
 function isOpen(id: string): boolean {

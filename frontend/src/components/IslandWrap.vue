@@ -1,6 +1,6 @@
 <template>
     <div class="island-wrap">
-      <div class="island" :class="{ busy }" id="island">
+      <div class="island" :class="{ busy, offline: !online }" id="island">
         <span class="island-pulse"></span>
         <span class="island-text" v-if="busy && toolLabel">Running <b>{{ toolLabel }}</b><template v-if="stepTotal > 0"> · step {{ stepIndex }} of {{ stepTotal }}</template></span>
         <span class="island-text" v-else-if="busy">{{ idleBusyLabel }}</span>
@@ -16,9 +16,13 @@
           <span class="sep"></span>
           <span id="islandTimer">{{ elapsedClock }}</span>
         </span>
+        <span class="island-conn" :class="{ off: !online }" :title="online ? 'Gateway connected' : 'Gateway offline'">
+          <i class="ic-dot"></i>{{ online ? 'connected' : 'offline' }}
+        </span>
 
         <div class="island-expand">
           <div class="ie-title"><span>Live Run</span><span>{{ sessionTitle }}</span></div>
+          <div class="ie-row"><span class="k">gateway</span><span class="v ie-conn" :class="{ off: !online }"><i></i>{{ online ? 'connected' : 'offline' }}</span></div>
           <div class="ie-row"><span class="k">agent</span><span class="v">{{ agentName }}</span></div>
           <div class="ie-row"><span class="k">model</span><span class="v">{{ modelName }}</span></div>
           <div class="ie-row"><span class="k">tool</span><span class="v">{{ toolDetail }}</span></div>
@@ -76,6 +80,7 @@ function num(n: number): string {
 }
 
 const busy = computed(() => streamState.streaming)
+const online = computed(() => streamState.gatewayOnline)
 
 /** The row the agent is writing into right now. Scanning back for the streaming
     row rather than taking the last one keeps this correct while a clarify card

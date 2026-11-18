@@ -45,6 +45,9 @@ export interface StreamItem {
 
 export interface StreamState {
   items: StreamItem[]
+  /** Plain texts from collapsed compaction segments that still hold directives
+      like `@pebble-file:`, kept so the preview stage keeps seeing them. */
+  archivedPlain: string[]
   streaming: boolean
   sessionId: string | null
   model: string
@@ -53,6 +56,7 @@ export interface StreamState {
 
 export const streamState = reactive<StreamState>({
   items: [],
+  archivedPlain: [],
   streaming: false,
   sessionId: null,
   model: '',
@@ -73,6 +77,7 @@ export function appendStream(item: StreamItem) {
 
 export function clearStream() {
   streamState.items.splice(0, streamState.items.length)
+  streamState.archivedPlain.splice(0, streamState.archivedPlain.length)
   streamState.streaming = false
 }
 

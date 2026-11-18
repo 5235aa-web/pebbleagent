@@ -158,7 +158,8 @@
   margin: 10px 0;
 }
 
-.agent-who + .proc-wrap {
+.agent-who + .proc-wrap,
+.agent-body > .proc-wrap:first-child {
   margin-top: 2px;
 }
 
@@ -755,18 +756,14 @@ a.mc-tk-e {
   height: 100%;
 }
 
-/* ---- status bar: offline ----
+/* ---- bottom status bar removed: reclaim full viewport height ---- */
 
-   The prototype only ever shows a live gateway. A dropped socket has to read as
-   something other than green, and stopping the pulse matters more than the
-   colour: the expanding ring is what makes it look like work is happening. */
-
-.sb-live.off {
-  color: var(--muted);
+:root {
+  --status-h: 0px;
 }
 
-.sb-live.off .dot {
-  animation: none;
+.app {
+  grid-template-rows: var(--bar-h) minmax(0, 1fr);
 }
 
 /* ---- MCP sheet layout ----
@@ -4066,4 +4063,304 @@ input.attach-input[type="file"] {
   background: var(--accent-soft-2);
   border-color: transparent;
   color: var(--accent);
+}
+
+/* ---- island gateway connection status ---- */
+
+.island.offline {
+  border-color: color-mix(in srgb, var(--err) 28%, var(--line));
+}
+
+.island.offline .island-pulse {
+  background: var(--err);
+  animation: none;
+  box-shadow: 0 0 0 2px var(--err-soft);
+}
+
+.island-conn {
+  display: inline-flex;
+  align-items: center;
+  gap: 5px;
+  padding: 2px 7px;
+  border-radius: 999px;
+  background: var(--ok-soft);
+  border: 1px solid color-mix(in srgb, var(--ok) 24%, transparent);
+  color: var(--ok);
+  font-family: var(--font-mono);
+  font-size: 9px;
+  font-weight: 600;
+  letter-spacing: .02em;
+  white-space: nowrap;
+  flex: 0 0 auto;
+  transition: background .25s var(--ease), color .25s var(--ease), border-color .25s var(--ease);
+}
+
+.island-conn .ic-dot {
+  width: 5px;
+  height: 5px;
+  border-radius: 50%;
+  background: currentColor;
+  flex: 0 0 auto;
+}
+
+.island-conn.off {
+  background: var(--err-soft);
+  border-color: color-mix(in srgb, var(--err) 26%, transparent);
+  color: var(--err);
+}
+
+.ie-row .v.ie-conn {
+  display: inline-flex;
+  align-items: center;
+  gap: 5px;
+  color: var(--ok);
+  font-weight: 600;
+}
+
+.ie-row .v.ie-conn i {
+  width: 5px;
+  height: 5px;
+  border-radius: 50%;
+  background: currentColor;
+}
+
+.ie-row .v.ie-conn.off {
+  color: var(--err);
+}
+
+/* ---- context pane: total session tool calls ---- */
+
+.ctx-tool-total {
+  cursor: default;
+}
+
+.ctx-tool-total:hover {
+  transform: none;
+}
+
+.ctx-total-num {
+  flex: 0 0 auto;
+  padding: 2px 7px;
+  border-radius: 6px;
+  background: var(--surface-2);
+  border: 1px solid var(--line-2);
+  font-family: var(--font-mono);
+  font-size: 11px;
+  font-weight: 700;
+  font-variant-numeric: tabular-nums;
+  color: var(--ink);
+  letter-spacing: .02em;
+}
+
+/* ---- HTML preview: interact / annotate toggle, footer & entry chips ---- */
+
+/* Prevent root document scrolling on focus/reopen of fixed overlays */
+html {
+  overflow: hidden;
+}
+
+.stage {
+  overflow: hidden;
+}
+
+.stage-window {
+  top: clamp(12px, var(--stage-y, 92px), max(12px, calc(100vh - 616px)));
+  max-width: calc(100vw - 16px);
+  max-height: calc(100vh - 24px);
+  /* Avoid filter: blur() + scale() compositing glitches on embedded iframes across reopen */
+  filter: none;
+  transform: translateY(12px);
+  transition: transform .28s var(--ease-out), box-shadow .3s var(--ease);
+}
+
+.stage.open .stage-window {
+  filter: none;
+  transform: none;
+}
+
+.stage-window.full {
+  top: 14px;
+}
+
+.stage-bar,
+.stage-foot {
+  flex: 0 0 auto;
+}
+
+.stage-acts {
+  flex: 0 0 auto;
+}
+
+.stage-x {
+  width: 26px;
+  height: 26px;
+  display: grid;
+  place-items: center;
+  border-radius: 7px;
+  font-size: 15px;
+  line-height: 1;
+  color: var(--muted);
+  transition: background .2s var(--ease), color .2s var(--ease);
+}
+
+.stage-x:hover {
+  background: var(--err);
+  color: #fff;
+}
+
+@media (max-width: 940px) {
+  .stage-window {
+    left: var(--stage-x, 2vw);
+    top: var(--stage-y, 6vh);
+    width: var(--stage-w, 96vw);
+    height: var(--stage-h, 88vh);
+  }
+}
+
+.stage-mode {
+  display: flex;
+  gap: 1px;
+  padding: 2px;
+  border-radius: 7px;
+  background: var(--surface-3);
+  border: 1px solid var(--line-2);
+}
+
+.stage-mode button {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  height: 19px;
+  padding: 0 8px;
+  border-radius: 5px;
+  font-size: 9px;
+  font-weight: 600;
+  color: var(--muted);
+  transition: background .18s var(--ease), color .18s var(--ease), box-shadow .18s var(--ease);
+}
+
+.stage-mode button:hover {
+  color: var(--ink);
+}
+
+.stage-mode button.on {
+  background: var(--surface);
+  color: var(--ink);
+  box-shadow: var(--shadow-1);
+}
+
+.stage-mode button.on:last-child {
+  color: var(--accent);
+}
+
+.stage-mode .sm-cnt {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  min-width: 14px;
+  height: 14px;
+  padding: 0 4px;
+  border-radius: 999px;
+  background: var(--accent);
+  color: var(--accent-ink);
+  font-family: var(--font-mono);
+  font-size: 8px;
+  font-weight: 700;
+  line-height: 1;
+}
+
+.stage-foot .sf-hint {
+  color: var(--muted);
+  opacity: .85;
+}
+
+.stage-foot .sf-notes {
+  padding: 1px 6px;
+  border-radius: 999px;
+  background: var(--accent-soft);
+  color: var(--accent);
+  font-weight: 600;
+}
+
+.stage-foot .sf-clear {
+  font-family: var(--font-mono);
+  font-size: 8.5px;
+  color: var(--muted);
+  text-decoration: underline;
+  text-underline-offset: 2px;
+}
+
+.stage-foot .sf-clear:hover {
+  color: var(--err);
+}
+
+/* Dock header preview button badge when HTML files exist in the session */
+#openStage {
+  position: relative;
+}
+
+#openStage.has-preview {
+  color: var(--accent);
+}
+
+#openStage .preview-badge {
+  position: absolute;
+  top: 2px;
+  right: 2px;
+  min-width: 13px;
+  height: 13px;
+  padding: 0 3px;
+  border-radius: 999px;
+  background: var(--accent);
+  color: var(--accent-ink);
+  font-family: var(--font-mono);
+  font-size: 7.5px;
+  font-weight: 700;
+  line-height: 13px;
+  text-align: center;
+  pointer-events: none;
+}
+
+/* Inline clickable `@pebble-file:` preview chip in agent messages */
+.pebble-file-chip {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  vertical-align: middle;
+  margin: 2px 2px;
+  padding: 3px 8px 3px 7px;
+  border-radius: 7px;
+  border: 1px solid var(--line);
+  background: var(--surface-2);
+  color: var(--ink-2);
+  font-family: var(--font-mono);
+  font-size: 11px;
+  line-height: 1.3;
+  cursor: pointer;
+  transition: border-color .18s var(--ease), background .18s var(--ease), color .18s var(--ease), transform .18s var(--ease);
+}
+
+.pebble-file-chip:hover {
+  border-color: var(--accent);
+  background: var(--accent-soft-2);
+  color: var(--ink);
+  transform: translateY(-1px);
+}
+
+.pebble-file-chip svg {
+  color: var(--accent);
+  flex: 0 0 auto;
+}
+
+.pebble-file-chip .pfc-name {
+  font-weight: 600;
+}
+
+.pebble-file-chip .pfc-act {
+  font-size: 9px;
+  text-transform: uppercase;
+  letter-spacing: .06em;
+  color: var(--accent);
+  padding-left: 4px;
+  border-left: 1px solid var(--line);
 }

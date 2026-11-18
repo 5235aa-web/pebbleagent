@@ -7,6 +7,12 @@ which is what the in-app update sheet shows before installing. Add the section
 before running `npm run release`; the release stops if it is missing, because a
 feed with empty notes tells the user nothing.
 
+## 1.3.5
+
+- Cleaner chat chrome and consolidated status layout. Removed the `Pebble` header, model tag, and timestamp from agent replies (`StreamMessage.vue`), replaced the agent badge under the top-left session title with the session creation date (`YYYY/MM/DD`), removed the bottom status bar (`StatusBar.vue`), moved the gateway `connected`/`offline` indicator into the top `Live Run` island (`IslandWrap.vue`), and moved the session tool-call total into the right-dock Context panel (`ContextPane.vue`) with accurate counts across collapsed compaction segments, live tool calls, and deleted messages.
+- Overhauled the HTML preview stage and annotation loop (`PreviewStage.vue`, `preview.ts`, `previewBridge.ts`). Added an `Interact | Annotate` mode toggle (defaulting to `Interact` so page controls stay clickable), injected host `--fb-*` theme variables into the iframe annotation bridge, prevented duplicate annotations on edits, broadened `mergePreviewComments` for non-accept `clarify` replies, cleared preview state on session switch, scanned collapsed compaction history and Unicode/relative paths for auto-reload, turned `@pebble-file:` directives in chat into clickable preview chips with a count badge on `#openStage`, routed desktop `Open in browser` through `file.open`, and clamped reopen geometry to prevent top-edge clipping.
+- Multi-question `clarify` fixes and 5-question limit. Fixed `ClarifyCard.vue` `Skip` so skipping a question in a multi-question flow advances to the next question (submitting prior answers if the last question is skipped) instead of cancelling the entire card, raised the `clarify` question cap from 4 to 5 in `tool_definitions.py` and `tool_impl/workspace.py`, and updated `code_agent_prompt.md` so the HTML review `clarify` loop resumes after skips or direct follow-up edits.
+
 ## 1.3.4
 
 - Inline help popovers (`HelpTip.vue`) in the right-dock Usage and LLM panels. Added clickable `?` badges beside `models · rates & windows` (explaining per-1M pricing, `CNY`/`USD` currency unit switching, configurable exchange rate, and leaving rates blank to set `ctx` only for subscription models like OpenCode Go) and beside `Providers` (step-by-step OpenCode Go subscription setup guide covering provider name, Base URL, API key, `x-opencode-session`, `effort_only`, and context window tracking).

@@ -47,6 +47,8 @@ export interface Session {
   /* Timestamp of the last message; the group is derived from it, and un-pinning
      needs it to put the row back where it belongs. */
   ts?: number
+  /* Session creation timestamp in epoch ms, used for the header date. */
+  createdAt?: number
 }
 
 export type StepState = 'done' | 'now' | 'queued'

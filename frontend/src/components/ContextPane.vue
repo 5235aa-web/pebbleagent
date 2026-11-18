@@ -34,6 +34,18 @@
             {{ toolsExpanded ? 'collapse' : `+${hiddenToolCount} more` }}
           </button>
 
+          <div class="section-h">tool calls</div>
+          <div class="snap ctx-tool-total">
+            <span class="snap-ico" style="color:var(--accent)">
+              <svg width="10" height="10" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M14.7 6.3a1 1 0 0 0 0 1.4l1.6 1.6a1 1 0 0 0 1.4 0l3.77-3.77a6 6 0 0 1-7.94 7.94l-6.91 6.91a2.12 2.12 0 0 1-3-3l6.91-6.91a6 6 0 0 1 7.94-7.94l-3.76 3.76z"/></svg>
+            </span>
+            <div class="snap-main">
+              <div class="snap-title">session tool calls</div>
+              <div class="snap-sub">{{ toolCallsSub }}</div>
+            </div>
+            <span class="ctx-total-num">{{ totalToolCalls.toLocaleString() }}</span>
+          </div>
+
           <div class="section-h">memory</div>
           <div class="snap" style="cursor:default">
             <span class="snap-ico">
@@ -50,7 +62,7 @@
 <script setup lang="ts">
 import { computed, ref, watch } from 'vue'
 import { context, ledger, llm, usage, fmtTokens } from '../data/panels'
-import { catalog } from '../data/store'
+import { catalog, sessionState } from '../data/store'
 import { streamState } from '../data/stream'
 import { turnSkills } from '../data/wire'
 
@@ -216,6 +228,20 @@ const hiddenToolCount = computed(() => Math.max(0, toolRows.value.length - 5))
 
 /* A new turn starts folded again. */
 watch(toolRows, () => { toolsExpanded.value = false })
+
+const totalToolCalls = computed(() => sessionState.toolCalls)
+const turnToolCalls = computed(() => {
+  if (usage.toolResults.length) {
+    return usage.toolResults.reduce((n, r) => n + Math.max(0, r.calls || 0), 0)
+  }
+  return toolRows.value.length
+})
+const toolCallsSub = computed(() => {
+  if (!totalToolCalls.value) return 'no calls yet in this session'
+  return turnToolCalls.value > 0
+    ? `${turnToolCalls.value} this turn · across session`
+    : 'across all turns in this session'
+})
 
 const ledgerSub = computed(() => {
   const by: Record<string, number> = {}

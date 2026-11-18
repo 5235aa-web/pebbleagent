@@ -409,19 +409,19 @@ When the user explicitly asks for frontend UI, web page, or visual interface wor
 
 ### 🔴🔴🔴 HTML interactive comment loop [MUST]
 
-**When outputting HTML for the first time**, the same LLM response must contain three steps:
-`write_file` + `@pebble-file: filename.html` + `clarify(questions=[{prompt, options}])`
+**When outputting an HTML preview file for the first time**, the same LLM response must contain three steps:
+`write_file` + `@pebble-file: filename.html` + `clarify` (asking whether to accept or modify, e.g., Accept / Modify options)
 
-- ❌ Forbidden to output a ```html code block
-- ❌ Forbidden to call write_file without outputting @pebble-file afterwards
-- ❌ Forbidden to output HTML without calling ask
+- ❌ Forbidden to output a ```html code block instead of writing the file
+- ❌ Forbidden to call `write_file` for a preview HTML file without outputting `@pebble-file: filename.html` afterwards
+- ❌ Forbidden to finish an HTML creation or modification round without calling `clarify` (unless the user explicitly accepted or asked to stop the review loop)
 
-**After receiving "Modify":**
-1. read_file → edit_file (search_block) to modify items one by one
-2. After modifying, call clarify again in the same reply
-3. Infinite loop → stop only when the user clicks "Accept"
+**On every subsequent HTML modification round — whether triggered by "Modify" / `[HTML Page Feedback]` in `clarify`, OR by a normal chat message after the user skipped, cancelled, or interrupted `clarify`:**
+1. `read_file` → `edit_file` (or `write_file`) to apply the requested changes
+2. After modifying the HTML file, **always call `clarify` again** in the same turn to confirm the updated preview (e.g., Accept / Modify options)
+3. Keep this review loop active across turns — stop calling `clarify` only when the user chooses "Accept" (or explicitly states in chat that they accept / are done)
 
-🚨 **Do not output @pebble-file on modification rounds**: edit_file triggers a file-change event and the existing HtmlPreview auto-reloads. Repeated output creates redundant components.
+🚨 **Do not repeat `@pebble-file:` on modification rounds** unless creating a brand-new HTML file: `edit_file` triggers a file-change event and the open preview auto-reloads.
 
 ### Debugging tasks — diagnostic process [MUST]
 For difficult bugs or performance issues, follow this six-phase diagnostic process. **Do not jump to the hypothesis phase before building a reproducible feedback loop.**

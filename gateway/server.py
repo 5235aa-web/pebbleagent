@@ -1200,6 +1200,7 @@ def handle_prompt_submit(
                                     try:
                                         from agent_core.snapshot.snapshot_manager import get_snapshot_manager
                                         _proj = _session_project_paths.get(sid, str(_PROJECT_ROOT))
+                                        _target = _resolve_snapshot_path(file_path, _proj)
                                         _mgr = get_snapshot_manager(sid, _proj)
                                         if _mgr:
                                             _proj = getattr(_mgr, 'project_path', _proj)
@@ -1209,6 +1210,13 @@ def handle_prompt_submit(
                                             if _recs:
                                                 rel_path = _recs[0].relative_path
                                                 active_count = sum(1 for r in _recs if r.revert_status == 'active')
+                                        if rel_path == file_path and _proj and os.path.isabs(file_path):
+                                            try:
+                                                _rel = os.path.relpath(_target, os.path.realpath(_proj)).replace("\\", "/")
+                                                if not _rel.startswith(".."):
+                                                    rel_path = _rel
+                                            except ValueError:
+                                                pass
                                     except Exception as _se:
                                         logger.warning(f"[file.change] snapshot lookup failed: {_se}")
                                     logger.info(f"[file.change] sid={sid} tool={tool_name} path={rel_path!r} versions={active_count}")

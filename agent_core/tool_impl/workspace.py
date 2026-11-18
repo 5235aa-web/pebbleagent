@@ -78,8 +78,8 @@ class WorkspaceToolsMixin:
         if not questions:
             return "Error: No questions provided"
         
-        if len(questions) < 1 or len(questions) > 4:
-            return "Error: Questions must have 1-4 items"
+        if len(questions) < 1 or len(questions) > 5:
+            return "Error: Questions must have 1-5 items"
         
         for i, q in enumerate(questions):
             if not isinstance(q, dict):

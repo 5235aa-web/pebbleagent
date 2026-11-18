@@ -77,8 +77,27 @@ function advance() {
 
 function skip() {
   if (done.value || sending.value) return
+  if (picked.value[step.value]) picked.value[step.value].splice(0)
+  custom.value[step.value] = ''
   failed.value = false
+  if (step.value < total.value - 1) {
+    step.value += 1
+    return
+  }
+  const answers = collect()
   sending.value = true
+  if (Object.keys(answers).length > 0) {
+    emit('submit', answers, (ok: boolean) => {
+      sending.value = false
+      if (!ok) {
+        failed.value = true
+        return
+      }
+      done.value = true
+      stampText.value = 'Answered'
+    })
+    return
+  }
   emit('skip', (ok: boolean) => {
     sending.value = false
     if (!ok) {
@@ -144,7 +163,7 @@ function skip() {
       </span>
       <button class="q-btn q-skip" type="button" :disabled="sending" @click="skip">Skip</button>
       <button class="q-btn q-go" type="button" :disabled="sending" @click="advance">
-        <span>{{ sending ? 'Sending' : 'Submit' }}</span>
+        <span>{{ sending ? 'Sending' : (step < total - 1 ? 'Next' : 'Submit') }}</span>
         <svg width="11" height="11" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.4"><line x1="4" y1="12" x2="19" y2="12" /><polyline points="13 6 19 12 13 18" /></svg>
       </button>
     </div>

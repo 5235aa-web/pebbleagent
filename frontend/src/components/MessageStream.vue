@@ -56,6 +56,7 @@ import { computed } from 'vue'
    this one, and keeping it separate stops every new row from re-rendering it. */
 import { streamState } from '../data/stream'
 import { forwardState, isSelectableItem, isMessageSelected, toggleSelectMessage } from '../data/forward'
+import { openPreviewStage } from '../data/preview'
 import { toggleCompact, respondClarify, skipClarify, copyMessage, deleteMessage, openExternalUrl, toast } from '../data/wire'
 import StreamMessage from './StreamMessage.vue'
 import ForwardedMessageCard from './ForwardedMessageCard.vue'
@@ -88,6 +89,12 @@ function onStreamClick(ev: MouseEvent) {
   const target = ev.target as HTMLElement | null
   /* Rows are HTML strings, so links and action buttons are both caught by one
      delegated listener here instead of bindings per row. */
+  const previewChip = target?.closest('[data-preview-file]') as HTMLElement | null
+  if (previewChip) {
+    ev.preventDefault()
+    openPreviewStage(previewChip.getAttribute('data-preview-file') || '')
+    return
+  }
   const link = target?.closest('a[data-href]') as HTMLAnchorElement | null
   if (link) {
     ev.preventDefault()

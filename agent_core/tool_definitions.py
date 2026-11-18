@@ -513,7 +513,7 @@ def get_tools_definition() -> List[Dict[str, Any]]:
             "type": "function",
             "function": {
                 "name": "clarify",
-                "description": "向用户提出澄清问题（最多 4 个），用于在动手前确认方向或选择。需要等待用户响应，必须串行执行。",
+                "description": "向用户提出澄清问题（最多 5 个），用于在动手前确认方向或选择。需要等待用户响应，必须串行执行。",
                 "parameters": {
                     "type": "object",
                     "properties": {
@@ -539,7 +539,7 @@ def get_tools_definition() -> List[Dict[str, Any]]:
                                 },
                                 "required": ["prompt", "options"]
                             },
-                            "description": "问题列表（1-4 个）"
+                            "description": "问题列表（1-5 个）"
                         }
                     },
                     "required": ["questions"]

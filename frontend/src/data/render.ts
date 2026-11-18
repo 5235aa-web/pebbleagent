@@ -174,12 +174,37 @@ function autolink(src: string, hold: (html: string) => string): string {
   })
 }
 
+const PREVIEW_DIRECTIVE_EXACT_RE = /^@pebble-file:\s*([^\s"'`<>()\[\]{}]+?\.(?:html?|svg))$/i
+const PREVIEW_DIRECTIVE_INLINE_RE = /@pebble-file:\s*([^\s"'`<>()\[\]{}]+?\.(?:html?|svg))/gi
+
+function previewChip(rawPath: string): string {
+  let clean = rawPath.replace(/\\/g, '/').trim()
+  while (clean.startsWith('./')) clean = clean.slice(2)
+  clean = clean.replace(/^\/+/, '')
+  const label = clean.split('/').filter(Boolean).pop() || clean
+  return (
+    '<button type="button" class="pebble-file-chip" data-preview-file="' + escapeHtml(clean) + '" title="' + escapeHtml(clean) + '">' +
+    '<svg width="11" height="11" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8"><rect x="2.5" y="4" width="19" height="13" rx="2"/><line x1="8" y1="21" x2="16" y2="21"/><line x1="12" y1="17" x2="12" y2="21"/></svg>' +
+    '<span class="pfc-name">' + escapeHtml(label) + '</span>' +
+    '<span class="pfc-act">Preview</span>' +
+    '</button>'
+  )
+}
+
 function inline(text: string): string {
   const stash: string[] = []
   const hold = (html: string) => '\u0000' + (stash.push(html) - 1) + '\u0000'
 
-  // Code first, so a backtick span is never rewritten by the rules below.
-  let s = text.replace(/`([^`]+)`/g, (_all, code) => hold('<code>' + escapeHtml(code) + '</code>'))
+  // Code first, so a backtick span is never rewritten by the rules below;
+  // `@pebble-file: *.html` directives wrapped in backticks still become clickable preview chips.
+  let s = text.replace(/`([^`]+)`/g, (_all, code: string) => {
+    const m = PREVIEW_DIRECTIVE_EXACT_RE.exec(code.trim())
+    if (m) return hold(previewChip(m[1]))
+    return hold('<code>' + escapeHtml(code) + '</code>')
+  })
+
+  // Bare `@pebble-file:` directives in prose become clickable preview chips too.
+  s = s.replace(PREVIEW_DIRECTIVE_INLINE_RE, (_all, path: string) => hold(previewChip(path)))
 
   // Markdown links before autolink: the address inside [label](url) would
   // otherwise be claimed by the bare-URL pass and the label left dangling.

@@ -282,9 +282,7 @@ function paintAgent() {
   item.plain = live.text
 }
 
-/** Tool rows already settled in earlier turns. The status bar counts these plus
-    whatever the live row has produced, so the number moves during a turn instead
-    of freezing at the value captured when the session opened. */
+/** Tool rows already settled in earlier turns (currently rendered in streamState). */
 function countStoredToolRows(): number {
   let n = 0
   for (const item of streamState.items) {
@@ -294,12 +292,45 @@ function countStoredToolRows(): number {
   return n
 }
 
+function countHistoryRowTools(m: Record<string, unknown>): number {
+  if (m.role !== 'assistant' || typeof m.tool_calls !== 'string' || !m.tool_calls.trim()) return 0
+  try {
+    const parsed = JSON.parse(m.tool_calls)
+    if (!Array.isArray(parsed)) return 0
+    let n = 0
+    for (const item of parsed) {
+      if (String((item as Record<string, unknown>)?.type ?? '') === 'tool') n += 1
+    }
+    return n
+  } catch {
+    return 0
+  }
+}
+
+/** Tool rows tucked inside collapsed compaction segments, which buildHistory
+    skips rendering until expanded. */
+function countFoldedToolRows(): number {
+  let n = 0
+  lastHistory.forEach((m, index) => {
+    const seg = lastPlan.memberOf.get(index)
+    if (!seg || expandedCompacts.has(seg.bid)) return
+    n += countHistoryRowTools(m)
+  })
+  return n
+}
+
+/** Keeps sessionState.toolCalls accurate across folded history, visible turns,
+    live tool calls, and message deletions. */
+function syncToolCalls(): void {
+  sessionState.toolCalls = countStoredToolRows() + countFoldedToolRows() + (live ? live.tools.size : 0)
+}
+
 /** Inserts or updates a tool card. Cards sit after the text block that was
     streaming when they started, ahead of the open tail. */
 function upsertTool(id: string, call: ToolCallView) {
   if (!live) return
   live.tools.set(id, call)
-  sessionState.toolCalls = countStoredToolRows() + live.tools.size
+  syncToolCalls()
   const bid = live.itemId + '-tool-' + id
   const existing = live.blocks.findIndex(b => b.kind === 'tool' && b.id === bid)
   if (existing > -1) {
@@ -374,6 +405,7 @@ function finishLive(interrupted = false, messageId?: number) {
   paintNow()
   sessionState.messageCount += 1
   live = null
+  syncToolCalls()
   /* Re-read the usage totals once the turn settles: `message.usage` only carries
      the latest call, so the session counters in the usage pane and the island
      stayed on whatever `refreshPanes` last saw. */
@@ -579,6 +611,7 @@ function onEvent(ev: GatewayEvent) {
     case 'session.created': {
       const sid = String(p.session_id ?? p.id ?? '')
       if (!sid || sessions.some(s => s.id === sid)) return
+      const nowMs = Date.now()
       sessions.unshift({
         id: sid,
         index: null,
@@ -586,7 +619,9 @@ function onEvent(ev: GatewayEvent) {
         msgs: 0,
         time: 'now',
         group: 'Today',
-        pinned: false
+        pinned: false,
+        ts: nowMs,
+        createdAt: nowMs
       })
       return
     }
@@ -915,6 +950,7 @@ function buildHistory(messages: Array<Record<string, unknown>>, only?: CompactSe
 
   // A one-run rebuild renders rows out of the transcript already on screen, so
   // it must reuse the cached plan instead of planning again.
+  const foldedPlain: string[] = []
   if (!only) {
     lastHistory = messages
     lastPlan = planCompaction(messages)
@@ -945,7 +981,13 @@ function buildHistory(messages: Array<Record<string, unknown>>, only?: CompactSe
     // Folded runs are skipped before any markup is built: the point of the
     // divider is that those rows cost no DOM at all while they stay closed.
     const seg = plan.memberOf.get(index)
-    if (seg && !expandedCompacts.has(seg.bid)) return
+    if (seg && !expandedCompacts.has(seg.bid)) {
+      if (!only && m.role === 'assistant') {
+        const raw = String(m.text ?? '')
+        if (raw.includes('@pebble-file')) foldedPlain.push(raw)
+      }
+      return
+    }
     // An opened run that was built before is spliced in whole at its divider.
     if (seg && segmentCache.has(seg.bid)) return
     const sink = seg ? segmentSink(seg.bid) : blocks
@@ -1055,6 +1097,7 @@ function buildHistory(messages: Array<Record<string, unknown>>, only?: CompactSe
     segmentBuild.delete(only.bid)
     return built
   }
+  streamState.archivedPlain.splice(0, streamState.archivedPlain.length, ...foldedPlain)
   return blocks
 }
 
@@ -1246,10 +1289,11 @@ export async function loadSession(sessionId: string): Promise<void> {
     // The header counts exchanges, not stored rows: tool output and compaction
     // bookkeeping live in the same table but are not messages anyone sent.
     sessionState.messageCount = restored.filter(isConversationRow).length
+    live = null
     replaceStream(buildHistory(restored))
     /* Tool calls live inside block arrays now, not as standalone `role: 'tool'`
        rows, so counting message rows under-reported the session total. */
-    sessionState.toolCalls = countStoredToolRows()
+    syncToolCalls()
     void refreshPanes()
     // A question the agent is still waiting on has no local copy after a
     // reconnect, so ask the gateway for it.
@@ -1324,7 +1368,15 @@ export async function deleteSession(id: string): Promise<boolean> {
     if (!next) {
       sessionState.activeId = ''
       streamState.sessionId = null
+      live = null
       clearStream()
+      lastHistory = []
+      lastPlan = emptyPlan
+      segmentCache.clear()
+      segmentBuild.clear()
+      expandedCompacts.clear()
+      sessionState.messageCount = 0
+      sessionState.toolCalls = 0
     } else {
       await loadSession(next.id)
     }
@@ -1401,6 +1453,7 @@ export function toggleCompact(bid: string): void {
     if (rows.length) items.splice(at, 0, ...rows)
     if (divider.compact) divider.compact.collapsed = false
   }
+  syncToolCalls()
 
   if (top === null || !body) return
   void nextTick().then(() => {
@@ -2625,6 +2678,19 @@ export function deleteMessage(itemId: string): void {
   const items = streamState.items
   const at = items.findIndex(i => i.id === itemId)
   if (at > -1) items.splice(at, 1)
+  if (/^\d+$/.test(itemId)) {
+    const histAt = lastHistory.findIndex(m => String(m.message_id ?? '') === itemId)
+    if (histAt > -1) {
+      lastHistory.splice(histAt, 1)
+      lastPlan = planCompaction(lastHistory)
+    }
+    for (const [bid, cached] of segmentCache) {
+      const ci = cached.findIndex(i => i.id === itemId)
+      if (ci > -1) cached.splice(ci, 1)
+      if (!cached.length) segmentCache.delete(bid)
+    }
+  }
+  syncToolCalls()
   /* A prompt still waiting for its saved id must not be re-adopted when
      user_message.saved arrives, or the row the reader just deleted comes back. */
   if (itemId.indexOf('pending-') === 0) pendingUser = null
@@ -3024,6 +3090,7 @@ export async function createSession(title = 'New conversation'): Promise<boolean
        yet, so an empty refresh used to leave the reader looking at the old list
        until the next reload. */
     if (!sessions.some(s => s.id === sid)) {
+      const nowMs = Date.now()
       sessions.unshift({
         id: sid,
         index: null,
@@ -3031,7 +3098,9 @@ export async function createSession(title = 'New conversation'): Promise<boolean
         msgs: 0,
         time: 'now',
         group: 'Today',
-        pinned: false
+        pinned: false,
+        ts: nowMs,
+        createdAt: nowMs
       })
     }
     sessionState.activeId = sid
@@ -3252,6 +3321,11 @@ function toSession(raw: Record<string, unknown>, i: number, total: number): Sess
   const rawTs = epoch(raw.last_message_at) || epoch(raw.started_at) ||
     epoch(raw.updated_at) || epoch(raw.created_at)
   const ts = rawTs > 1e12 ? rawTs : rawTs * 1000
+  const rawCreated = epoch(raw.started_at) || epoch(raw.created_at)
+  const parsedCreated = !rawCreated && typeof raw.created_at === 'string' ? Date.parse(raw.created_at) : 0
+  const createdAt = rawCreated
+    ? (rawCreated > 1e12 ? rawCreated : rawCreated * 1000)
+    : (Number.isFinite(parsedCreated) && parsedCreated > 0 ? parsedCreated : ts)
   const d = ts ? new Date(ts) : null
   const now = new Date()
   const sameDay = d ? d.toDateString() === now.toDateString() : false
@@ -3268,7 +3342,8 @@ function toSession(raw: Record<string, unknown>, i: number, total: number): Sess
     time: sameDay ? clock || 'now' : isYesterday ? '1d ago' : d ? `${Math.max(1, Math.round((now.getTime() - ts) / 86400000))}d ago` : '',
     group,
     pinned: Boolean(raw.pinned),
-    ts
+    ts,
+    createdAt
   }
 }
 

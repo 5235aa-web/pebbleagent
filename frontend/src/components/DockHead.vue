@@ -22,8 +22,14 @@
             <svg width="9" height="9" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.6" stroke-linecap="round" stroke-linejoin="round"><polyline points="9 18 15 12 9 6"/></svg>
           </button>
         </div>
-        <button class="icon-btn tip tip-right" data-tip="Open preview stage" id="openStage">
+        <button
+          class="icon-btn tip tip-right"
+          :class="{ 'has-preview': previewCount > 0 }"
+          :data-tip="previewCount ? `Open preview stage (${previewCount})` : 'Open preview stage'"
+          id="openStage"
+        >
           <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.7"><rect x="2.5" y="4" width="19" height="13" rx="2"/><line x1="8" y1="21" x2="16" y2="21"/><line x1="12" y1="17" x2="12" y2="21"/></svg>
+          <span v-if="previewCount" class="preview-badge">{{ previewCount }}</span>
         </button>
         <button class="icon-btn tip tip-right" data-tip="Collapse dock" id="collapseRight">
           <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8"><polyline points="9 18 15 12 9 6"/></svg>
@@ -34,6 +40,9 @@
 <script setup lang="ts">
 import { computed, nextTick, onBeforeUnmount, onMounted, ref, watch } from 'vue'
 import { files } from '../data/panels'
+import { previewState } from '../data/preview'
+
+const previewCount = computed(() => previewState.entries.length)
 
 const wrapEl = ref<HTMLElement | null>(null)
 const tabsEl = ref<HTMLElement | null>(null)

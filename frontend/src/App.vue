@@ -9,8 +9,6 @@
     <StreamPane />
     <RightDock />
   </div>
-
-  <StatusBar />
 </div>
 
 <!-- ================= PREVIEW STAGE ================= -->
@@ -86,7 +84,6 @@ import AmbientBackdrop from './components/AmbientBackdrop.vue'
 import OrbitalBar from './components/OrbitalBar.vue'
 import StreamPane from './components/StreamPane.vue'
 import RightDock from './components/RightDock.vue'
-import StatusBar from './components/StatusBar.vue'
 import PreviewStage from './components/PreviewStage.vue'
 import CommandPalette from './components/CommandPalette.vue'
 import LedgerPanel from './components/LedgerPanel.vue'

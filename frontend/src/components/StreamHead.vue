@@ -3,11 +3,10 @@
         <div class="sh-main">
           <div class="sh-title">{{ title }}</div>
           <div class="sh-sub">
-            <span class="chip-mini">
-              <svg width="9" height="9" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><rect x="3" y="3" width="18" height="14" rx="2"/><line x1="8" y1="21" x2="16" y2="21"/><line x1="12" y1="17" x2="12" y2="21"/></svg>
-              {{ agentName }}
-            </span>
-            <span class="dotsep"></span>
+            <template v-if="createdDate">
+              <span>{{ createdDate }}</span>
+              <span class="dotsep"></span>
+            </template>
             <span>{{ messageCount }} messages</span>
           </div>
         </div>
@@ -34,16 +33,20 @@
 <script setup lang="ts">
 import { computed } from 'vue'
 import { activeSession, sessionState } from '../data/store'
-import { context, llm } from '../data/panels'
 
 /* The header names the session that is actually open, not the prototype's
    placeholder. Falls back to a neutral label when nothing is selected yet, and
    before the first `session.list` response arrives. */
 const title = computed(() => activeSession()?.title?.trim() || 'Untitled session')
-/* The agent list is the live truth: `agent.changed` refreshes it, so switching
-   agents renames the chip without a reload. `context.agentName` stays as the
-   fallback for the seeded surface before the first list arrives. */
-const agentName = computed(() => llm.agents.find(a => a.current)?.name || context.agentName || 'agent')
+const createdDate = computed(() => {
+  const s = activeSession()
+  const ts = s?.createdAt ?? s?.ts
+  if (!ts || !Number.isFinite(ts) || ts <= 0) return ''
+  const d = new Date(ts)
+  if (Number.isNaN(d.getTime())) return ''
+  const pad = (n: number) => String(n).padStart(2, '0')
+  return `${d.getFullYear()}/${pad(d.getMonth() + 1)}/${pad(d.getDate())}`
+})
 /* Every row the gateway holds for the session, not just the ones that render as
    a bubble: the header is a session counter, not a transcript row count. */
 const messageCount = computed(() => sessionState.messageCount)
