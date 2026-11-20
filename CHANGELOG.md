@@ -7,6 +7,14 @@ which is what the in-app update sheet shows before installing. Add the section
 before running `npm run release`; the release stops if it is missing, because a
 feed with empty notes tells the user nothing.
 
+## 1.3.7
+
+- Animation change.
+
+## 1.3.6
+
+- Redesigned the Tauri desktop launch splash screen (`frontend/index.html`). Replaced the radial orbit and planet-comet splash animation with a pure `#000000` black screen that writes out `PEBBLEAGENT` sequentially from left to right in white single-stroke artistic lettering with a subtle pen-tip glow, reveals a pulsing `LOADING ...` indicator underneath once writing completes if the backend is still initializing, and keeps the real startup exit timing driven by `pebble:gateway-ready` (with the 12s fallback timeout).
+
 ## 1.3.5
 
 - Cleaner chat chrome and consolidated status layout. Removed the `Pebble` header, model tag, and timestamp from agent replies (`StreamMessage.vue`), replaced the agent badge under the top-left session title with the session creation date (`YYYY/MM/DD`), removed the bottom status bar (`StatusBar.vue`), moved the gateway `connected`/`offline` indicator into the top `Live Run` island (`IslandWrap.vue`), and moved the session tool-call total into the right-dock Context panel (`ContextPane.vue`) with accurate counts across collapsed compaction segments, live tool calls, and deleted messages.

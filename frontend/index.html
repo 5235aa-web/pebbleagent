@@ -8,7 +8,7 @@
 <style>
 /* The splash is inlined here on purpose: it has to paint before the module graph
    loads, so it cannot live in a stylesheet the shell fetches afterwards. It also
-   keeps its own dark palette instead of following `data-theme` — a white flash
+   keeps its own pure black palette instead of following `data-theme` — a white flash
    before the shell is up would defeat the point. */
 #splash {
   position: fixed;
@@ -16,233 +16,187 @@
   z-index: 9999;
   display: grid;
   place-items: center;
-  background: radial-gradient(circle at 50% 46%, #0d1219 0%, #080a0e 42%, #05070a 72%);
+  background: #000000;
+  font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif;
   opacity: 1;
-  transition: opacity .8s cubic-bezier(.22, 1, .36, 1);
+  transition: opacity .65s cubic-bezier(.22, 1, .36, 1);
 }
-#splash.sp-out { opacity: 0; pointer-events: none; }
-
-#splash::after {
-  content: "";
-  position: absolute;
-  inset: 0;
-  pointer-events: none;
-  opacity: .035;
-  background-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='140' height='140'%3E%3Cfilter id='n'%3E%3CfeTurbulence type='fractalNoise' baseFrequency='.9' numOctaves='3'/%3E%3C/filter%3E%3Crect width='140' height='140' filter='url(%23n)'/%3E%3C/svg%3E");
-}
-
-#splash .sp-shell {
-  display: grid;
-  justify-items: center;
-  gap: 34px;
-}
-
-#splash .sp-stage {
-  position: relative;
-  width: min(74vmin, 560px);
-  aspect-ratio: 1;
-  display: grid;
-  place-items: center;
-}
-
-#splash .sp-orbits {
-  position: absolute;
-  inset: 0;
-  transform-origin: 50% 50%;
-  transition: transform 1.15s cubic-bezier(.66, 0, .26, 1),
-              opacity 1.15s cubic-bezier(.66, 0, .26, 1);
-}
-#splash .sp-orbits svg { display: block; width: 100%; height: 100%; overflow: visible; }
-
-#splash .sp-ring { fill: none; stroke: rgba(158, 178, 214, .075); stroke-width: .7; }
-#splash .sp-ticks { fill: none; stroke: rgba(158, 178, 214, .16); stroke-width: 1; stroke-dasharray: 1 11; }
-#splash .sp-outer { fill: none; stroke: rgba(158, 178, 214, .075); stroke-width: .6; stroke-dasharray: 2 26; }
-#splash .sp-track { fill: none; stroke: rgba(158, 178, 214, .16); stroke-width: .8; }
-
-/* A short dash on a very long gap is the cheapest way to move a light along an
-   ellipse: the offset walks, the geometry never rotates. */
-#splash .sp-comet {
-  fill: none;
-  stroke-linecap: round;
-  stroke-width: 2.4;
-  stroke-dasharray: 78 4200;
-  animation: sp-walk 9s linear infinite;
-}
-#splash .sp-comet.a { stroke: #6f8cff; filter: drop-shadow(0 0 6px rgba(111, 140, 255, .55)); }
-#splash .sp-comet.b {
-  stroke: #7fe3cd;
-  filter: drop-shadow(0 0 5px rgba(127, 227, 205, .5));
-  animation-duration: 14s;
-  animation-direction: reverse;
-}
-#splash .sp-comet.c {
-  stroke: rgba(233, 238, 247, .8);
-  filter: drop-shadow(0 0 4px rgba(233, 238, 247, .4));
-  animation-duration: 21s;
-  stroke-width: 1.6;
-}
-@keyframes sp-walk {
-  from { stroke-dashoffset: 4200; }
-  to   { stroke-dashoffset: 0; }
-}
-
-#splash .sp-core {
-  position: absolute;
-  width: 5px;
-  height: 5px;
-  border-radius: 50%;
-  background: #fff;
-  box-shadow:
-    0 0 10px 2px #6f8cff,
-    0 0 34px 8px rgba(111, 140, 255, .34),
-    0 0 80px 26px rgba(111, 140, 255, .12);
-  animation: sp-breathe 3.6s ease-in-out infinite;
-}
-@keyframes sp-breathe {
-  0%, 100% { transform: scale(1); opacity: .92; }
-  50%      { transform: scale(1.28); opacity: 1; }
-}
-
-#splash .sp-halo {
-  position: absolute;
-  width: 12px;
-  height: 12px;
-  border-radius: 50%;
-  border: 1px solid #6f8cff;
+#splash.sp-out {
   opacity: 0;
   pointer-events: none;
 }
 
-#splash .sp-caption {
-  display: flex;
-  flex-direction: column;
+#splash .sp-shell {
+  width: min(68vw, 680px);
+  max-width: 90vw;
+  display: grid;
+  justify-items: center;
+  gap: 36px;
+  transition: transform .7s cubic-bezier(.22, 1, .36, 1),
+              opacity .65s cubic-bezier(.22, 1, .36, 1);
+}
+#splash.sp-done .sp-shell {
+  transform: scale(1.025);
+  opacity: 0;
+}
+
+#splash .sp-wordmark {
+  width: 100%;
+  display: grid;
+  place-items: center;
+}
+
+#splash svg.sp-svg {
+  width: 100%;
+  height: auto;
+  display: block;
+  overflow: visible;
+}
+
+/* Soft outer aura under the crisp white single-stroke calligraphy */
+#splash .sp-glow-layer path {
+  fill: none;
+  stroke: rgba(255, 255, 255, .24);
+  stroke-width: 7.5;
+  stroke-linecap: round;
+  stroke-linejoin: round;
+  filter: blur(4px);
+}
+
+/* Crisp pure white single-stroke artistic lettering */
+#splash .sp-ink-layer path {
+  fill: none;
+  stroke: #ffffff;
+  stroke-width: 3.1;
+  stroke-linecap: round;
+  stroke-linejoin: round;
+}
+
+/* Subtle serene breathing after writing finishes while waiting on gateway */
+#splash .sp-shell.sp-written .sp-ink-layer {
+  animation: sp-pulse 2.8s ease-in-out infinite;
+}
+@keyframes sp-pulse {
+  0%, 100% { opacity: 1; }
+  50%      { opacity: .82; }
+}
+
+/* Loading indicator shown beneath PEBBLE once writing finishes */
+#splash .sp-loading {
+  display: grid;
+  justify-items: center;
+  opacity: 0;
+  transform: translateY(6px);
+  transition: opacity .55s cubic-bezier(.22, 1, .36, 1),
+              transform .55s cubic-bezier(.22, 1, .36, 1);
+  pointer-events: none;
+}
+#splash .sp-shell.sp-written .sp-loading {
+  opacity: 1;
+  transform: translateY(0);
+}
+
+#splash .sp-load-row {
+  display: inline-flex;
   align-items: center;
-  gap: 14px;
-  transition: opacity .5s ease;
+  gap: 8px;
 }
-#splash .sp-mark {
-  font-size: 12px;
-  letter-spacing: .62em;
-  text-indent: .62em;
-  color: rgba(233, 238, 247, .56);
+#splash .sp-load-text {
+  font-size: 11px;
   font-weight: 500;
+  letter-spacing: .44em;
+  text-indent: .44em;
+  color: rgba(255, 255, 255, .78);
 }
-#splash .sp-bar {
-  width: 168px;
-  height: 1px;
-  background: rgba(158, 178, 214, .14);
-  position: relative;
-  overflow: hidden;
+#splash .sp-dots {
+  display: inline-flex;
+  align-items: center;
+  gap: 4.5px;
 }
-#splash .sp-bar i {
-  position: absolute;
-  inset: 0 auto 0 0;
-  width: 0;
-  background: linear-gradient(90deg, rgba(111, 140, 255, 0), #6f8cff 60%, #7fe3cd);
-  transition: width .28s cubic-bezier(.22, 1, .36, 1);
+#splash .sp-dots i {
+  width: 3px;
+  height: 3px;
+  border-radius: 50%;
+  background: rgba(255, 255, 255, .9);
+  opacity: .25;
+  animation: sp-dot 1.2s ease-in-out infinite;
 }
-#splash .sp-status {
-  font-size: 9.5px;
-  letter-spacing: .18em;
-  text-transform: uppercase;
-  color: rgba(233, 238, 247, .3);
-  height: 12px;
-}
-
-#splash .sp-corner {
-  position: absolute;
-  font-size: 8.5px;
-  letter-spacing: .22em;
-  text-transform: uppercase;
-  color: rgba(233, 238, 247, .2);
-}
-#splash .sp-corner.tl { top: 26px; left: 30px; }
-#splash .sp-corner.br { bottom: 26px; right: 30px; }
-
-#splash .sp-stage.sp-enter .sp-orbits { animation: sp-open 2.2s cubic-bezier(.22, 1, .36, 1) both; }
-@keyframes sp-open {
-  0%   { opacity: 0; transform: scale(.18) rotate(-9deg); }
-  60%  { opacity: 1; }
-  100% { opacity: .96; transform: scale(1) rotate(0deg); }
-}
-#splash .sp-stage.sp-enter .sp-core {
-  animation: sp-core-in 1.6s cubic-bezier(.22, 1, .36, 1) both,
-             sp-breathe 3.6s 1.6s ease-in-out infinite;
-}
-@keyframes sp-core-in {
-  0%   { opacity: 0; transform: scale(0); }
-  70%  { opacity: 1; transform: scale(1.6); }
-  100% { opacity: .92; transform: scale(1); }
+#splash .sp-dots i:nth-child(2) { animation-delay: .2s; }
+#splash .sp-dots i:nth-child(3) { animation-delay: .4s; }
+@keyframes sp-dot {
+  0%, 80%, 100% { opacity: .2; transform: scale(.85); }
+  40%           { opacity: .95; transform: scale(1.15); }
 }
 
-/* Completion: the system falls inward, one ring leaves, the core flares once. */
-#splash .sp-stage.sp-done .sp-orbits { transform: scale(.08); opacity: 0; }
-#splash .sp-stage.sp-done .sp-core {
-  animation: none;
-  transform: scale(2.6);
-  box-shadow:
-    0 0 20px 6px #fff,
-    0 0 60px 22px #6f8cff,
-    0 0 140px 60px rgba(111, 140, 255, .4);
-  transition: transform .8s cubic-bezier(.2, .9, .2, 1), box-shadow .8s ease;
+/* Pen-tip light flare tracking the active stroke */
+#splash .sp-nib {
+  opacity: 0;
+  transition: opacity .18s ease;
+  pointer-events: none;
 }
-#splash .sp-stage.sp-done .sp-halo { animation: sp-halo-out 1.15s cubic-bezier(.16, .8, .24, 1) forwards; }
-@keyframes sp-halo-out {
-  0%   { opacity: .9; transform: scale(1);  border-width: 2px; }
-  100% { opacity: 0;  transform: scale(42); border-width: .5px; }
+#splash .sp-nib.is-active {
+  opacity: 1;
 }
-#splash .sp-stage.sp-done .sp-caption { opacity: 0; }
 
 @media (prefers-reduced-motion: reduce) {
-  #splash .sp-comet,
-  #splash .sp-core,
-  #splash .sp-stage.sp-enter .sp-orbits,
-  #splash .sp-stage.sp-enter .sp-core,
-  #splash .sp-stage.sp-done .sp-halo { animation: none !important; }
-  #splash .sp-comet { stroke-dasharray: 240 4200; }
+  #splash .sp-shell.sp-written .sp-ink-layer,
+  #splash .sp-dots i { animation: none !important; }
+  #splash .sp-dots i { opacity: .65; }
 }
 </style>
 </head>
 <body>
 
-<div id="splash">
-  <span class="sp-corner tl">pebble agent</span>
-  <span class="sp-corner br">orbit shell</span>
-
+<div id="splash" aria-label="PEBBLE">
   <div class="sp-shell">
-    <div class="sp-stage sp-enter">
-      <div class="sp-orbits">
-        <svg viewBox="0 0 800 800" aria-hidden="true">
-          <circle class="sp-outer" cx="400" cy="400" r="372"></circle>
-          <circle class="sp-ticks" cx="400" cy="400" r="344"></circle>
+    <div class="sp-wordmark">
+      <svg class="sp-svg" viewBox="0 0 498 150" aria-hidden="true">
+        <defs>
+          <radialGradient id="sp-nib-grad" cx="50%" cy="50%" r="50%">
+            <stop offset="0%" stop-color="#ffffff" stop-opacity="1" />
+            <stop offset="35%" stop-color="#ffffff" stop-opacity="0.7" />
+            <stop offset="100%" stop-color="#ffffff" stop-opacity="0" />
+          </radialGradient>
+        </defs>
 
-          <g transform="rotate(-16 400 400)">
-            <ellipse class="sp-track" cx="400" cy="400" rx="306" ry="118"></ellipse>
-            <ellipse class="sp-comet a" cx="400" cy="400" rx="306" ry="118"></ellipse>
-          </g>
+        <!-- Glow mirror paths (synced dynamically with ink paths) -->
+        <g class="sp-glow-layer"></g>
 
-          <g transform="rotate(29 400 400)">
-            <ellipse class="sp-track" cx="400" cy="400" rx="258" ry="196"></ellipse>
-            <ellipse class="sp-comet b" cx="400" cy="400" rx="258" ry="196"></ellipse>
-          </g>
+        <!-- Artistic single-stroke letterforms: P E B B L E -->
+        <g class="sp-ink-layer">
+          <!-- P -->
+          <path data-ch="P" transform="translate(46, 0)"
+            d="M 1 111 Q 7 111 9 104 C 12 80 16 52 19 34 C 45 29 61 36 58 52 C 55 68 35 73 14 72" />
+          <!-- E -->
+          <path data-ch="E" transform="translate(116, 0)"
+            d="M 54 38 C 42 31 24 31 18 37 C 13 43 12 57 12 70 Q 28 68 42 70 Q 28 68 12 70 C 9 85 7 100 13 106 C 22 113 42 111 55 103" />
+          <!-- B -->
+          <path data-ch="B" transform="translate(186, 0)"
+            d="M 6 110 C 10 82 14 55 18 34 C 39 29 52 35 50 47 C 48 59 34 66 13 68 C 40 67 57 74 54 91 C 51 106 32 112 6 110" />
+          <!-- B -->
+          <path data-ch="B" transform="translate(258, 0)"
+            d="M 6 110 C 10 82 14 55 18 34 C 39 29 52 35 50 47 C 48 59 34 66 13 68 C 40 67 57 74 54 91 C 51 106 32 112 6 110" />
+          <!-- L -->
+          <path data-ch="L" transform="translate(330, 0)"
+            d="M 18 34 C 14 58 10 82 7 99 C 5 108 11 111 21 111 C 34 111 45 108 54 102" />
+          <!-- E -->
+          <path data-ch="E" transform="translate(396, 0)"
+            d="M 54 38 C 42 31 24 31 18 37 C 13 43 12 57 12 70 Q 28 68 42 70 Q 28 68 12 70 C 9 85 7 100 13 106 C 22 113 42 111 55 103" />
+        </g>
 
-          <g transform="rotate(-68 400 400)">
-            <ellipse class="sp-track" cx="400" cy="400" rx="176" ry="288"></ellipse>
-            <ellipse class="sp-comet c" cx="400" cy="400" rx="176" ry="288"></ellipse>
-          </g>
-
-          <circle class="sp-ring" cx="400" cy="400" r="86"></circle>
-        </svg>
-      </div>
-
-      <div class="sp-core"></div>
-      <div class="sp-halo"></div>
+        <!-- Glowing pen-tip point -->
+        <g class="sp-nib">
+          <circle cx="0" cy="0" r="8.5" fill="url(#sp-nib-grad)" />
+          <circle cx="0" cy="0" r="1.9" fill="#ffffff" />
+        </g>
+      </svg>
     </div>
 
-    <div class="sp-caption">
-      <div class="sp-mark">ORBIT</div>
-      <div class="sp-bar"><i></i></div>
-      <div class="sp-status">mounting shell</div>
+    <div class="sp-loading" aria-live="polite">
+      <div class="sp-load-row">
+        <span class="sp-load-text">LOADING</span>
+        <span class="sp-dots" aria-hidden="true"><i></i><i></i><i></i></span>
+      </div>
     </div>
   </div>
 </div>
@@ -253,19 +207,11 @@
 <script>
 /* The splash leaves the moment the gateway answers — there is no floor. A warm
    start really is fast, and padding the opening to a fixed length makes the
-   shell feel slower than it is. The collapse at the end supplies the rest of the
-   motion. MAX is the other end: a gateway that never answers must not own the
-   window forever. */
+   shell feel slower than it is. MAX is the other end: a gateway that never
+   answers must not own the window forever. */
 (function () {
-  var CREEP = 1600
+  var DRAW_DURATION = 1200
   var MAX = 12000
-  var STEP_TEXT = [
-    'mounting shell',
-    'reading project registry',
-    'resolving gateway',
-    'handshaking',
-    'restoring session'
-  ]
 
   var el = document.getElementById('splash')
   if (!el) return
@@ -277,40 +223,99 @@
     return
   }
 
-  var stage = el.querySelector('.sp-stage')
-  var fill = el.querySelector('.sp-bar i')
-  var status = el.querySelector('.sp-status')
+  var shell = el.querySelector('.sp-shell')
+  var inkLayer = el.querySelector('.sp-ink-layer')
+  var glowLayer = el.querySelector('.sp-glow-layer')
+  var nib = el.querySelector('.sp-nib')
+  var inkPaths = Array.prototype.slice.call(inkLayer.querySelectorAll('path'))
+  var reducedMotion = window.matchMedia && window.matchMedia('(prefers-reduced-motion: reduce)').matches
+
+  var items = inkPaths.map(function (p) {
+    var glow = p.cloneNode(false)
+    glowLayer.appendChild(glow)
+    var len = p.getTotalLength()
+    p.style.strokeDasharray = String(len)
+    glow.style.strokeDasharray = String(len)
+    return { ink: p, glow: glow, len: len }
+  })
+
+  var totalLen = items.reduce(function (acc, item) { return acc + item.len }, 0)
+  var accLen = 0
+  items.forEach(function (item) {
+    item.startRatio = accLen / totalLen
+    accLen += item.len
+    item.endRatio = accLen / totalLen
+  })
+
   var start = performance.now()
   var raf = 0
   var settled = false
   var finished = false
+  var writeDone = false
 
-  function paint(percent, text) {
-    fill.style.width = Math.min(100, percent) + '%'
-    if (text && status.textContent !== text) status.textContent = text
+  function applyProgress(progress) {
+    var clamped = Math.max(0, Math.min(1, progress))
+    var activePoint = null
+
+    for (var i = 0; i < items.length; i++) {
+      var item = items[i]
+      if (clamped <= item.startRatio) {
+        item.ink.style.strokeDashoffset = String(item.len)
+        item.glow.style.strokeDashoffset = String(item.len)
+      } else if (clamped >= item.endRatio) {
+        item.ink.style.strokeDashoffset = '0'
+        item.glow.style.strokeDashoffset = '0'
+      } else {
+        var local = (clamped - item.startRatio) / (item.endRatio - item.startRatio)
+        var drawn = local * item.len
+        var offset = item.len - drawn
+        item.ink.style.strokeDashoffset = String(offset)
+        item.glow.style.strokeDashoffset = String(offset)
+
+        var pt = item.ink.getPointAtLength(drawn)
+        var tx = 0
+        var tr = item.ink.getAttribute('transform') || ''
+        var m = /translate\(\s*([-\d.]+)/.exec(tr)
+        if (m) tx = parseFloat(m[1]) || 0
+        activePoint = { x: pt.x + tx, y: pt.y }
+      }
+    }
+
+    if (activePoint && clamped > 0 && clamped < 1) {
+      nib.setAttribute('transform', 'translate(' + activePoint.x.toFixed(2) + ' ' + activePoint.y.toFixed(2) + ')')
+      nib.classList.add('is-active')
+    } else {
+      nib.classList.remove('is-active')
+    }
   }
 
-  /* The bar runs on a clock rather than on real progress: the socket usually
-     opens in 300 ms, and a bar that snaps to 100% that early is a black screen
-     with a tiny animation on top. It stalls at 92% if the gateway is slower, and
-     the status line says why. */
-  function clock() {
+  function easeInOutSine(t) {
+    return -(Math.cos(Math.PI * t) - 1) / 2
+  }
+
+  function tick(now) {
     if (finished) return
-    var elapsed = performance.now() - start
-    var percent = Math.min(92, (elapsed / CREEP) * 92)
-    var idx = Math.min(STEP_TEXT.length - 1, Math.floor((percent / 92) * STEP_TEXT.length))
-    paint(percent, settled ? 'waiting for gateway' : STEP_TEXT[idx])
-    raf = requestAnimationFrame(clock)
+    var elapsed = now - start
+    var raw = Math.min(1, elapsed / DRAW_DURATION)
+    var eased = easeInOutSine(raw)
+    applyProgress(eased)
+
+    if (raw < 1) {
+      raf = requestAnimationFrame(tick)
+    } else if (!writeDone) {
+      writeDone = true
+      shell.classList.add('sp-written')
+    }
   }
 
   function finish() {
     if (finished) return
     finished = true
     cancelAnimationFrame(raf)
-    paint(100, 'ready')
-    setTimeout(function () { stage.classList.add('sp-done') }, 180)
-    setTimeout(function () { el.classList.add('sp-out') }, 900)
-    setTimeout(function () { el.remove() }, 1700)
+    nib.classList.remove('is-active')
+    setTimeout(function () { el.classList.add('sp-done') }, 120)
+    setTimeout(function () { el.classList.add('sp-out') }, 240)
+    setTimeout(function () { el.remove() }, 920)
   }
 
   function onReady() {
@@ -323,7 +328,15 @@
   setTimeout(function () {
     if (!settled) { settled = true; finish() }
   }, MAX)
-  clock()
+
+  if (reducedMotion) {
+    applyProgress(1)
+    writeDone = true
+    shell.classList.add('sp-written')
+  } else {
+    applyProgress(0)
+    raf = requestAnimationFrame(tick)
+  }
 })()
 </script>
 </body>
