@@ -9,11 +9,6 @@ from typing import List
 import httpx
 
 from ..truncation_manager import truncate_output
-from ..little_guard import (
-    get_rate_limiter,
-    get_path_depth_guard,
-    get_download_guard,
-)
 
 logger = logging.getLogger(__name__)
 
@@ -295,18 +290,6 @@ class WebToolsMixin:
         if mode not in ("auto", "text", "raw"):
             return f"Error: Invalid mode {mode!r}; expected auto, text or raw"
 
-        # 翻页检测 + 每轮抓取次数
-        path_guard = get_path_depth_guard()
-        allowed, msg = path_guard.check_navigate(url)
-        if not allowed:
-            return f"Error: {msg}"
-
-        # 同域名每分钟请求上限
-        rate_limiter = get_rate_limiter()
-        allowed, msg = rate_limiter.check(url)
-        if not allowed:
-            return f"Error: {msg}"
-
         try:
             async with httpx.AsyncClient(timeout=timeout, follow_redirects=True) as client:
                 resp = await client.get(
@@ -346,17 +329,9 @@ class WebToolsMixin:
     async def _tool_web_search(self, query: str) -> str:
         """
         搜索网络（DuckDuckGo html 版 → Bing 国际版 链式兜底，解析结构化结果）
-        
-        受 little_guard 的速率限制保护。
         """
         if not query:
             return "Error: No query provided"
-        
-        # 速率限制检查
-        rate_limiter = get_rate_limiter()
-        allowed, msg = rate_limiter.check(query)
-        if not allowed:
-            return f"Error: {msg}"
         
         try:
             from urllib.parse import quote
@@ -433,16 +408,9 @@ class WebToolsMixin:
         通过 httpx 下载文件
         
         文件直接保存到 agent 工作区文件夹。
-        受 download_guard 限制器保护（每轮文件数 + 文件类型 + 大小）。
         """
         if not url:
             return "Error: No URL provided"
-        
-        # 下载限制检查
-        download_guard = get_download_guard()
-        allowed, msg = download_guard.check_download(url, filename)
-        if not allowed:
-            return f"Error: {msg}"
         
         # 解析保存路径：工作区文件夹
         from urllib.parse import urlparse, unquote

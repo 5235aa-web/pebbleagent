@@ -361,11 +361,8 @@ image or an audio track. When the skill you are installing points at paths under
    `~/.pebble`. Download there, then move the file into
    `~/.pebble/skills/<name>/assets/` with `powershell` or `move_file`; the skills folder is
    whitelisted, so that move is allowed.
-3. Downloads run two files per turn at 50 MB each. For a music set or an icon
-   pack, ask the user for a single zip and unpack it once, or spread the work
-   over several turns.
-4. After copying, verify the final paths exist before reporting the skill ready.
-5. Without a direct link you cannot produce the file yourself. Say so plainly:
+3. After copying, verify the final paths exist before reporting the skill ready.
+4. Without a direct link you cannot produce the file yourself. Say so plainly:
    the user can drop it at `~/.pebble/skills/<name>/assets/` themselves, and the
    skill picks it up on the next load.
 

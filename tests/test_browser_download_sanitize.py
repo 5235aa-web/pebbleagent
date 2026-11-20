@@ -86,7 +86,6 @@ def main() -> int:
         async def get(self, url):
             return FakeResp()
 
-    from agent_core.little_guard import reset_all_guards
     import agent_core.tool_impl.web as web_mod
 
     orig_httpx = web_mod.httpx
@@ -96,7 +95,6 @@ def main() -> int:
         ex = AgentToolExecutorImpl(project_path=tmpdir)
 
         def run(filename, url="http://example.com/f.zip"):
-            reset_all_guards()  # per-turn counter is a global singleton
             return asyncio.run(ex._tool_browser_download(url, filename))
 
         # escape attempts -> rejected before any write

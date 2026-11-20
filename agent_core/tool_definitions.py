@@ -440,7 +440,7 @@ def get_tools_definition() -> List[Dict[str, Any]]:
             "type": "function",
             "function": {
                 "name": "fetch_url",
-                "description": "抓取网页内容。纯 HTTP 请求，不执行 JS；需要 JS 渲染或页面交互时改用 chrome_devtools MCP 的 navigate_page。同域名每分钟 6 次、每轮最多 8 次。",
+                "description": "抓取网页内容。纯 HTTP 请求，不执行 JS；需要 JS 渲染或页面交互时改用 chrome_devtools MCP 的 navigate_page。",
                 "parameters": {
                     "type": "object",
                     "properties": {
@@ -596,7 +596,7 @@ def get_tools_definition() -> List[Dict[str, Any]]:
             "type": "function",
             "function": {
                 "name": "browser_download",
-                "description": "通过浏览器下载文件。支持文档(pdf/doc/xlsx)、图片(png/jpg)、压缩包(zip/rar)等常见文件类型。禁止下载网页文件(html/php)。每轮最多2个文件。",
+                "description": "下载文件并保存到当前项目工作区目录。支持文档(pdf/doc/xlsx)、图片(png/jpg)、压缩包(zip/rar)等常见文件。",
                 "parameters": {
                     "type": "object",
                     "properties": {

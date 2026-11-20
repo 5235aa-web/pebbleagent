@@ -228,9 +228,3 @@ async def prepare_turn(service, params: Dict[str, Any], state: TurnState) -> Asy
     pending_todo_events: list = []
     TodoManager.set_event_callback(lambda todos: pending_todo_events.append(todos))
     state.pending_todo_events = pending_todo_events
-
-    try:
-        from ..little_guard import reset_all_guards
-        reset_all_guards(conversation_uuid)
-    except ImportError:
-        pass

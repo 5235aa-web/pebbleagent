@@ -10,8 +10,7 @@
                  ↑ read/write
 [Tools]       agent_core/tool_definitions.py (45 schemas) + agent_core/tool_impl/ (dispatch + handlers)
               agent_core/extensions/, agent_core/mcp/, agent_core/state/ (todo + question managers)
-              Tool infrastructure: bash_validator (6-layer command validation) / little_guard (3 runtime limiters, per-session counters)
-              / lsp_client (backend of 9 LSP tools)
+              Tool infrastructure: bash_validator (6-layer command validation) / lsp_client (backend of 9 LSP tools)
                  ↑ call
 [Services]    agent_core/agent_chat_service_v2.py (🔴core 74KB, 1588 lines)
               agent_core/agent_loader.py, agent_core/context_compressor.py
@@ -51,7 +50,6 @@
 | permission_audit.py | Data (audit permission_audit.db) | permission_enforcer, tool_executor_impl | permission_audit.db |
 | bash_validator.py | Tool infra (6-layer command validation) | tool_executor_impl, permission_enforcer, tool_concurrency | - |
 | lsp_client.py | Tool infra (LSP client) | tool_executor_impl | LSP server subprocess |
-| little_guard.py | Tool infra (runtime limiters for web_search / fetch_url / browser_download; counters scoped per session via contextvar) | agent_chat_service_v2, tool_executor_impl | - |
 | frontend/src-tauri/src/lib.rs | Desktop shell (Tauri 2) | - | pebble-backend.exe (sidecar launch/cleanup) |
 
 ## Test suite (`tests/`)
@@ -78,7 +76,6 @@ Run with `python tests/run_all.py` (one process per file, exit 0 only if all pas
 | tests/test_context_compaction_keep.py | Context compaction: dynamic keep-count, tool-pair integrity | 🧪Test |
 | tests/test_experience_ledger.py | Experience ledger: write, recall, supersede, signals, notes, migration | 🧪Test |
 | tests/test_gateway_facade.py | Gateway facade: every `srv.<name>` used by rpc handlers exists | 🧪Test |
-| tests/test_guard_scope.py | Guard scope isolation | 🧪Test |
 | tests/test_interrupted_reply.py | Interrupted-reply persistence at the gateway layer | 🧪Test |
 | tests/test_log_persistence.py | Log persistence plus suspicious stream-end detection | 🧪Test |
 | tests/test_lsp_framing.py | LSP message framing: Content-Length headers, JSON body, error paths | 🧪Test |
