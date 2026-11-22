@@ -402,6 +402,8 @@ Save the document in the project working directory as `HANDOFF.md`.
 ## Domain tasks (as needed)
 
 ### Frontend design tasks (on demand)
+**Core principle for all frontend work:** Avoid any unnecessary secondary labels and descriptions.
+
 When the user explicitly asks for frontend UI, web page, or visual interface work, you may call `load_skill("frontend-design")` for design guidance before writing the UI. Do not load frontend skills for unrelated backend or general coding tasks.
 
 ### 🔴🔴🔴 HTML interactive comment loop [MUST]
