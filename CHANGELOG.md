@@ -7,6 +7,9 @@ which is what the in-app update sheet shows before installing. Add the section
 before running `npm run release`; the release stops if it is missing, because a
 feed with empty notes tells the user nothing.
 
+## 1.3.9
+- Optimized multiple front-end experiences.
+
 ## 1.3.8
 
 - Removed `little_guard.py` and its per-session rate, pagination, and download count/extension limiters on `web_search`, `fetch_url`, and `browser_download`. These limits frequently blocked legitimate multi-page fetches and consecutive searches without adding real security, while permission checks and download filename/path-boundary sanitization remain in place.

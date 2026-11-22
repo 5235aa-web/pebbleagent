@@ -5,7 +5,7 @@
       <span class="mc-ico">
         <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.7"><rect x="3" y="3" width="7" height="7" rx="1.5"/><rect x="14" y="3" width="7" height="7" rx="1.5"/><rect x="3" y="14" width="7" height="7" rx="1.5"/><rect x="14" y="14" width="7" height="7" rx="1.5"/></svg>
       </span>
-      <div class="mc-title">MCP servers<small>model context protocol</small></div>
+      <div class="mc-title">MCP servers</div>
       <div class="mc-sum">
         <span class="mc-pill on"><i></i>{{ mcp.running }} running</span>
         <span class="mc-pill"><i></i>{{ mcp.idle }} idle</span>
@@ -154,7 +154,6 @@
     </div>
 
     <footer class="mc-ft">
-      <span class="mc-hint">{{ mcp.servers.length }} installed · {{ mcp.running }} running · {{ mcp.tools }} tools</span>
       <button class="btn btn-ghost" data-close>Close</button>
     </footer>
   </div>

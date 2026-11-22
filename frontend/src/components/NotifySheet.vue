@@ -5,7 +5,7 @@
       <span class="sheet-ico">
         <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8"><path d="M18 8A6 6 0 0 0 6 8c0 7-3 9-3 9h18s-3-2-3-9"/><path d="M13.7 21a2 2 0 0 1-3.4 0"/></svg>
       </span>
-      <div class="sheet-title">Notifications<small>audio &amp; desktop alerts</small></div>
+      <div class="sheet-title">Notifications</div>
       <button class="sheet-x" data-close>&#215;</button>
     </div>
     <div class="sheet-body">
@@ -68,7 +68,6 @@
       </div>
     </div>
     <div class="sheet-foot">
-      <span class="sf-hint">one sound per finished turn · one when a question arrives</span>
       <button class="btn btn-ghost" @click="preview">Test</button>
       <button class="btn btn-primary" data-close>Done</button>
     </div>

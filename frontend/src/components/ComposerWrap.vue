@@ -79,7 +79,7 @@
           <div class="composer-input">
             <span class="ta-pulse" id="taPulse"><i></i><i></i><i></i></span>
 
-            <textarea id="composerTa" rows="1" placeholder="Tell Pebble what to build…  (⏎ send · ⇧⏎ newline)"></textarea>
+            <textarea id="composerTa" rows="1" placeholder="Tell Pebble what to build…"></textarea>
             <button class="send-btn go" v-show="!streaming" @click="send">
               <span>Send</span>
               <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.4"><line x1="4" y1="12" x2="19" y2="12"/><polyline points="13 6 19 12 13 18"/></svg>
@@ -123,15 +123,6 @@
               <div ref="modelShellEl" class="mm-shell" :class="{ open: modelMenuOpen }" :aria-hidden="modelMenuOpen ? 'false' : 'true'">
                 <div class="mm-inner">
                   <div class="mm-card">
-                    <div class="mm-hdr">
-                      <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.7"><rect x="4" y="4" width="16" height="16" rx="3"/><rect x="9" y="9" width="6" height="6" rx="1"/></svg>
-                      <span class="mm-title">Switch model</span>
-                      <button class="mm-dock-link" type="button" @click="openLlmDock">
-                        <span>LLM Panel</span>
-                        <svg width="10" height="10" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><line x1="7" y1="17" x2="17" y2="7"/><polyline points="7 7 17 7 17 17"/></svg>
-                      </button>
-                    </div>
-
                     <div class="mm-body" v-if="llm.providers.length" @scroll="clearHoverPopover">
                       <div
                         v-for="(p, idx) in llm.providers"
@@ -142,8 +133,7 @@
                         <div class="mm-prov">
                           <span class="mm-prov-badge">{{ p.name.slice(0, 1).toUpperCase() }}</span>
                           <span class="mm-prov-name">{{ p.name }}</span>
-                          <span v-if="idx === activeProviderIndex" class="mm-prov-tag on">Active</span>
-                          <span v-else-if="!isProviderReady(p)" class="mm-prov-tag">Not ready</span>
+                          <span v-if="!isProviderReady(p)" class="mm-prov-tag">Not ready</span>
                         </div>
 
                         <div v-if="p.models.length" class="mm-models">
@@ -163,18 +153,14 @@
                             @mouseleave="scheduleHoverClose"
                           >
                             <span class="mm-opt-dot"></span>
-                            <span class="mm-opt-label" :title="m">{{ m }}</span>
+                            <span class="mm-opt-label">{{ m }}</span>
                             <span
                               class="mm-opt-effort"
                               :class="{ off: modelThinkingLevel(p, m) === 'off' }"
-                              :title="`Thinking: ${thinkingShortLabel(modelThinkingLevel(p, m))}`"
                               @click.stop="toggleHoverPopover(idx, m, $event)"
                             >
                               <span>{{ thinkingShortLabel(modelThinkingLevel(p, m)) }}</span>
                               <svg width="8" height="8" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2"><polyline points="9 6 15 12 9 18"/></svg>
-                            </span>
-                            <span class="mm-check">
-                              <svg width="9" height="9" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="3.4"><polyline points="20 6 9 17 4 12"/></svg>
                             </span>
                           </button>
                         </div>
@@ -184,15 +170,6 @@
                     <div class="mm-empty" v-else>
                       <span>No model providers configured</span>
                       <button class="btn btn-primary btn-sm" type="button" @click="openLlmDock">Open LLM Panel</button>
-                    </div>
-
-                    <div class="mm-hint">
-                      <span v-if="activeProvider && activeModelName">
-                        Next message: <b>{{ activeProvider.name }}</b> · <code>{{ activeModelName }}</code> · <code>{{ thinkingShortLabel(activeThinkingLevel) }}</code>
-                      </span>
-                      <span v-else>
-                        Configure an active provider and model in the right-dock LLM panel
-                      </span>
                     </div>
                   </div>
                 </div>
@@ -206,10 +183,6 @@
                   @mouseleave="scheduleHoverClose"
                 >
                   <div class="mm-sub-card">
-                    <div class="mm-sub-hdr">
-                      <span class="mm-sub-title">Thinking</span>
-                      <span class="mm-sub-model" :title="hoveredTarget.model">{{ hoveredTarget.model }}</span>
-                    </div>
                     <div class="mm-sub-body" role="menu" :aria-label="`Thinking effort for ${hoveredTarget.model}`">
                       <button
                         v-for="lvl in THINKING_LEVELS"
@@ -220,11 +193,7 @@
                         :disabled="switchingModel"
                         @click.stop="pickModelEffort(hoveredTarget.idx, hoveredTarget.model, lvl.key)"
                       >
-                        <span class="mm-sub-bars" :data-lvl="lvl.key"><i></i><i></i><i></i><i></i></span>
                         <span class="mm-sub-label">{{ lvl.key === 'medium' ? 'medium' : lvl.key }}</span>
-                        <span class="mm-check">
-                          <svg width="9" height="9" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="3.4"><polyline points="20 6 9 17 4 12"/></svg>
-                        </span>
                       </button>
                     </div>
                   </div>
@@ -406,12 +375,12 @@ function positionPopoverForRow(idx: number, model: string, rowEl: HTMLElement | 
   if (!rowEl || !shellEl) return
   const rowRect = rowEl.getBoundingClientRect()
   const shellRect = shellEl.getBoundingClientRect()
-  const estHeight = 178
+  const estHeight = 148
   const rawTop = rowRect.top - shellRect.top - 4
   const maxByShell = Math.max(0, shellRect.height - estHeight)
   const maxByViewport = Math.max(0, window.innerHeight - shellRect.top - estHeight - 10)
   const top = Math.max(0, Math.min(rawTop, Math.min(maxByShell + 16, maxByViewport)))
-  const flipLeft = shellRect.right + 166 > window.innerWidth && shellRect.left > 170
+  const flipLeft = shellRect.right + 108 > window.innerWidth && shellRect.left > 112
   hoveredTarget.value = { idx, model, top, flipLeft }
 }
 

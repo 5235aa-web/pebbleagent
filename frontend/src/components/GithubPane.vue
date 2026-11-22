@@ -64,7 +64,6 @@
           @click="open(repo.fullName)"
           @keydown.enter="open(repo.fullName)"
         >
-          <span class="gh-card-edge" :style="{ background: languageColor(repo.language) }"></span>
           <div class="gh-card-top">
             <span class="gh-card-name">{{ repo.name }}</span>
             <span v-if="repo.fullName === gh.localRepo" class="gh-tag gh-tag-cur">current</span>

@@ -1118,7 +1118,7 @@ export function initOrbit() {
     setInterval(function () {
       if (document.activeElement === ta || ta.value.trim()) return;
       hi = (hi + 1) % hints.length;
-      ta.placeholder = hints[hi] + "  (⏎ send · ⇧⏎ newline)";
+      ta.placeholder = hints[hi];
     }, 4200);
     autosize();
     sync();

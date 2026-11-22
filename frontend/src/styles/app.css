@@ -1625,7 +1625,7 @@ input.attach-input[type="file"] {
 
 .gh-card {
   position: relative;
-  padding: 10px 11px 10px 14px;
+  padding: 10px 12px;
   border-radius: 12px;
   border: 1px solid var(--line);
   background: var(--surface);
@@ -1644,29 +1644,6 @@ input.attach-input[type="file"] {
   transform: translateY(-1px);
   box-shadow: var(--shadow-1);
   outline: none;
-}
-
-/* The edge is the language, drawn as a spine rather than a dot: at this size a
-   7px dot next to a long name is invisible, a 2px spine is not. It grows into
-   the card on hover so the whole row picks up the repository's colour. */
-.gh-card-edge {
-  position: absolute;
-  left: 0;
-  top: 10px;
-  bottom: 10px;
-  width: 2px;
-  border-radius: 0 2px 2px 0;
-  opacity: .7;
-  transition: width .2s var(--ease), opacity .2s var(--ease),
-              top .2s var(--ease), bottom .2s var(--ease);
-}
-
-.gh-card:hover .gh-card-edge,
-.gh-card:focus-visible .gh-card-edge {
-  width: 3px;
-  top: 4px;
-  bottom: 4px;
-  opacity: 1;
 }
 
 @keyframes gh-in {

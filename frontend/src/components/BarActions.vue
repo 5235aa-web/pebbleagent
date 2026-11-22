@@ -10,9 +10,9 @@
       <button class="icon-btn tip" data-tip="Experience ledger" data-sheet="sheet-ledger" data-optional>
         <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.7"><path d="M4 19.5A2.5 2.5 0 0 1 6.5 17H20"/><path d="M6.5 2H20v20H6.5A2.5 2.5 0 0 1 4 19.5v-15A2.5 2.5 0 0 1 6.5 2z"/></svg>
       </button>
-      <button class="icon-btn tip" data-tip="Pair a device" data-sheet="sheet-pairing" data-optional>
+      <!-- <button class="icon-btn tip" data-tip="Pair a device" data-sheet="sheet-pairing" data-optional>
         <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.7"><rect x="5" y="2" width="14" height="20" rx="2"/><line x1="12" y1="18" x2="12" y2="18.01"/></svg>
-      </button>
+      </button> -->
       <button class="icon-btn tip" data-tip="Notifications" id="bellBtn" data-optional>
         <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.7"><path d="M18 8A6 6 0 0 0 6 8c0 7-3 9-3 9h18s-3-2-3-9"/><path d="M13.7 21a2 2 0 0 1-3.4 0"/></svg>
         <span class="badge-dot"></span>

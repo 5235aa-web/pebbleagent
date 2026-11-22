@@ -1,7 +1,6 @@
 <template>
     <div class="sess-switch" id="sessSwitch">
       <button class="ss-btn" id="ssBtn" aria-haspopup="true" aria-expanded="false">
-        <span class="ss-dot"></span>
         <span class="ss-title" id="ssTitle">{{ current?.title }}</span>
         <span class="ss-count">{{ current?.msgs }}</span>
         <svg class="ss-caret" width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><polyline points="6 9 12 15 18 9"/></svg>

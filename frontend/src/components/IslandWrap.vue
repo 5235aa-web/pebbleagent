@@ -21,7 +21,7 @@
         </span>
 
         <div class="island-expand">
-          <div class="ie-title"><span>Live Run</span><span>{{ sessionTitle }}</span></div>
+          <div class="ie-title"><span>Live Run</span></div>
           <div class="ie-row"><span class="k">gateway</span><span class="v ie-conn" :class="{ off: !online }"><i></i>{{ online ? 'connected' : 'offline' }}</span></div>
           <div class="ie-row"><span class="k">agent</span><span class="v">{{ agentName }}</span></div>
           <div class="ie-row"><span class="k">model</span><span class="v">{{ modelName }}</span></div>
@@ -39,7 +39,7 @@
 import { computed, onBeforeUnmount, onMounted, ref } from 'vue'
 import { streamState } from '../data/stream'
 import { usage, context, llm, fmtMoney } from '../data/panels'
-import { plan, activeSession } from '../data/store'
+import { plan } from '../data/store'
 import { runTiming, formatRate } from '../data/wire'
 
 /* The clock ticks on its own so the readout moves while the agent works, but it
@@ -126,7 +126,6 @@ const idleBusyLabel = computed(() => {
 })
 const elapsedClock = computed(() => clockOf(elapsedMs.value))
 const prettyElapsed = computed(() => prettyOf(elapsedMs.value))
-const sessionTitle = computed(() => activeSession()?.title?.trim() || 'no session')
 
 const agentName = computed(() => llm.agents.find(a => a.current)?.name || context.agentName || 'agent')
 const modelName = computed(() => streamState.model || llm.model || 'model')
